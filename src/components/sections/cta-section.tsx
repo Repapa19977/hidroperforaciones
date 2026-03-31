@@ -33,7 +33,7 @@ export default function CtaSection() {
               Solicitar Cotizacion
             </Link>
             <a
-              href="https://wa.me/50233617016"
+              href="https://wa.me/50252565953"
               target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-green-600 hover:bg-green-500 text-white font-semibold text-base transition-all"

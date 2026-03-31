@@ -18,11 +18,16 @@ export default function ContactContent() {
     setStatus("sending");
 
     try {
+      // Save to DB
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
+
+      // Build WhatsApp message and open it
+      const waText = `*Nueva consulta desde la web*%0A%0A*Nombre:* ${encodeURIComponent(form.name)}%0A*Email:* ${encodeURIComponent(form.email)}%0A*Telefono:* ${encodeURIComponent(form.phone || "No proporcionado")}%0A*Asunto:* ${encodeURIComponent(form.subject)}%0A%0A*Mensaje:*%0A${encodeURIComponent(form.message)}`;
+      window.open(`https://wa.me/50252565953?text=${waText}`, "_blank");
 
       if (res.ok) {
         setStatus("sent");
@@ -161,7 +166,7 @@ export default function ContactContent() {
           <FadeIn delay={0.1} className="lg:col-span-2 space-y-5">
             {/* WhatsApp card */}
             <a
-              href="https://wa.me/50233617016"
+              href="https://wa.me/50252565953"
               target="_blank"
               rel="noopener noreferrer"
               className="block p-6 rounded-2xl bg-green-600/10 border border-green-600/20 hover:border-green-500/40 transition-colors group"

@@ -155,7 +155,7 @@ export default function Navbar() {
                 </Link>
               ))}
               <a
-                href="https://wa.me/50233617016"
+                href="https://wa.me/50252565953"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg text-base font-semibold bg-green-600 text-white text-center"
