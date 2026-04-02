@@ -23,7 +23,8 @@ export async function POST(request: Request) {
       success: true,
       user: { id: user.id, email: user.email, name: user.name },
     });
-  } catch {
-    return Response.json({ error: "Error interno" }, { status: 500 });
+  } catch (err) {
+    console.error("Setup error:", err);
+    return Response.json({ error: "Error interno", detail: String(err) }, { status: 500 });
   }
 }
