@@ -1,0 +1,767 @@
+'use client'
+
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { updateEstadoCotizacion, deleteCotizacion, type CotizacionRecord } from '@/lib/quotation-store'
+import {
+  Plus, Search, FileText, Send, CheckCircle, XCircle, FileEdit,
+  ArrowUpRight, Trash2, ChevronDown, Loader2, LayoutList, Kanban,
+  TrendingUp, Award, Drill, Wrench, ExternalLink, Download
+} from 'lucide-react'
+import Link from 'next/link'
+import { cn } from '@/lib/utils'
+import { type Rol } from '@/lib/config-store'
+import * as XLSX from 'xlsx'
+
+// ── Formatters ─────────────────────────────────────────────────────────────────
+const formatQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
+const fmtQk    = (n: number) =>
+  n >= 1_000_000 ? `Q${(n/1_000_000).toFixed(1)}M` :
+  n >= 1_000     ? `Q${(n/1_000).toFixed(0)}k`     :
+  `Q${n.toLocaleString()}`
+
+function getCookie(name: string) {
+  if (typeof document === 'undefined') return ''
+  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+}
+
+const tipoLabel = (t: string) => t === 'perforacion' ? 'Perforación' : 'Limpieza Mecánica'
+
+// ── Status map ─────────────────────────────────────────────────────────────────
+const statusMap: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
+  borrador:   { label: 'Borrador',   icon: <FileEdit  className="w-3 h-3" />, cls: 'bg-slate-500/20 text-slate-400' },
+  enviada:    { label: 'Enviada',    icon: <Send      className="w-3 h-3" />, cls: 'bg-blue-500/20 text-blue-400' },
+  confirmada: { label: 'Confirmada', icon: <CheckCircle className="w-3 h-3" />, cls: 'bg-emerald-500/20 text-emerald-400' },
+  cancelada:  { label: 'Cancelada',  icon: <XCircle   className="w-3 h-3" />, cls: 'bg-red-500/20 text-red-400' },
+}
+
+// ── Kanban columns ─────────────────────────────────────────────────────────────
+const COLS = [
+  { id: 'borrador'   as const, label: 'Por Enviar', icon: <FileEdit   className="w-3.5 h-3.5" />, accent: 'bg-slate-500',  colBg: 'bg-slate-500/5',  headerText: 'text-slate-300',  countBg: 'bg-slate-500/20 text-slate-400',  border: 'border-slate-500/15'  },
+  { id: 'enviada'    as const, label: 'Enviada',    icon: <Send       className="w-3.5 h-3.5" />, accent: 'bg-blue-500',   colBg: 'bg-blue-500/5',   headerText: 'text-blue-300',   countBg: 'bg-blue-500/20 text-blue-400',   border: 'border-blue-500/15'   },
+  { id: 'confirmada' as const, label: 'Confirmada', icon: <CheckCircle className="w-3.5 h-3.5" />, accent: 'bg-emerald-500', colBg: 'bg-emerald-500/5', headerText: 'text-emerald-300', countBg: 'bg-emerald-500/20 text-emerald-400', border: 'border-emerald-500/15' },
+  { id: 'cancelada'  as const, label: 'Cancelada',  icon: <XCircle    className="w-3.5 h-3.5" />, accent: 'bg-red-500',    colBg: 'bg-red-500/5',    headerText: 'text-red-300',    countBg: 'bg-red-500/20 text-red-400',    border: 'border-red-500/15'    },
+]
+
+const AVATAR_COLORS: Record<string, string> = {
+  RD: 'from-blue-500 to-blue-700',
+  GG: 'from-violet-500 to-purple-700',
+  MR: 'from-amber-500 to-orange-600',
+  CS: 'from-cyan-500 to-teal-600',
+}
+
+type View = 'lista' | 'kanban'
+
+// ── Main page ──────────────────────────────────────────────────────────────────
+export default function CotizacionesPage() {
+  const [view, setView]             = useState<View>('lista')
+  const [rows, setRows]             = useState<CotizacionRecord[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [search, setSearch]         = useState('')
+  const [filterStatus, setFStatus]  = useState('todos')
+  const [filterVendedor, setFVend]  = useState('Todos')
+  const [menuOpen, setMenuOpen]     = useState<string | null>(null)
+  const [role, setRole]             = useState<Rol>('admin')
+  const [myVendedor, setMyVendedor] = useState('')
+
+  // Persist view
+  useEffect(() => {
+    const saved = localStorage.getItem('hidrocrm_view') as View | null
+    if (saved === 'kanban' || saved === 'lista') setView(saved)
+  }, [])
+
+  const fetchRows = useCallback(async (v: string, r: Rol) => {
+    setLoading(true)
+    const url = r === 'superadmin' ? '/api/cotizaciones' : `/api/cotizaciones?vendedor=${encodeURIComponent(v)}`
+    const res = await fetch(url)
+    setRows(res.ok ? await res.json() : [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    const r = getCookie('user_role') as Rol || 'admin'
+    const v = getCookie('user_vendedor') || ''
+    setRole(r)
+    setMyVendedor(v)
+    fetchRows(v, r)
+  }, [fetchRows])
+
+  const isSuperAdmin = role === 'superadmin'
+
+  const vendedores = useMemo(() => {
+    const all = [...new Set(rows.map(c => c.vendedor))]
+    return ['Todos', ...all]
+  }, [rows])
+
+  const filtered = useMemo(() => rows.filter(c => {
+    const q = search.toLowerCase()
+    const matchSearch =
+      c.cliente.toLowerCase().includes(q) ||
+      c.correlativo.toLowerCase().includes(q) ||
+      (c.empresa || '').toLowerCase().includes(q)
+    const matchStatus  = filterStatus === 'todos' || c.estado === filterStatus
+    const matchVendedor = !isSuperAdmin || filterVendedor === 'Todos' || c.vendedor === filterVendedor
+    return matchSearch && matchStatus && matchVendedor
+  }), [rows, search, filterStatus, filterVendedor, isSuperAdmin])
+
+  // KPIs
+  const activas     = filtered.filter(c => c.estado !== 'cancelada')
+  const enviadas    = filtered.filter(c => c.estado === 'enviada')
+  const confirmadas = filtered.filter(c => c.estado === 'confirmada')
+  const canceladas  = filtered.filter(c => c.estado === 'cancelada')
+  const totalActivo = activas.reduce((a, b) => a + b.monto, 0)
+  const totalConf   = confirmadas.reduce((a, b) => a + b.monto, 0)
+
+  function toggleView(v: View) {
+    setView(v)
+    localStorage.setItem('hidrocrm_view', v)
+  }
+
+  async function changeEstado(correlativo: string, estado: CotizacionRecord['estado']) {
+    await updateEstadoCotizacion(correlativo, estado, myVendedor || 'sistema')
+    await fetchRows(myVendedor, role)
+    setMenuOpen(null)
+  }
+
+  async function handleDelete(correlativo: string) {
+    if (!confirm(`¿Eliminar cotización ${correlativo}?`)) return
+    await deleteCotizacion(correlativo)
+    await fetchRows(myVendedor, role)
+  }
+
+  function exportExcel() {
+    const exportRows = filtered.map(c => ({
+      'Correlativo': c.correlativo,
+      'Cliente': c.cliente,
+      'Empresa': c.empresa || '',
+      'Tipo': c.tipo === 'perforacion' ? 'Perforación' : 'Limpieza',
+      'Estado': c.estado,
+      'Monto (Q)': Math.round(c.monto),
+      'Vendedor': c.vendedor,
+      'Fecha': c.fecha,
+    }))
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(exportRows)
+    ws['!cols'] = [16,20,18,14,12,16,18,12].map(w => ({ wch: w }))
+    XLSX.utils.book_append_sheet(wb, ws, 'Cotizaciones')
+    XLSX.writeFile(wb, `Cotizaciones_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
+  async function openCotizacion(correlativo: string) {
+    const res = await fetch(`/api/cotizaciones/${encodeURIComponent(correlativo)}`)
+    if (!res.ok) {
+      alert('No se pudo cargar la cotización. Intente de nuevo.')
+      return
+    }
+    const row = await res.json()
+    if (!row.datos || row.datos === '{}') {
+      alert('Esta cotización no tiene datos suficientes para generar el PDF.')
+      return
+    }
+    try {
+      const datos = typeof row.datos === 'string' ? row.datos : JSON.stringify(row.datos)
+      localStorage.setItem('hidrocrm_quotation_draft', datos)
+      window.open('/imprimir', '_blank')
+    } catch {
+      alert('Error al procesar la cotización.')
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#070d1a]">
+
+      {/* ── HEADER ──────────────────────────────────────────────────── */}
+      <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-white/5 bg-[#0a1020] shrink-0">
+        {/* Title row */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-xl font-bold text-white">Cotizaciones</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {loading
+                ? 'Cargando...'
+                : `${filtered.length} cotización${filtered.length !== 1 ? 'es' : ''} · ${fmtQk(totalActivo)} activo`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex bg-white/5 border border-white/8 rounded-xl p-1 gap-0.5">
+              <button
+                onClick={() => toggleView('lista')}
+                title="Vista lista"
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                  view === 'lista' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                )}
+              >
+                <LayoutList className="w-3.5 h-3.5" /><span className="hidden sm:inline ml-1">Lista</span>
+              </button>
+              <button
+                onClick={() => toggleView('kanban')}
+                title="Vista tablero"
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                  view === 'kanban' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                )}
+              >
+                <Kanban className="w-3.5 h-3.5" /><span className="hidden sm:inline ml-1">Tablero</span>
+              </button>
+            </div>
+            <button
+              onClick={exportExcel}
+              title="Exportar a Excel"
+              className="flex items-center gap-1.5 bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 px-3 py-2 rounded-xl text-sm transition-all"
+            >
+              <Download className="w-4 h-4" /><span className="hidden sm:inline">Excel</span>
+            </button>
+            <Link
+              href="/cotizaciones/nueva"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg shadow-blue-500/20"
+            >
+              <Plus className="w-4 h-4" /> Nueva
+            </Link>
+          </div>
+        </div>
+
+        {/* KPI chips */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <KPIChip icon={<TrendingUp className="w-4 h-4 text-blue-400" />}
+            label="Proyectos activos" value={fmtQk(totalActivo)}
+            sub={`${activas.length} cotizaciones`} color="blue" />
+          <KPIChip icon={<Send className="w-4 h-4 text-amber-400" />}
+            label="Enviadas" value={String(enviadas.length)}
+            sub={enviadas.length > 0 ? fmtQk(enviadas.reduce((a,b)=>a+b.monto,0)) : 'sin respuesta'}
+            color="amber" />
+          <KPIChip icon={<Award className="w-4 h-4 text-emerald-400" />}
+            label="Confirmadas" value={fmtQk(totalConf)}
+            sub={`${confirmadas.length} proyectos`} color="emerald" />
+          <KPIChip icon={<XCircle className="w-4 h-4 text-red-400" />}
+            label="Canceladas" value={String(canceladas.length)}
+            sub="en el período" color={canceladas.length > 0 ? 'red' : 'slate'} />
+        </div>
+
+        {/* Search + filters */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="relative w-full sm:w-auto">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar cliente, empresa..."
+              className="bg-white/5 border border-white/8 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 outline-none w-full sm:w-52 transition-all"
+            />
+          </div>
+
+          {/* Status pills — list view */}
+          {view === 'lista' && (['todos', 'borrador', 'enviada', 'confirmada', 'cancelada'] as const).map(s => (
+            <button key={s} onClick={() => setFStatus(s)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                filterStatus === s
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              )}
+            >
+              {s === 'todos' ? 'Todas' : statusMap[s]?.label}
+            </button>
+          ))}
+
+          {/* Vendedor filter — kanban + superadmin */}
+          {view === 'kanban' && isSuperAdmin && vendedores.map(v => {
+            const ini = v === 'Todos' ? null : v.split(' ').map(n => n[0]).join('')
+            return (
+              <button key={v} onClick={() => setFVend(v)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all',
+                  filterVendedor === v
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-white/5'
+                )}
+              >
+                {ini && (
+                  <div className={cn(
+                    'w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center',
+                    filterVendedor === v ? 'bg-white/20' : `bg-gradient-to-br ${AVATAR_COLORS[ini] ?? 'from-slate-500 to-slate-700'}`
+                  )}>{ini}</div>
+                )}
+                {v}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── CONTENT ─────────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center gap-3 text-slate-500">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Cargando cotizaciones...</span>
+        </div>
+      ) : view === 'lista' ? (
+        <ListView
+          filtered={filtered} search={search} isSuperAdmin={isSuperAdmin}
+          menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+          changeEstado={changeEstado} handleDelete={handleDelete} openCotizacion={openCotizacion}
+        />
+      ) : (
+        <KanbanView
+          filtered={filtered} totalActivo={totalActivo} isSuperAdmin={isSuperAdmin}
+          menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+          changeEstado={changeEstado} openCotizacion={openCotizacion}
+        />
+      )}
+
+      {menuOpen && <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />}
+    </div>
+  )
+}
+
+// ── Lista view ─────────────────────────────────────────────────────────────────
+function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion }: {
+  filtered: CotizacionRecord[]
+  search: string
+  isSuperAdmin: boolean
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  changeEstado: (c: string, e: CotizacionRecord['estado']) => void
+  handleDelete: (c: string) => void
+  openCotizacion: (c: string) => void
+}) {
+  if (filtered.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
+        <FileText className="w-12 h-12 mb-4 opacity-30" />
+        <p className="font-medium text-slate-500">
+          {search ? `Sin resultados para "${search}"` : 'No hay cotizaciones todavía'}
+        </p>
+        {!search && (
+          <Link href="/cotizaciones/nueva" className="mt-2 text-blue-400 hover:text-blue-300 text-xs underline">
+            Crear primera cotización
+          </Link>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {/* Desktop table — md+ */}
+      <div className="hidden md:block flex-1 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b border-white/5 bg-[#0a1020] sticky top-0 z-20">
+            <tr className="text-xs text-slate-500">
+              <th className="text-left px-5 py-3 font-medium">Correlativo</th>
+              <th className="text-left px-5 py-3 font-medium">Cliente</th>
+              <th className="text-left px-5 py-3 font-medium">Proyecto</th>
+              <th className="text-left px-5 py-3 font-medium">Tipo</th>
+              <th className="text-right px-5 py-3 font-medium">Monto</th>
+              <th className="text-left px-5 py-3 font-medium">Estado</th>
+              <th className="text-left px-5 py-3 font-medium">Fecha</th>
+              <th className="text-left px-5 py-3 font-medium">Vendedor</th>
+              <th className="px-5 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/4">
+            {filtered.map(c => (
+              <ListRow key={c.correlativo} c={c}
+                menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+                changeEstado={changeEstado} handleDelete={handleDelete} openCotizacion={openCotizacion} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards — < md */}
+      <div className="md:hidden flex-1 overflow-auto divide-y divide-white/5">
+        {filtered.map(c => (
+          <MobileRow key={c.correlativo} c={c}
+            menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+            changeEstado={changeEstado} handleDelete={handleDelete} openCotizacion={openCotizacion} />
+        ))}
+      </div>
+    </>
+  )
+}
+
+// ── List row ───────────────────────────────────────────────────────────────────
+function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion }: {
+  c: CotizacionRecord
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  changeEstado: (correlativo: string, estado: CotizacionRecord['estado']) => void
+  handleDelete: (c: string) => void
+  openCotizacion: (c: string) => void
+}) {
+  const s = statusMap[c.estado]
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null)
+  const isOpen = menuOpen === c.correlativo
+
+  useEffect(() => {
+    if (isOpen && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const dropH = 172
+      const top = window.innerHeight - r.bottom < dropH
+        ? r.top - dropH - 4
+        : r.bottom + 4
+      setDropPos({ top, left: r.left })
+    } else {
+      setDropPos(null)
+    }
+  }, [isOpen])
+
+  return (
+    <tr className="hover:bg-white/2 transition-colors group">
+      <td className="px-5 py-3.5">
+        <span className="font-mono text-xs text-blue-400">{c.correlativo}</span>
+      </td>
+      <td className="px-5 py-3.5">
+        <p className="font-medium text-slate-200">{c.cliente}</p>
+        {c.empresa && <p className="text-xs text-slate-500">{c.empresa}</p>}
+      </td>
+      <td className="px-5 py-3.5 text-slate-400 max-w-[200px] truncate">{c.proyecto}</td>
+      <td className="px-5 py-3.5">
+        <span className={cn('text-xs px-2 py-0.5 rounded-md',
+          c.tipo === 'perforacion' ? 'bg-blue-500/15 text-blue-400' : 'bg-cyan-500/15 text-cyan-400'
+        )}>
+          {tipoLabel(c.tipo)}
+        </span>
+      </td>
+      <td className="px-5 py-3.5 text-right font-bold text-white">{formatQ(c.monto)}</td>
+      <td className="px-5 py-3.5">
+        <button
+          ref={btnRef}
+          onClick={() => setMenuOpen(isOpen ? null : c.correlativo)}
+          className={cn('flex items-center gap-1.5 w-fit text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer hover:opacity-80', s?.cls)}
+        >
+          {s?.icon} {s?.label}
+          <ChevronDown className="w-2.5 h-2.5 ml-0.5" />
+        </button>
+        {isOpen && dropPos && typeof document !== 'undefined' && createPortal(
+          <div
+            style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
+            className="bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[160px] overflow-hidden"
+          >
+            {(['borrador', 'enviada', 'confirmada', 'cancelada'] as const).map(e => (
+              <button key={e} onClick={() => changeEstado(c.correlativo, e)}
+                className={cn(
+                  'flex items-center gap-2 w-full text-left px-3 py-2.5 text-xs transition-colors',
+                  c.estado === e ? 'bg-white/8 text-white font-medium' : 'hover:bg-white/5 text-slate-300'
+                )}
+              >
+                {statusMap[e].icon}
+                <span>{statusMap[e].label}</span>
+                {c.estado === e && <span className="ml-auto text-[10px] text-slate-500">actual</span>}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+      </td>
+      <td className="px-5 py-3.5 text-slate-500 text-xs">{c.fecha}</td>
+      <td className="px-5 py-3.5 text-slate-400 text-xs">{c.vendedor}</td>
+      <td className="px-5 py-3.5">
+        <div className="flex items-center gap-3">
+          <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
+            className="text-slate-500 hover:text-blue-400 transition-colors">
+            <ArrowUpRight className="w-4 h-4" />
+          </button>
+          <button onClick={() => handleDelete(c.correlativo)} title="Eliminar"
+            className="text-slate-600 hover:text-red-400 transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+// ── Mobile row (card) ─────────────────────────────────────────────────────────
+function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion }: {
+  c: CotizacionRecord
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  changeEstado: (correlativo: string, estado: CotizacionRecord['estado']) => void
+  handleDelete: (c: string) => void
+  openCotizacion: (c: string) => void
+}) {
+  const s = statusMap[c.estado]
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null)
+  const isOpen = menuOpen === c.correlativo
+
+  useEffect(() => {
+    if (isOpen && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const dropH = 172
+      const top = window.innerHeight - r.bottom < dropH
+        ? r.top - dropH - 4
+        : r.bottom + 4
+      setDropPos({ top, left: r.left })
+    } else {
+      setDropPos(null)
+    }
+  }, [isOpen])
+
+  return (
+    <div className="px-4 py-3.5 hover:bg-white/2 transition-colors">
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-slate-200 truncate">{c.cliente}</p>
+          {c.empresa && <p className="text-xs text-slate-500 truncate">{c.empresa}</p>}
+        </div>
+        <p className="font-bold text-white text-sm shrink-0">{formatQ(c.monto)}</p>
+      </div>
+      <p className="text-xs text-slate-500 truncate mb-2.5">{c.proyecto}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[10px] text-blue-400">{c.correlativo}</span>
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded',
+            c.tipo === 'perforacion' ? 'bg-blue-500/15 text-blue-400' : 'bg-cyan-500/15 text-cyan-400'
+          )}>{c.tipo === 'perforacion' ? 'Perf.' : 'Limp.'}</span>
+          <button
+            ref={btnRef}
+            onClick={() => setMenuOpen(isOpen ? null : c.correlativo)}
+            className={cn('flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium cursor-pointer hover:opacity-80', s?.cls)}
+          >
+            {s?.icon} {s?.label}
+            <ChevronDown className="w-2 h-2 ml-0.5" />
+          </button>
+          {isOpen && dropPos && typeof document !== 'undefined' && createPortal(
+            <div
+              style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
+              className="bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[160px] overflow-hidden"
+            >
+              {(['borrador', 'enviada', 'confirmada', 'cancelada'] as const).map(e => (
+                <button key={e} onClick={() => changeEstado(c.correlativo, e)}
+                  className={cn(
+                    'flex items-center gap-2 w-full text-left px-3 py-2.5 text-xs transition-colors',
+                    c.estado === e ? 'bg-white/8 text-white font-medium' : 'hover:bg-white/5 text-slate-300'
+                  )}
+                >
+                  {statusMap[e].icon}
+                  <span>{statusMap[e].label}</span>
+                  {c.estado === e && <span className="ml-auto text-[10px] text-slate-500">actual</span>}
+                </button>
+              ))}
+            </div>,
+            document.body
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
+            className="text-slate-500 hover:text-blue-400 transition-colors">
+            <ArrowUpRight className="w-4 h-4" />
+          </button>
+          <button onClick={() => handleDelete(c.correlativo)} title="Eliminar"
+            className="text-slate-600 hover:text-red-400 transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+      <p className="text-[10px] text-slate-600 mt-1.5">{c.fecha} · {c.vendedor}</p>
+    </div>
+  )
+}
+
+// ── Kanban view ────────────────────────────────────────────────────────────────
+function KanbanView({ filtered, totalActivo, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, openCotizacion }: {
+  filtered: CotizacionRecord[]
+  totalActivo: number
+  isSuperAdmin: boolean
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  changeEstado: (c: string, e: CotizacionRecord['estado']) => void
+  openCotizacion: (c: string) => void
+}) {
+  return (
+    <div className="flex-1 overflow-x-auto p-5">
+      <div className="flex gap-4 h-full" style={{ minWidth: `${COLS.length * 296}px` }}>
+        {COLS.map(col => {
+          const cards    = filtered.filter(c => c.estado === col.id)
+          const colMonto = cards.reduce((a, b) => a + b.monto, 0)
+          const pct      = totalActivo > 0 ? (colMonto / totalActivo) * 100 : 0
+
+          return (
+            <div key={col.id} className="w-72 flex flex-col shrink-0">
+              {/* Column header */}
+              <div className={cn('rounded-t-xl overflow-hidden', col.colBg)}>
+                <div className={cn('h-[3px] w-full', col.accent)} />
+                <div className="px-3.5 pt-3 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={cn('flex items-center justify-center', col.headerText)}>{col.icon}</span>
+                    <span className={cn('text-sm font-semibold', col.headerText)}>{col.label}</span>
+                    <span className={cn('text-[11px] px-1.5 py-0.5 rounded-full font-bold', col.countBg)}>
+                      {cards.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-base font-bold text-white">{fmtQk(colMonto)}</span>
+                    <span className="text-[10px] text-slate-600">{pct.toFixed(0)}% del activo</span>
+                  </div>
+                  <div className="mt-2 h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div className={cn('h-full rounded-full transition-all duration-700', col.accent)}
+                      style={{ width: `${Math.min(pct, 100)}%`, opacity: 0.7 }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Cards */}
+              <div className={cn(
+                'flex-1 rounded-b-xl border-x border-b p-2.5 space-y-2.5',
+                'overflow-y-auto max-h-[calc(100vh-360px)] min-h-[180px]',
+                col.colBg, col.border
+              )}>
+                {cards.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-28 text-slate-700">
+                    <div className="w-9 h-9 rounded-xl border border-dashed border-white/8 flex items-center justify-center mb-2">
+                      <Plus className="w-4 h-4" />
+                    </div>
+                    <p className="text-xs">Sin cotizaciones</p>
+                  </div>
+                ) : (
+                  cards.map(c => (
+                    <KanbanCard key={c.correlativo} c={c} isSuperAdmin={isSuperAdmin}
+                      menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+                      changeEstado={changeEstado} openCotizacion={openCotizacion} />
+                  ))
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Kanban card ────────────────────────────────────────────────────────────────
+function KanbanCard({ c, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, openCotizacion }: {
+  c: CotizacionRecord
+  isSuperAdmin: boolean
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  changeEstado: (correlativo: string, estado: CotizacionRecord['estado']) => void
+  openCotizacion: (c: string) => void
+}) {
+  const ini        = c.vendedor.split(' ').map(n => n[0]).join('')
+  const avatarGrad = AVATAR_COLORS[ini] ?? 'from-slate-500 to-slate-700'
+  const btnRef     = useRef<HTMLButtonElement>(null)
+  const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null)
+  const isOpen = menuOpen === c.correlativo
+
+  useEffect(() => {
+    if (isOpen && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const dropH = 172
+      const top = window.innerHeight - r.bottom < dropH
+        ? r.top - dropH - 4
+        : r.bottom + 6
+      setDropPos({ top, left: r.left })
+    } else {
+      setDropPos(null)
+    }
+  }, [isOpen])
+
+  return (
+    <div className="bg-[#0d1829] rounded-xl border border-white/6 hover:border-blue-500/25 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 p-3.5">
+      <div className="mb-2.5">
+        <p className="text-sm font-bold text-white leading-tight truncate">{c.cliente}</p>
+        {c.empresa && <p className="text-[11px] text-slate-500 truncate mt-0.5">{c.empresa}</p>}
+      </div>
+
+      <p className="text-lg font-black text-white tracking-tight mb-2.5">{formatQ(c.monto)}</p>
+
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+        <span className={cn(
+          'inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-lg font-semibold',
+          c.tipo === 'perforacion'
+            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+            : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/20'
+        )}>
+          {c.tipo === 'perforacion'
+            ? <><Drill className="w-2.5 h-2.5" />Perforación</>
+            : <><Wrench className="w-2.5 h-2.5" />Limpieza</>}
+        </span>
+        <span className="text-[10px] font-mono text-slate-600">{c.correlativo}</span>
+      </div>
+
+      <div className="flex items-center justify-between pt-2.5 border-t border-white/5">
+        <div className="flex items-center gap-1.5">
+          <div className={cn('w-5 h-5 rounded-full bg-gradient-to-br flex items-center justify-center text-[8px] font-bold text-white', avatarGrad)}>
+            {ini}
+          </div>
+          <span className="text-[10px] text-slate-500 truncate">{c.vendedor}</span>
+        </div>
+        <span className="text-[10px] text-slate-600">{c.fecha}</span>
+      </div>
+
+      <button
+        onClick={() => openCotizacion(c.correlativo)}
+        className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] text-slate-500 hover:text-blue-400 hover:bg-blue-500/5 py-1.5 rounded-lg border border-white/5 hover:border-blue-500/20 transition-all"
+      >
+        <ExternalLink className="w-3 h-3" /> Ver cotización
+      </button>
+
+      {isSuperAdmin && (
+        <div className="mt-2.5 pt-2.5 border-t border-white/5">
+          <button
+            ref={btnRef}
+            onClick={() => setMenuOpen(isOpen ? null : c.correlativo)}
+            className={cn(
+              'flex items-center gap-1.5 w-fit text-[10px] px-2.5 py-1 rounded-full font-medium cursor-pointer hover:opacity-80',
+              statusMap[c.estado]?.cls
+            )}
+          >
+            {statusMap[c.estado]?.label}
+            <ChevronDown className="w-2.5 h-2.5" />
+          </button>
+
+          {isOpen && dropPos && typeof document !== 'undefined' && createPortal(
+            <div
+              style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
+              className="bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[150px] overflow-hidden"
+            >
+              {(['borrador', 'enviada', 'confirmada', 'cancelada'] as const).map(e => (
+                <button key={e} onClick={() => changeEstado(c.correlativo, e)}
+                  className={cn(
+                    'flex items-center gap-2 w-full text-left px-3 py-2.5 text-xs transition-colors',
+                    c.estado === e ? 'bg-white/8 text-white font-medium' : 'hover:bg-white/5 text-slate-300'
+                  )}
+                >
+                  {statusMap[e].label}
+                  {c.estado === e && <span className="ml-auto text-[10px] text-slate-500">actual</span>}
+                </button>
+              ))}
+            </div>,
+            document.body
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── KPI chip ──────────────────────────────────────────────────────────────────
+function KPIChip({ icon, label, value, sub, color }: {
+  icon: React.ReactNode; label: string; value: string; sub: string
+  color: 'blue' | 'amber' | 'emerald' | 'red' | 'slate'
+}) {
+  const cls = {
+    blue:    'border-blue-500/15 bg-blue-500/5',
+    amber:   'border-amber-500/15 bg-amber-500/5',
+    emerald: 'border-emerald-500/15 bg-emerald-500/5',
+    red:     'border-red-500/20 bg-red-500/8',
+    slate:   'border-white/5 bg-white/3',
+  }[color]
+
+  return (
+    <div className={cn('rounded-xl border px-3.5 py-2.5 flex items-center gap-3', cls)}>
+      <div className="shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-base font-black text-white leading-none truncate">{value}</p>
+        <p className="text-[10px] text-slate-500 mt-0.5 truncate">{label}</p>
+        <p className="text-[10px] text-slate-600 truncate">{sub}</p>
+      </div>
+    </div>
+  )
+}

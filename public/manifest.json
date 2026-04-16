@@ -1,0 +1,27 @@
+{
+  "name": "HidroCRM — Hidroperforaciones",
+  "short_name": "HidroCRM",
+  "description": "Sistema CRM y cotizaciones para Hidroperforaciones Guatemala",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#070d1a",
+  "theme_color": "#0a1020",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["business", "productivity"],
+  "lang": "es-GT"
+}

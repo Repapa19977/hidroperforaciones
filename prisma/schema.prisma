@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Cotizaciones guardadas ────────────────────────────────────────────────────
+model Cotizacion {
+  id          String   @id @default(cuid())
+  correlativo String   @unique
+  cliente     String
+  empresa     String   @default("")
+  proyecto    String
+  tipo        String   // "perforacion" | "limpieza"
+  estado      String   @default("borrador")
+  monto       Float
+  fecha       String
+  vendedor    String
+  datos       String   @default("{}") // JSON: QuotationData completo (para re-abrir/imprimir)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Historial de cambios en cotizaciones ─────────────────────────────────────
+model CotizacionHistorial {
+  id          String   @id @default(cuid())
+  correlativo String   // FK lógica a Cotizacion.correlativo
+  campo       String   // campo que cambió: "estado", "monto", "datos", etc.
+  valorAntes  String   @default("")
+  valorDespues String  @default("")
+  usuario     String   @default("") // nombre del usuario que hizo el cambio
+  createdAt   DateTime @default(now())
+
+  @@index([correlativo])
+  @@index([correlativo, createdAt])
+}
+
+// ── Oportunidades del CRM ─────────────────────────────────────────────────────
+model Oportunidad {
+  id               String  @id @default(cuid())
+  correlativo      String  @unique
+  cliente          String
+  empresa          String  @default("")
+  monto            Float
+  etapa            String  // "new" | "qualified" | "proposition" | "negotiation" | "won" | "lost"
+  vendedor         String
+  avatar           String  @default("")
+  fecha            String
+  tipo             String  // "Perforación" | "Limpieza Mecánica"
+  profundidad      Int?
+  proyecto         String  @default("")
+  diasSinActividad Int     @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ── Usuarios del sistema ──────────────────────────────────────────────────────
+model Usuario {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  nombre       String   // nombre del vendedor (aparece en cotizaciones y CRM)
+  rol          String   @default("admin")   // "admin" | "superadmin"
+  passwordHash String
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ── Contactos ─────────────────────────────────────────────────────────────────
+model Contacto {
+  id        String   @id @default(cuid())
+  nombre    String
+  empresa   String   @default("")
+  telefono  String   @default("")
+  email     String   @default("")
+  tipo      String   @default("cliente")  // "cliente" | "prospecto" | "proveedor"
+  pais      String   @default("Guatemala")
+  notas     String   @default("")
+  vendedor  String   // admin que creó el contacto
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Configuración del sistema (singleton) ────────────────────────────────────
+model Config {
+  id        String   @id @default("singleton")
+  datos     String   @default("{}") // JSON: AppConfig
+  updatedAt DateTime @updatedAt
+}
+
+// ── Proyectos (generados al confirmar cotización) ─────────────────────────────
+model Proyecto {
+  id           String          @id @default(cuid())
+  correlativo  String          @unique
+  cotizacionId String
+  cliente      String
+  empresa      String          @default("")
+  nombre       String
+  tipo         String
+  monto        Float
+  vendedor     String
+  estado       String          @default("activo") // "activo" | "completado" | "pausado"
+  fechaInicio  String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  entradas     BitacoraEntry[]
+}
+
+// ── Entradas diarias de la bitácora ──────────────────────────────────────────
+model BitacoraEntry {
+  id                  String   @id @default(cuid())
+  proyectoId          String
+  proyecto            Proyecto @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  fecha               String   // "YYYY-MM-DD"
+  turno               String   @default("dia") // "dia" | "noche"
+  estado              String   @default("")
+  tipo                String
+  perforacionDia      Float    @default(0)
+  ampliacion1Dia      Float    @default(0)
+  ampliacion2Dia      Float    @default(0)
+  rehabilitacionDia   Float    @default(0)
+  perforacionTotal    Float    @default(0)
+  ampliacion1Total    Float    @default(0)
+  ampliacion2Total    Float    @default(0)
+  rehabilitacionTotal Float    @default(0)
+  horasPerforacion    Float    @default(0)
+  bentonitaSacos      Float    @default(0)
+  pipas               Float    @default(0)
+  horasLimpieza       Float    @default(0)
+  horasAforo          Float    @default(0)
+  diaAdverso          Boolean  @default(false)
+  notaInterna         String   @default("")
+  notaCliente         String   @default("")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([proyectoId])
+  @@index([proyectoId, fecha])
+}
