@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useId } from 'react'
 import {
   getRol, setRol, verificarPinSuperAdmin,
   DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type Rol
 } from '@/lib/config-store'
+import { COSTOS_BASE } from '@/lib/costos-base'
 import {
   Settings, Lock, Unlock, Save, Eye, EyeOff, ShieldCheck,
   ShieldAlert, Percent, DollarSign, Wrench, CheckCircle,
-  Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Tag
+  Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Tag,
+  TrendingUp, RotateCcw
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -90,6 +92,21 @@ export default function ConfiguracionPage() {
       ...prev,
       preciosLineas: { ...(prev.preciosLineas ?? DEFAULT_PRECIOS_LINEAS), [key]: val },
     }))
+  }
+
+  function patchCostoRubro(rubroKey: string, val: number) {
+    setConfig(prev => ({
+      ...prev,
+      costosBaseOverride: { ...(prev.costosBaseOverride ?? {}), [rubroKey]: val },
+    }))
+  }
+
+  function resetCostoRubro(rubroKey: string) {
+    setConfig(prev => {
+      const overrides = { ...(prev.costosBaseOverride ?? {}) }
+      delete overrides[rubroKey]
+      return { ...prev, costosBaseOverride: overrides }
+    })
   }
 
   async function handleCrearUsuario(e: React.FormEvent) {
@@ -283,6 +300,14 @@ export default function ConfiguracionPage() {
           <ConfigInput label="Bomba sumergible" value={config.costoBombaDefault} onChange={v => patch('costoBombaDefault', v)} unit="Q" locked={!isSuperAdmin} />
           <ConfigInput label="Grava (total)" value={config.costoGravaDefault} onChange={v => patch('costoGravaDefault', v)} unit="Q" locked={!isSuperAdmin} />
           <ConfigInput label="Comisión vendedor" value={config.comisionVendedorPct} onChange={v => patch('comisionVendedorPct', v)} unit="%" locked={!isSuperAdmin} />
+          <ConfigInput
+            label="Markup Químicos — Limpieza"
+            value={config.markupQuimicosLimpieza}
+            onChange={v => patch('markupQuimicosLimpieza', v)}
+            unit="×"
+            locked={!isSuperAdmin}
+            hint="Multiplicador sobre costo de químicos (1.5 = +50%)"
+          />
         </div>
       </Section>
 
@@ -334,6 +359,138 @@ export default function ConfiguracionPage() {
               locked={!isSuperAdmin}
             />
           ))}
+        </div>
+      </Section>
+
+      {/* ── Costos base por rubro (solo superadmin) ────────────────────────── */}
+      <Section title="Costos Base por Rubro" icon={<TrendingUp className="w-4 h-4" />} locked={!isSuperAdmin}>
+        <p className="text-xs text-slate-500 mb-4">
+          Lo que le sale a la empresa por cada unidad. Estos costos aparecen en el panel
+          &quot;Margen por Rubro&quot; de cada cotización. Solo visible para Super Admin.
+        </p>
+
+        <div className="space-y-2">
+          {Object.values(COSTOS_BASE).map(rubro => {
+            const override = config.costosBaseOverride?.[rubro.key]
+            const valor = typeof override === 'number' ? override : rubro.costoUnitario
+            const modificado = typeof override === 'number' && override !== rubro.costoUnitario
+            return (
+              <div key={rubro.key} className={cn(
+                'flex items-center gap-3 rounded-lg border px-3 py-2.5',
+                modificado ? 'border-amber-500/25 bg-amber-500/5' : 'border-white/5 bg-white/2'
+              )}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-200 truncate">{rubro.nombre}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {modificado
+                      ? <>Default Q {rubro.costoUnitario.toFixed(2)} · ahora <span className="text-amber-400">Q {valor.toFixed(2)}</span></>
+                      : <>Default Q {rubro.costoUnitario.toFixed(2)} · {rubro.unidad}</>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={valor.toFixed(2)}
+                    disabled={!isSuperAdmin}
+                    onChange={e => patchCostoRubro(rubro.key, parseFloat(e.target.value) || 0)}
+                    className={cn(
+                      'w-24 bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white tabular-nums text-right focus:border-violet-400/50 focus:outline-none',
+                      !isSuperAdmin && 'opacity-40 cursor-not-allowed'
+                    )}
+                  />
+                  <span className="text-[10px] text-slate-500 w-10">Q/{rubro.unidad}</span>
+                  <button
+                    onClick={() => resetCostoRubro(rubro.key)}
+                    disabled={!isSuperAdmin || !modificado}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      modificado && isSuperAdmin
+                        ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                        : 'text-slate-700 cursor-not-allowed'
+                    )}
+                    title="Restaurar valor por defecto"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </Section>
+
+      {/* ── Cuentas bancarias — aparecen al pie del PDF de cotización ──────────── */}
+      <Section title="Cuentas Bancarias (PDF)" icon={<DollarSign className="w-4 h-4" />} locked={!isSuperAdmin}>
+        <p className="text-xs text-slate-500 mb-4">
+          Se imprimen al pie del PDF de cada cotización. El cliente debe emitir cheque &quot;No Negociable&quot; a nombre de HIDROPERFORACIONES, S.A. o transferir a alguna de estas cuentas.
+        </p>
+        <div className="space-y-2">
+          {(config.cuentasBancarias ?? []).map((cuenta, idx) => (
+            <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+              <input
+                type="text"
+                value={cuenta.banco}
+                disabled={!isSuperAdmin}
+                onChange={e => {
+                  const nuevas = [...(config.cuentasBancarias ?? [])]
+                  nuevas[idx] = { ...nuevas[idx], banco: e.target.value }
+                  setConfig(prev => ({ ...prev, cuentasBancarias: nuevas }))
+                }}
+                placeholder="Banco"
+                className="md:col-span-4 bg-white/5 border border-white/10 rounded px-2.5 py-2 text-sm text-white focus:border-violet-400/50 focus:outline-none"
+              />
+              <input
+                type="text"
+                value={cuenta.tipo}
+                disabled={!isSuperAdmin}
+                onChange={e => {
+                  const nuevas = [...(config.cuentasBancarias ?? [])]
+                  nuevas[idx] = { ...nuevas[idx], tipo: e.target.value }
+                  setConfig(prev => ({ ...prev, cuentasBancarias: nuevas }))
+                }}
+                placeholder="Tipo"
+                className="md:col-span-4 bg-white/5 border border-white/10 rounded px-2.5 py-2 text-sm text-white focus:border-violet-400/50 focus:outline-none"
+              />
+              <input
+                type="text"
+                value={cuenta.numero}
+                disabled={!isSuperAdmin}
+                onChange={e => {
+                  const nuevas = [...(config.cuentasBancarias ?? [])]
+                  nuevas[idx] = { ...nuevas[idx], numero: e.target.value }
+                  setConfig(prev => ({ ...prev, cuentasBancarias: nuevas }))
+                }}
+                placeholder="No. de cuenta"
+                className="md:col-span-3 bg-white/5 border border-white/10 rounded px-2.5 py-2 text-sm text-white tabular-nums focus:border-violet-400/50 focus:outline-none"
+              />
+              <button
+                onClick={() => {
+                  const nuevas = (config.cuentasBancarias ?? []).filter((_, i) => i !== idx)
+                  setConfig(prev => ({ ...prev, cuentasBancarias: nuevas }))
+                }}
+                disabled={!isSuperAdmin}
+                className={cn(
+                  'md:col-span-1 p-2 rounded transition-colors',
+                  isSuperAdmin ? 'text-red-400 hover:bg-red-500/10' : 'text-slate-700'
+                )}
+                title="Eliminar cuenta"
+              >
+                <Trash2 className="w-4 h-4 mx-auto" />
+              </button>
+            </div>
+          ))}
+          {isSuperAdmin && (
+            <button
+              onClick={() => {
+                const nuevas = [...(config.cuentasBancarias ?? []), { banco: '', tipo: 'Cuenta monetaria quetzales', numero: '' }]
+                setConfig(prev => ({ ...prev, cuentasBancarias: nuevas }))
+              }}
+              className="w-full py-2 border border-dashed border-violet-500/30 text-violet-400 rounded-lg text-xs hover:border-violet-500/50 hover:bg-violet-500/5 transition-all"
+            >
+              + Agregar cuenta bancaria
+            </button>
+          )}
         </div>
       </Section>
 
@@ -558,16 +715,20 @@ function ConfigInput({ label, value, onChange, unit, locked, hint, accent }: {
   label: string; value: number; onChange: (v: number) => void
   unit: string; locked: boolean; hint?: string; accent?: boolean
 }) {
+  const id = useId()
+  const hintId = hint ? `${id}-hint` : undefined
   return (
     <div>
-      <label className="text-xs text-slate-500 mb-1.5 flex items-center justify-between">
+      <label htmlFor={id} className="text-xs text-slate-500 mb-1.5 flex items-center justify-between">
         <span>{label}</span>
         <span className="text-slate-700">{unit}</span>
       </label>
       <div className="relative">
         <input
+          id={id}
           type="number"
           value={value}
+          aria-describedby={hintId}
           onChange={e => !locked && onChange(parseFloat(e.target.value) || 0)}
           disabled={locked}
           className={cn(
@@ -581,7 +742,7 @@ function ConfigInput({ label, value, onChange, unit, locked, hint, accent }: {
         />
         {locked && <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-700" />}
       </div>
-      {hint && <p className="text-[10px] text-slate-600 mt-1">{hint}</p>}
+      {hint && <p id={hintId} className="text-[10px] text-slate-600 mt-1">{hint}</p>}
     </div>
   )
 }

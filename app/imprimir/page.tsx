@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { loadQuotation, type QuotationData } from '@/lib/quotation-store'
-import { calcularPerforacion, calcularLimpieza, formatQ, IVA } from '@/lib/calculator'
+import { calcularPerforacion, calcularLimpieza, formatQ, IVA, formatBroca } from '@/lib/calculator'
 import { DEFAULT_PRECIOS_LINEAS, type PreciosLineas } from '@/lib/config-store'
 import Image from 'next/image'
 
@@ -133,7 +133,8 @@ export default function ImprimirPage() {
                   ['Dirección', data.direccion || 'Por definir'],
                   ['Duración', data.duracion],
                   ...(data.ip ? [['Profundidad', `${data.ip.profundidad} pies (≈${Math.round(data.ip.profundidad * 0.3048)}m)`]] : []),
-                  ...(data.ip ? [['Diámetro', `${data.ip.diametro}" (broca ${data.ip.diametro * 2}")`]] : []),
+                  ...(data.ip ? [['Diámetro perforación', formatBroca(data.ip.diametro)]] : []),
+                  ...(data.ip ? [['Diámetro tubería', `${(data.ip as { diametroTuberia?: number }).diametroTuberia ?? 8} pulgadas`]] : []),
                   ...(data.il ? [['Horas trabajo', `${data.il.horasLimpieza} horas`]] : []),
                   ...(data.il ? [['Días trabajo', `${data.il.diasTrabajo} días`]] : []),
                 ].map(([k, v]) => (
@@ -248,27 +249,29 @@ function buildLineasPerf(
   res: ReturnType<typeof calcularPerforacion>,
   pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS
 ) {
-  return [
-    { nombre: 'Traslado de equipo de perforación',            unidad: 'Global', cant: 1,                           precio: Math.round(res.costoTraslado * 0.7) },
-    { nombre: 'Traslado de tubería y materiales',             unidad: 'Global', cant: 1,                           precio: Math.round(res.costoTraslado * 0.3) },
-    { nombre: 'Instalación de equipo de perforación',         unidad: 'Global', cant: 1,                           precio: pl.instalacionEquipo },
-    { nombre: `Perforación de pozo mecánico Ø ${ip.diametro}"`, unidad: 'ML',  cant: Math.round(ip.profundidad * 0.3048), precio: Math.round(ip.precioPorPieVenta * 3.28084) },
-    { nombre: 'Entubado de pozo',                             unidad: 'ML',     cant: ip.numeroDeTubos,            precio: ip.costoPorTubo },
-    { nombre: 'Filtro de pozo',                               unidad: 'ML',     cant: ip.numeroDeFilteros,         precio: ip.costoPorFiltro },
-    { nombre: 'Pre-filtro de grava sílica',                   unidad: 'Global', cant: 1,                           precio: Math.round(res.costoGrava) },
-    { nombre: 'Sello sanitario',                              unidad: 'Global', cant: 1,                           precio: Math.round(res.costoSelloSanitario) },
-    { nombre: 'Cementación',                                  unidad: 'Global', cant: 1,                           precio: pl.cementacion },
-    { nombre: 'Registro eléctrico',                           unidad: 'Global', cant: 1,                           precio: pl.registroElectrico },
-    { nombre: 'Desarrollo y limpieza de pozo',                unidad: 'Global', cant: 1,                           precio: pl.desarrolloLimpieza },
-    { nombre: 'Aforo de pozo',                                unidad: 'Global', cant: 1,                           precio: Math.round(res.costoAforo) },
-    { nombre: 'Análisis físico-químico del agua',             unidad: 'Unidad', cant: 1,                           precio: pl.analisisFisicoQuimico },
-    { nombre: 'Análisis bacteriológico del agua',             unidad: 'Unidad', cant: 1,                           precio: pl.analisisBacteriologico },
-    { nombre: 'Informe final de pozo',                        unidad: 'Unidad', cant: 1,                           precio: pl.informeFinal },
-    { nombre: 'Desinstalación y retiro de equipo',            unidad: 'Global', cant: 1,                           precio: pl.desinstalacion },
-    { nombre: 'Suministro e instalación de bomba sumergible', unidad: 'Global', cant: 1,                           precio: ip.costoBomba },
-    { nombre: 'Suministro e instalación de sarta de producción', unidad: 'Global', cant: 1,                        precio: pl.sartaProduccion },
-    ...(ip.incluirLimpieza ? [{ nombre: 'Limpieza mecánica de pozo', unidad: 'Global', cant: 1, precio: Math.round(res.costoLimpieza * 1.3) }] : []),
-  ].map(l => ({ ...l, total: l.cant * l.precio })).filter(l => l.total > 0)
+  const lines = [
+    { nombre: 'Traslado de equipo de perforación',                              unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 0.7) },
+    { nombre: 'Traslado de tubería y materiales',                               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 0.3) },
+    { nombre: 'Instalación de equipo de perforación',                           unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
+    { nombre: `Perforación de pozo mecánico Ø ${formatBroca(ip.diametro)}`,     unidad: 'ML',     cant: Math.round(ip.profundidad * 0.3048), precio: Math.round(ip.precioPorPieVenta * 3.28084) },
+    { nombre: `Tubería lisa ${ip.diametroTuberia ?? 8}" × ${ip.espesorLisa ?? 0.25}" pulgadas`,     unidad: 'Tubo', cant: ip.tubosLisos ?? (ip as { numeroDeTubos?: number }).numeroDeTubos ?? 0,     precio: res.precioTubLisa || (ip as { costoPorTubo?: number }).costoPorTubo || 0 },
+    { nombre: `Tubería ranurada ${ip.diametroTuberia ?? 8}" × ${ip.espesorRanurada ?? 0.25}" pulgadas`, unidad: 'Tubo', cant: ip.tubosRanurados ?? (ip as { numeroDeFilteros?: number }).numeroDeFilteros ?? 0, precio: res.precioTubRanurada || (ip as { costoPorFiltro?: number }).costoPorFiltro || 0 },
+    { nombre: 'Pre-filtro de grava sílica',                                     unidad: 'Global', cant: 1,               precio: Math.round(res.costoGrava) },
+    ...(ip.incluirSelloSanitario ? [{ nombre: 'Sello sanitario',                unidad: 'Global', cant: 1,               precio: Math.round(res.costoSelloSanitario) }] : []),
+    { nombre: 'Cementación',                                                    unidad: 'Global', cant: 1,               precio: pl.cementacion },
+    ...(ip.incluirRegistroElectrico ? [{ nombre: 'Registro eléctrico',          unidad: 'Global', cant: 1,               precio: pl.registroElectrico }] : []),
+    ...(ip.incluirExtraccionLodos ? [{ nombre: 'Extracción de lodos',           unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpieza }] : []),
+    { nombre: 'Desarrollo y limpieza de pozo',                                  unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpieza },
+    { nombre: 'Aforo de pozo',                                                  unidad: 'Global', cant: 1,               precio: Math.round(res.costoAforo) },
+    { nombre: 'Análisis físico-químico del agua',                               unidad: 'Unidad', cant: 1,               precio: pl.analisisFisicoQuimico },
+    { nombre: 'Análisis bacteriológico del agua',                               unidad: 'Unidad', cant: 1,               precio: pl.analisisBacteriologico },
+    { nombre: 'Informe final de pozo',                                          unidad: 'Unidad', cant: 1,               precio: pl.informeFinal },
+    { nombre: 'Desinstalación y retiro de equipo',                              unidad: 'Global', cant: 1,               precio: pl.desinstalacion },
+    { nombre: 'Suministro e instalación de bomba sumergible',                   unidad: 'Global', cant: 1,               precio: ip.costoBomba },
+    { nombre: 'Suministro e instalación de sarta de producción',                unidad: 'Global', cant: 1,               precio: pl.sartaProduccion },
+    ...(ip.incluirLimpieza ? [{ nombre: 'Limpieza mecánica de pozo',            unidad: 'Global', cant: 1,               precio: Math.round(res.costoLimpieza * 1.3) }] : []),
+  ]
+  return lines.map(l => ({ ...l, total: l.cant * l.precio })).filter(l => l.total > 0)
 }
 
 function buildLineasLimp(
@@ -280,7 +283,7 @@ function buildLineasLimp(
     { nombre: 'Traslado de equipo de limpieza',               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 1.2) },
     { nombre: 'Instalación de equipo de limpieza',            unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
     { nombre: `Limpieza mecánica de pozo (${il.horasLimpieza} horas)`, unidad: 'Hora', cant: il.horasLimpieza, precio: il.precioVentaHora },
-    { nombre: 'Químicos y aditivos de limpieza',              unidad: 'Global', cant: 1,               precio: Math.round(res.costoQuimicos * 1.5) },
+    { nombre: 'Químicos y aditivos de limpieza',              unidad: 'Global', cant: 1,               precio: Math.round(res.costoQuimicos * (il.markupQuimicos ?? 1.5)) },
     { nombre: 'Desarrollo y limpieza final de pozo',          unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpiezaFinal },
     { nombre: 'Análisis físico-químico del agua',             unidad: 'Unidad', cant: 1,               precio: pl.analisisFisicoQuimico },
     { nombre: 'Desinstalación y retiro de equipo',            unidad: 'Global', cant: 1,               precio: pl.desinstalacion },

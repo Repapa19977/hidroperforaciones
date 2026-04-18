@@ -150,6 +150,199 @@
   border-radius: 0.5rem;
 }
 
+/* ── Intro cinematográfica ────────────────────────────────────────── */
+.hc-intro-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #0a1830 0%, #030914 70%);
+  overflow: hidden;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.55s ease-out, backdrop-filter 0.55s ease-out;
+}
+.hc-intro-visible { opacity: 1; }
+.hc-intro-exiting {
+  opacity: 0;
+  backdrop-filter: blur(6px);
+}
+
+/* Glow radial animado */
+.hc-intro-glow {
+  position: absolute;
+  width: 140vmax;
+  height: 140vmax;
+  background: radial-gradient(circle, rgba(59,130,246,0.22) 0%, rgba(59,130,246,0.08) 30%, transparent 60%);
+  animation: hcGlowPulse 3s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes hcGlowPulse {
+  0%   { transform: scale(0.6); opacity: 0.3; }
+  50%  { transform: scale(1);   opacity: 0.8; }
+  100% { transform: scale(0.6); opacity: 0.3; }
+}
+
+/* Líneas decorativas que se extienden */
+.hc-intro-line {
+  position: absolute;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(96,165,250,0.7), transparent);
+  pointer-events: none;
+}
+.hc-intro-line-1 {
+  top: 42%;
+  left: 0;
+  right: 0;
+  animation: hcLineExpand 1.8s ease-out forwards;
+}
+.hc-intro-line-2 {
+  top: 58%;
+  left: 0;
+  right: 0;
+  animation: hcLineExpand 1.8s ease-out 0.2s forwards;
+}
+
+@keyframes hcLineExpand {
+  0%   { transform: scaleX(0); opacity: 0; }
+  50%  { opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0.4; }
+}
+
+/* Stack principal (logo + título + tag) */
+.hc-intro-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  z-index: 2;
+}
+
+/* Logo con halo */
+.hc-intro-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow:
+    0 0 40px rgba(59,130,246,0.6),
+    0 0 100px rgba(59,130,246,0.35),
+    0 20px 60px rgba(0,0,0,0.55);
+  animation: hcLogoReveal 1.2s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+@keyframes hcLogoReveal {
+  0%   { opacity: 0; transform: scale(0.5) rotate(-8deg); filter: blur(10px); }
+  60%  { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) rotate(0); filter: blur(0); }
+}
+
+/* Título */
+.hc-intro-title {
+  display: flex;
+  gap: 0.45rem;
+  font-family: var(--font-sans);
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: white;
+}
+.hc-intro-title-word {
+  opacity: 0;
+  animation: hcTitleUp 0.9s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+.hc-intro-title-word:nth-child(1) { animation-delay: 0.55s; }
+.hc-intro-title-word:nth-child(2) { animation-delay: 0.8s; }
+.hc-intro-title-accent {
+  background: linear-gradient(90deg, #60a5fa, #93c5fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@keyframes hcTitleUp {
+  0%   { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Tagline */
+.hc-intro-tag {
+  opacity: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(148,163,184,0.85);
+  animation: hcTitleUp 0.9s cubic-bezier(0.16,1,0.3,1) 1.15s forwards;
+}
+
+/* Botón skip */
+.hc-intro-skip {
+  position: absolute;
+  top: calc(1rem + env(safe-area-inset-top));
+  right: 1rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(148,163,184,0.95);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  backdrop-filter: blur(4px);
+  z-index: 3;
+  cursor: pointer;
+  opacity: 0;
+  animation: hcTitleUp 0.6s ease-out 1.4s forwards;
+}
+.hc-intro-skip:hover { color: white; background: rgba(255,255,255,0.1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-intro-root { display: none; }
+}
+
+/* ── Fade-in stagger para secciones ──────────────────────────────── */
+@keyframes sectionReveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reveal-on-mount {
+  animation: sectionReveal 0.45s cubic-bezier(0.16,1,0.3,1) both;
+}
+.reveal-delay-1 { animation-delay: 0.04s; }
+.reveal-delay-2 { animation-delay: 0.08s; }
+.reveal-delay-3 { animation-delay: 0.12s; }
+.reveal-delay-4 { animation-delay: 0.16s; }
+
+/* Stagger automático — hijo 1 delay 0, hijo 2 delay 40ms, etc. */
+.reveal-stagger > * {
+  animation: sectionReveal 0.45s cubic-bezier(0.16,1,0.3,1) both;
+}
+.reveal-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.reveal-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.reveal-stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.reveal-stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.reveal-stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.reveal-stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.reveal-stagger > *:nth-child(7) { animation-delay: 0.26s; }
+.reveal-stagger > *:nth-child(8) { animation-delay: 0.30s; }
+.reveal-stagger > *:nth-child(n+9) { animation-delay: 0.34s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-on-mount, .reveal-stagger > * { animation: none; }
+}
+
+/* ── Touch feedback en buttons (móvil) ────────────────────────────── */
+@media (hover: none) {
+  button:active:not(:disabled) { transition: transform 0.08s ease-out; }
+}
+
 /* ── Light mode overrides ──────────────────────────────────────────── */
 
 /* Body & base */

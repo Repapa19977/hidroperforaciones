@@ -18,14 +18,16 @@ export async function POST(request: NextRequest) {
 
   const row = await prisma.contacto.create({
     data: {
-      nombre:   body.nombre,
-      empresa:  body.empresa  ?? '',
-      telefono: body.telefono ?? '',
-      email:    body.email    ?? '',
-      tipo:     body.tipo     ?? 'cliente',
-      pais:     body.pais     ?? 'Guatemala',
-      notas:    body.notas    ?? '',
-      vendedor: body.vendedor,
+      nombre:       body.nombre,
+      empresa:      body.empresa      ?? '',
+      telefono:     body.telefono     ?? '',
+      email:        body.email        ?? '',
+      tipo:         body.tipo         ?? 'cliente',
+      pais:         body.pais         ?? 'Guatemala',
+      departamento: body.departamento ?? '',
+      municipio:    body.municipio    ?? '',
+      notas:        body.notas        ?? '',
+      vendedor:     body.vendedor,
     },
   })
 

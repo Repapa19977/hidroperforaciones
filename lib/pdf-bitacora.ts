@@ -59,6 +59,9 @@ export interface EntradaBitacora {
   diaAdverso: boolean
   notaInterna: string
   notaCliente: string
+  // Nuevos (Excel DATOS BITACORA DIARIA)
+  formacionGeologica?: string
+  circulacionPct?: number
 }
 
 export interface ProyectoBitacora {
@@ -73,6 +76,11 @@ export interface ProyectoBitacora {
   estado: string
   fechaInicio: string
   entradas: EntradaBitacora[]
+  // Totales del proyecto desde la cotización (opcional)
+  profundidadTotal?: number   // total de pies a perforar según cotización
+  diasHabilesTotal?: number   // total de días hábiles estimados
+  bentonitaPlan?: number      // sacos pagados por el cliente (70%)
+  pipasPlan?: number          // pipas estimadas (días / 3)
 }
 
 // ── Encabezado de empresa ─────────────────────────────────────────────────────
@@ -146,8 +154,10 @@ function drawProgressBar(
 // ══════════════════════════════════════════════════════════════════════════════
 export async function generarPDFEntrada(
   proyecto: ProyectoBitacora,
-  entrada: EntradaBitacora
+  entrada: EntradaBitacora,
+  opts: { incluirConsumos?: boolean } = {},
 ): Promise<ArrayBuffer> {
+  const incluirConsumos = opts.incluirConsumos ?? true
   const logo = await logoBase64()
   const doc  = new jsPDF({ format: 'letter', unit: 'mm', orientation: 'portrait' })
   const W = doc.internal.pageSize.getWidth()
@@ -193,58 +203,104 @@ export async function generarPDFEntrada(
   const esPerf = proyecto.tipo === 'perforacion'
 
   if (esPerf) {
+    // Acumulados hasta esta entrada (inclusive) — para mostrar "llevamos X/Y"
+    const entradasHastaFecha = proyecto.entradas.filter(e => e.fecha <= entrada.fecha)
+    const bentonitaAcum = entradasHastaFecha.reduce((s, e) => s + e.bentonitaSacos, 0)
+    const pipasAcum     = entradasHastaFecha.reduce((s, e) => s + e.pipas, 0)
+
+    const fmtPctAcum = (acum: number, plan: number | undefined) => {
+      if (!plan || plan <= 0) return acum.toFixed(0)
+      const pct = Math.min(100, (acum / plan) * 100)
+      return `${acum.toFixed(0)} / ${plan} (${pct.toFixed(0)}%)`
+    }
+
+    // Tabla simplificada — solo lo que el Excel DATOS BITACORA DIARIA tiene
+    const bodyRows: Array<[string, string, string]> = [
+      ['Perforación (pies)', `${entrada.perforacionDia.toFixed(1)}`, `${entrada.perforacionTotal.toFixed(1)}`],
+    ]
+    if (incluirConsumos) {
+      bodyRows.push(['Bentonita (sacos)', `${entrada.bentonitaSacos.toFixed(0)}`, fmtPctAcum(bentonitaAcum, proyecto.bentonitaPlan)])
+      bodyRows.push(['Pipas de agua',     `${entrada.pipas.toFixed(0)}`,          fmtPctAcum(pipasAcum,    proyecto.pipasPlan)])
+    }
+    if (typeof entrada.circulacionPct === 'number' && entrada.circulacionPct > 0) {
+      bodyRows.push(['Circulación',     `${entrada.circulacionPct}%`, ''])
+    }
+    if (entrada.formacionGeologica) {
+      bodyRows.push(['Formación geológica', entrada.formacionGeologica, ''])
+    }
     autoTable(doc, {
       startY: y,
       margin: { left: mg, right: mg },
-      head: [['Actividad', 'Día', 'Total Acumulado']],
-      body: [
-        ['Perforación (pies)',      `${entrada.perforacionDia.toFixed(1)}`,    `${entrada.perforacionTotal.toFixed(1)}`],
-        ['Ampliación 1 (pies)',     `${entrada.ampliacion1Dia.toFixed(1)}`,    `${entrada.ampliacion1Total.toFixed(1)}`],
-        ['Ampliación 2 (pies)',     `${entrada.ampliacion2Dia.toFixed(1)}`,    `${entrada.ampliacion2Total.toFixed(1)}`],
-        ['Rehabilitación (pies)',   `${entrada.rehabilitacionDia.toFixed(1)}`, `${entrada.rehabilitacionTotal.toFixed(1)}`],
-        ['Horas de perforación',    `${entrada.horasPerforacion.toFixed(1)}`,  ''],
-        ['Bentonita (sacos)',        `${entrada.bentonitaSacos.toFixed(0)}`,    ''],
-        ['Pipas de agua',           `${entrada.pipas.toFixed(0)}`,             ''],
-        ['Horas de limpieza',       `${entrada.horasLimpieza.toFixed(1)}`,     ''],
-        ['Horas de aforo',          `${entrada.horasAforo.toFixed(1)}`,        ''],
-      ],
+      head: [['Actividad', 'Día', 'Acumulado']],
+      body: bodyRows,
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', fontSize: 9 },
       alternateRowStyles: { fillColor: hex(GRAY50) },
       columnStyles: {
-        0: { cellWidth: 80 },
-        1: { halign: 'center', cellWidth: 40 },
+        0: { cellWidth: 70 },
+        1: { halign: 'center', cellWidth: 50 },
         2: { halign: 'center' },
       },
     })
   } else {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: mg, right: mg },
-      head: [['Actividad', 'Cantidad']],
-      body: [
-        ['Horas de limpieza',  `${entrada.horasLimpieza.toFixed(1)}`],
-        ['Horas de aforo',     `${entrada.horasAforo.toFixed(1)}`],
-        ['Pipas de agua',      `${entrada.pipas.toFixed(0)}`],
-        ['Bentonita (sacos)',  `${entrada.bentonitaSacos.toFixed(0)}`],
-      ],
-      styles: { fontSize: 9, cellPadding: 3 },
-      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: hex(GRAY50) },
-    })
+    // Limpieza — tabla mínima
+    const bodyL: Array<[string, string]> = []
+    if (incluirConsumos) {
+      bodyL.push(['Pipas de agua',      `${entrada.pipas.toFixed(0)}`])
+      bodyL.push(['Bentonita (sacos)',  `${entrada.bentonitaSacos.toFixed(0)}`])
+    }
+    if (entrada.formacionGeologica) {
+      bodyL.push(['Formación geológica', entrada.formacionGeologica])
+    }
+    if (bodyL.length > 0) {
+      autoTable(doc, {
+        startY: y,
+        margin: { left: mg, right: mg },
+        head: [['Actividad', 'Cantidad']],
+        body: bodyL,
+        styles: { fontSize: 9, cellPadding: 3 },
+        headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: hex(GRAY50) },
+      })
+    }
   }
 
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
 
   // ── Barra de progreso (solo perforación) ──────────────────────────────────
-  if (esPerf && entrada.perforacionTotal > 0) {
-    // Estimamos el total del proyecto desde la cotización — usamos el total acumulado como referencia
-    // Si no hay objetivo conocido, mostramos solo los pies actuales
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
-    doc.text('Avance de perforación', mg, y + 5)
-    const label = `${entrada.perforacionTotal.toFixed(1)} pies acumulados`
-    drawProgressBar(doc, mg, y + 8, W - mg*2 - 40, 6, 1, label)
-    y += 20
+  if (esPerf) {
+    const profundidad = proyecto.profundidadTotal ?? 0
+    const diasTot    = proyecto.diasHabilesTotal ?? 0
+    const piesRest   = profundidad > 0 ? Math.max(0, profundidad - entrada.perforacionTotal) : 0
+
+    // Fila de métricas: pies restantes + día del proyecto
+    if (profundidad > 0 || diasTot > 0) {
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
+      doc.text('Avance del proyecto', mg, y + 5)
+
+      // Barra de progreso basada en profundidad total del proyecto
+      const pct = profundidad > 0 ? Math.min(1, entrada.perforacionTotal / profundidad) : 0
+      const label = profundidad > 0
+        ? `${entrada.perforacionTotal.toFixed(0)} / ${profundidad} pies (${(pct * 100).toFixed(0)}%) · faltan ${piesRest.toFixed(0)} pies`
+        : `${entrada.perforacionTotal.toFixed(0)} pies`
+      drawProgressBar(doc, mg, y + 8, W - mg*2, 6, pct, label)
+      y += 20
+
+      // Día X de Y — contar los días distintos registrados en bitácora que ≤ esta fecha
+      const fechasAntes = new Set(proyecto.entradas.filter(e => e.fecha <= entrada.fecha).map(e => e.fecha))
+      const diaActual = fechasAntes.size
+      if (diasTot > 0) {
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...hex(GRAY700))
+        doc.text(`Día ${diaActual} de ${diasTot} días hábiles`, mg, y + 3)
+        y += 10
+      }
+    } else if (entrada.perforacionTotal > 0) {
+      // Fallback sin datos de cotización
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
+      doc.text('Avance de perforación', mg, y + 5)
+      drawProgressBar(doc, mg, y + 8, W - mg*2 - 40, 6, 1, `${entrada.perforacionTotal.toFixed(1)} pies acumulados`)
+      y += 20
+    }
   }
 
   // ── Estado del día ────────────────────────────────────────────────────────
@@ -292,7 +348,11 @@ export async function generarPDFEntrada(
 // ══════════════════════════════════════════════════════════════════════════════
 // PDF EXPEDIENTE COMPLETO
 // ══════════════════════════════════════════════════════════════════════════════
-export async function generarPDFExpediente(proyecto: ProyectoBitacora): Promise<ArrayBuffer> {
+export async function generarPDFExpediente(
+  proyecto: ProyectoBitacora,
+  opts: { incluirConsumos?: boolean } = {},
+): Promise<ArrayBuffer> {
+  const incluirConsumos = opts.incluirConsumos ?? true
   const logo = await logoBase64()
   const doc  = new jsPDF({ format: 'letter', unit: 'mm', orientation: 'portrait' })
   const W    = doc.internal.pageSize.getWidth()
@@ -367,17 +427,13 @@ export async function generarPDFExpediente(proyecto: ProyectoBitacora): Promise<
     margin: { left: mg, right: mg },
     head: [['Indicador', 'Valor']],
     body: [
-      ['Pies perforados (acumulado)', `${perfAcum.toFixed(1)}`],
-      ['Pies perforados (suma diaria)', `${totalPerfDia.toFixed(1)}`],
+      ['Pies perforados (acumulado)', `${perfAcum.toFixed(1)}${proyecto.profundidadTotal ? ` / ${proyecto.profundidadTotal} (${Math.min(100, (perfAcum/proyecto.profundidadTotal)*100).toFixed(0)}%)` : ''}`],
       ['Promedio pies/día', `${promPerf.toFixed(1)}`],
-      ['Ampliación 1', `${totalAmp1.toFixed(1)} pies`],
-      ['Ampliación 2', `${totalAmp2.toFixed(1)} pies`],
-      ['Rehabilitación', `${totalRehab.toFixed(1)} pies`],
-      ['Bentonita total', `${totalBentonita.toFixed(0)} sacos`],
-      ['Pipas de agua total', `${totalPipas.toFixed(0)}`],
-      ['Horas de limpieza', `${totalHorasLimp.toFixed(1)}`],
-      ['Horas de aforo', `${totalHorasAforo.toFixed(1)}`],
-      ['Días totales', `${entradas.length}`],
+      ...(incluirConsumos ? [
+        ['Bentonita total', `${totalBentonita.toFixed(0)} sacos${proyecto.bentonitaPlan ? ` / ${proyecto.bentonitaPlan} (${Math.min(100, (totalBentonita/proyecto.bentonitaPlan)*100).toFixed(0)}%)` : ''}`],
+        ['Pipas de agua total', `${totalPipas.toFixed(0)}${proyecto.pipasPlan ? ` / ${proyecto.pipasPlan} (${Math.min(100, (totalPipas/proyecto.pipasPlan)*100).toFixed(0)}%)` : ''}`],
+      ] : []),
+      ['Días totales', `${entradas.length}${proyecto.diasHabilesTotal ? ` de ${proyecto.diasHabilesTotal} días hábiles` : ''}`],
       ['Días activos (con perforación)', `${diasPerf}`],
       ['Días adversos', `${diasAdversos}`],
     ],
@@ -398,24 +454,27 @@ export async function generarPDFExpediente(proyecto: ProyectoBitacora): Promise<
   y2 += 10
 
   if (esPerf) {
+    const headPerf = incluirConsumos
+      ? ['Fecha','Turno','Perf.\ndía','Acum.','Amp1','Amp2','Rehab','H.Perf','Bentonita','Pipas','Adv.','Nota cliente']
+      : ['Fecha','Turno','Perf.\ndía','Acum.','Amp1','Amp2','Rehab','H.Perf','Adv.','Nota cliente']
     autoTable(doc, {
       startY: y2,
       margin: { left: mg, right: mg },
-      head: [['Fecha','Turno','Perf.\ndía','Acum.','Amp1','Amp2','Rehab','H.Perf','Bentonita','Pipas','Adv.','Nota cliente']],
-      body: entradas.map(e => [
-        e.fecha,
-        e.turno === 'dia' ? 'D' : 'N',
-        e.perforacionDia.toFixed(1),
-        e.perforacionTotal.toFixed(1),
-        e.ampliacion1Dia.toFixed(1),
-        e.ampliacion2Dia.toFixed(1),
-        e.rehabilitacionDia.toFixed(1),
-        e.horasPerforacion.toFixed(1),
-        `${e.bentonitaSacos.toFixed(0)} s.`,
-        String(e.pipas),
-        e.diaAdverso ? '⚠' : '',
-        e.notaCliente || '',
-      ]),
+      head: [headPerf],
+      body: entradas.map(e => {
+        const base = [
+          e.fecha,
+          e.turno === 'dia' ? 'D' : 'N',
+          e.perforacionDia.toFixed(1),
+          e.perforacionTotal.toFixed(1),
+          e.ampliacion1Dia.toFixed(1),
+          e.ampliacion2Dia.toFixed(1),
+          e.rehabilitacionDia.toFixed(1),
+          e.horasPerforacion.toFixed(1),
+        ]
+        const consumos = incluirConsumos ? [`${e.bentonitaSacos.toFixed(0)} s.`, String(e.pipas)] : []
+        return [...base, ...consumos, e.diaAdverso ? '⚠' : '', e.notaCliente || '']
+      }),
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', fontSize: 7 },
       alternateRowStyles: { fillColor: hex(GRAY50) },

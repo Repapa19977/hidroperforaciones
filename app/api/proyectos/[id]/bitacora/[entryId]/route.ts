@@ -31,6 +31,8 @@ export async function PATCH(
       ...(body.diaAdverso !== undefined ? { diaAdverso: body.diaAdverso } : {}),
       ...(body.notaInterna !== undefined ? { notaInterna: body.notaInterna } : {}),
       ...(body.notaCliente !== undefined ? { notaCliente: body.notaCliente } : {}),
+      ...(body.formacionGeologica !== undefined ? { formacionGeologica: body.formacionGeologica } : {}),
+      ...(body.circulacionPct !== undefined ? { circulacionPct: body.circulacionPct } : {}),
     },
   })
 

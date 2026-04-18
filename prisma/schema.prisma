@@ -14,7 +14,7 @@ model Cotizacion {
   cliente     String
   empresa     String   @default("")
   proyecto    String
-  tipo        String   // "perforacion" | "limpieza"
+  tipo        String // "perforacion" | "limpieza"
   estado      String   @default("borrador")
   monto       Float
   fecha       String
@@ -22,17 +22,22 @@ model Cotizacion {
   datos       String   @default("{}") // JSON: QuotationData completo (para re-abrir/imprimir)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([estado])
+  @@index([vendedor])
+  @@index([tipo])
+  @@index([vendedor, estado])
 }
 
 // ── Historial de cambios en cotizaciones ─────────────────────────────────────
 model CotizacionHistorial {
-  id          String   @id @default(cuid())
-  correlativo String   // FK lógica a Cotizacion.correlativo
-  campo       String   // campo que cambió: "estado", "monto", "datos", etc.
-  valorAntes  String   @default("")
-  valorDespues String  @default("")
-  usuario     String   @default("") // nombre del usuario que hizo el cambio
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  correlativo  String // FK lógica a Cotizacion.correlativo
+  campo        String // campo que cambió: "estado", "monto", "datos", etc.
+  valorAntes   String   @default("")
+  valorDespues String   @default("")
+  usuario      String   @default("") // nombre del usuario que hizo el cambio
+  createdAt    DateTime @default(now())
 
   @@index([correlativo])
   @@index([correlativo, createdAt])
@@ -40,29 +45,33 @@ model CotizacionHistorial {
 
 // ── Oportunidades del CRM ─────────────────────────────────────────────────────
 model Oportunidad {
-  id               String  @id @default(cuid())
-  correlativo      String  @unique
+  id               String   @id @default(cuid())
+  correlativo      String   @unique
   cliente          String
-  empresa          String  @default("")
+  empresa          String   @default("")
   monto            Float
-  etapa            String  // "new" | "qualified" | "proposition" | "negotiation" | "won" | "lost"
+  etapa            String // "new" | "qualified" | "proposition" | "negotiation" | "won" | "lost"
   vendedor         String
-  avatar           String  @default("")
+  avatar           String   @default("")
   fecha            String
-  tipo             String  // "Perforación" | "Limpieza Mecánica"
+  tipo             String // "Perforación" | "Limpieza Mecánica"
   profundidad      Int?
-  proyecto         String  @default("")
-  diasSinActividad Int     @default(0)
+  proyecto         String   @default("")
+  diasSinActividad Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([etapa])
+  @@index([vendedor])
+  @@index([vendedor, etapa])
 }
 
 // ── Usuarios del sistema ──────────────────────────────────────────────────────
 model Usuario {
   id           String   @id @default(cuid())
   username     String   @unique
-  nombre       String   // nombre del vendedor (aparece en cotizaciones y CRM)
-  rol          String   @default("admin")   // "admin" | "superadmin"
+  nombre       String // nombre del vendedor (aparece en cotizaciones y CRM)
+  rol          String   @default("admin") // "admin" | "superadmin"
   passwordHash String
   activo       Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -71,17 +80,22 @@ model Usuario {
 
 // ── Contactos ─────────────────────────────────────────────────────────────────
 model Contacto {
-  id        String   @id @default(cuid())
-  nombre    String
-  empresa   String   @default("")
-  telefono  String   @default("")
-  email     String   @default("")
-  tipo      String   @default("cliente")  // "cliente" | "prospecto" | "proveedor"
-  pais      String   @default("Guatemala")
-  notas     String   @default("")
-  vendedor  String   // admin que creó el contacto
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  nombre       String
+  empresa      String   @default("")
+  telefono     String   @default("")
+  email        String   @default("")
+  tipo         String   @default("cliente") // "cliente" | "prospecto" | "proveedor"
+  pais         String   @default("Guatemala")
+  departamento String   @default("")
+  municipio    String   @default("")
+  notas        String   @default("")
+  vendedor     String // admin que creó el contacto
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([vendedor])
+  @@index([tipo])
 }
 
 // ── Configuración del sistema (singleton) ────────────────────────────────────
@@ -107,6 +121,11 @@ model Proyecto {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   entradas     BitacoraEntry[]
+
+  @@index([estado])
+  @@index([vendedor])
+  @@index([tipo])
+  @@index([vendedor, estado])
 }
 
 // ── Entradas diarias de la bitácora ──────────────────────────────────────────
@@ -114,7 +133,7 @@ model BitacoraEntry {
   id                  String   @id @default(cuid())
   proyectoId          String
   proyecto            Proyecto @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
-  fecha               String   // "YYYY-MM-DD"
+  fecha               String // "YYYY-MM-DD"
   turno               String   @default("dia") // "dia" | "noche"
   estado              String   @default("")
   tipo                String
@@ -134,9 +153,104 @@ model BitacoraEntry {
   diaAdverso          Boolean  @default(false)
   notaInterna         String   @default("")
   notaCliente         String   @default("")
+  // Campos nuevos del Excel DATOS BITACORA DIARIA
+  diaActivo           Boolean  @default(true) // true = día activo (hubo trabajo), false = inactivo
+  tubosExtraidos      Float    @default(0) // cantidad de tubos extraídos en la jornada
+  diamExtraidos       String   @default("") // diámetros de tubos extraídos (ej: "8,10")
+  tubosInstalados     Float    @default(0) // cantidad de tubos instalados
+  diamInstalados      String   @default("") // diámetros instalados
+  quimicoProducto     String   @default("") // nombre del químico usado
+  quimicoCanecas      Float    @default(0) // canecas consumidas
+  camareo             String   @default("") // texto libre camareo
+  otrosTrabajos       String   @default("") // texto libre otros trabajos
+  // Campos nuevos — formación y circulación
+  formacionGeologica  String   @default("") // descripción libre (ej: "arcilla reactiva 30-45 m")
+  circulacionPct      Int      @default(0)  // 0-100 en pasos de 10
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   @@index([proyectoId])
   @@index([proyectoId, fecha])
+}
+
+// ── INVENTARIO PARALELO ───────────────────────────────────────────────────────
+// Producto físico que Rodrigo mantiene en reserva/stock. Fuente inicial: 30% de
+// bentonita que no se entrega al cliente en cada proyecto (Fase A). Futuro:
+// también pipas, grava, etc.
+// El ciclo de vida:
+//   1) Cotización confirmada → se crea InventarioReserva (estado: reservado)
+//   2) Proyecto cerrado (bitácora 100%) → InventarioReserva pasa a estado 'disponible'
+//   3) Venta externa / ajuste manual → genera MovimientoInventario
+model InventarioReserva {
+  id                  String   @id @default(cuid())
+  proyectoId          String? // FK lógica a Proyecto (null si es reserva histórica sin proyecto)
+  proyectoCorrelativo String   @default("") // correlativo para búsqueda rápida
+  producto            String // "bentonita" | "pipas" | "grava" | etc.
+  cantidadOriginal    Float    @default(0) // cantidad al crear la reserva
+  cantidadActual      Float    @default(0) // cantidad disponible después de ventas/ajustes
+  unidad              String   @default("unidad") // saco, m³, pipa, etc.
+  costoUnitario       Float    @default(0) // costo al que se compró
+  precioVentaSugerido Float    @default(0) // precio al que se podría revender
+  estado              String   @default("reservado") // "reservado" | "disponible" | "agotado"
+  fechaCreacion       String   @default("") // cuando se creó la reserva (cotización confirmada)
+  fechaLiberacion     String   @default("") // cuando pasó a disponible (cierre proyecto)
+  nota                String   @default("")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([proyectoId])
+  @@index([producto])
+  @@index([estado])
+}
+
+// Movimientos sobre el inventario: ventas externas, ajustes manuales, compras.
+// Cada movimiento actualiza la cantidadActual de una InventarioReserva asociada.
+model MovimientoInventario {
+  id         String   @id @default(cuid())
+  reservaId  String // FK lógica a InventarioReserva.id
+  tipo       String // "venta_externa" | "ajuste" | "compra" | "liberacion_proyecto"
+  cantidad   Float    @default(0) // positiva = entra, negativa = sale
+  precioUnit Float    @default(0) // precio por unidad del movimiento
+  monto      Float    @default(0) // cantidad × precioUnit (ganancia/pérdida/ajuste)
+  cliente    String   @default("") // cliente externo si es venta_externa
+  nota       String   @default("")
+  usuario    String   @default("") // quién registró el movimiento
+  createdAt  DateTime @default(now())
+
+  @@index([reservaId])
+  @@index([tipo])
+  @@index([createdAt])
+}
+
+// ── Gasto extra del proyecto (Control de Gastos — tabla contable) ──────────
+// Registro tipo libro de compras. Cada fila es un producto/servicio comprado
+// para la ejecución del proyecto, con fecha de compra, días de crédito, y
+// fecha calculada de vencimiento del pago. Se usa para alertas.
+model GastoExtra {
+  id              String   @id @default(cuid())
+  proyectoId      String
+  fecha           String             // YYYY-MM-DD — fecha de compra
+  producto        String             // nombre del producto/servicio (ej "Bolsa bentonita 50kg")
+  descripcion     String   @default("") // detalle más largo si se requiere
+  rubro           String   @default("otro") // "combustible" | "mano-obra" | "material" | "otro"
+  costoUnitario   Float    @default(0) // costo que nos cobra el proveedor (Q por unidad)
+  valorUnitario   Float    @default(0) // valor de venta al cliente (referencia)
+  cantidad        Float    @default(1)
+  unidad          String   @default("Unidad")
+  monto           Float              // cantidad × costoUnitario
+  diasCredito     Int      @default(0) // 0 = contado, >0 = días para vencer
+  fechaVencimiento String  @default("") // YYYY-MM-DD — fecha + diasCredito
+  pagado          Boolean  @default(false) // si ya se canceló al proveedor
+  proveedor       String   @default("") // nombre del proveedor (opcional)
+  nota            String   @default("")
+  creadoPor       String   @default("")
+  createdAt       DateTime @default(now())
+
+  // Legacy — mantener para no romper filas existentes
+  concepto        String   @default("") // alias histórico de producto
+  montoUnit       Float    @default(0)  // alias histórico de costoUnitario
+
+  @@index([proyectoId])
+  @@index([fecha])
+  @@index([fechaVencimiento])
 }

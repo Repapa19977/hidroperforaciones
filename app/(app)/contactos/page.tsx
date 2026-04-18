@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Search, Plus, Building2, Phone, Mail, MapPin, Loader2,
-  X, Save, Trash2, ShieldCheck
+  X, Save, Trash2, ShieldCheck, Edit3, ChevronRight
 } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { type Rol } from '@/lib/config-store'
 import { VENDEDORES } from '@/lib/quotation-store'
+import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
@@ -22,6 +24,8 @@ interface Contacto {
   email: string
   tipo: string
   pais: string
+  departamento: string
+  municipio: string
   notas: string
   vendedor: string
 }
@@ -41,7 +45,8 @@ const AVATAR_COLORS: Record<string, string> = {
 
 const EMPTY: Omit<Contacto, 'id'> = {
   nombre: '', empresa: '', telefono: '', email: '',
-  tipo: 'cliente', pais: 'Guatemala', notas: '', vendedor: '',
+  tipo: 'cliente', pais: 'Guatemala', departamento: '', municipio: '',
+  notas: '', vendedor: '',
 }
 
 export default function ContactosPage() {
@@ -56,6 +61,7 @@ export default function ContactosPage() {
   const [editing, setEditing]         = useState<Contacto | null>(null)
   const [form, setForm]               = useState(EMPTY)
   const [saving, setSaving]           = useState(false)
+  const [vendedoresDB, setVendedoresDB] = useState<string[]>([])  // nombres reales desde /api/vendedores
 
   const fetchContacts = useCallback(async (v: string, r: Rol) => {
     const url = r === 'superadmin'
@@ -72,11 +78,31 @@ export default function ContactosPage() {
     setRole(r)
     setMyVendedor(v)
     fetchContacts(v, r)
+    // Cargar vendedores dinámicos desde la DB (cae a VENDEDORES constante si falla)
+    fetch('/api/vendedores')
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: { nombre: string }[]) => {
+        const nombres = rows.map(x => x.nombre).filter(Boolean)
+        setVendedoresDB(nombres.length > 0 ? nombres : VENDEDORES)
+      })
+      .catch(() => setVendedoresDB(VENDEDORES))
   }, [fetchContacts])
+
+  // Si viene ?edit=<id> desde el perfil, abrir el modal con ese contacto
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const editId = params.get('edit')
+    if (editId && contacts.length > 0) {
+      const c = contacts.find(x => x.id === editId)
+      if (c) openEdit(c)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts.length])
 
   const isSuperAdmin = role === 'superadmin'
 
-  const vendedores = ['Todos', ...VENDEDORES]
+  const vendedores = ['Todos', ...vendedoresDB]
 
   const filtered = contacts.filter(c => {
     const q = search.toLowerCase()
@@ -88,14 +114,15 @@ export default function ContactosPage() {
 
   function openNew() {
     setEditing(null)
-    setForm({ ...EMPTY, vendedor: isSuperAdmin ? VENDEDORES[0] : myVendedor })
+    setForm({ ...EMPTY, vendedor: isSuperAdmin ? (vendedoresDB[0] ?? VENDEDORES[0]) : myVendedor })
     setShowForm(true)
   }
 
   function openEdit(c: Contacto) {
     setEditing(c)
     setForm({ nombre: c.nombre, empresa: c.empresa, telefono: c.telefono, email: c.email,
-              tipo: c.tipo, pais: c.pais, notas: c.notas, vendedor: c.vendedor })
+              tipo: c.tipo, pais: c.pais, departamento: c.departamento ?? '', municipio: c.municipio ?? '',
+              notas: c.notas, vendedor: c.vendedor })
     setShowForm(true)
   }
 
@@ -213,9 +240,8 @@ export default function ContactosPage() {
             const canEdit = isSuperAdmin || c.vendedor === myVendedor
 
             return (
-              <div key={c.id}
-                className="bg-[#0d1526] rounded-xl border border-white/5 p-4 hover:border-white/10 transition-colors group cursor-pointer"
-                onClick={() => canEdit && openEdit(c)}
+              <Link key={c.id} href={`/contactos/${c.id}`}
+                className="bg-[#0d1526] rounded-xl border border-white/5 p-4 hover:border-blue-500/30 transition-colors group block"
               >
                 <div className="flex items-start gap-3">
                   <div className={cn('w-10 h-10 rounded-full bg-gradient-to-br flex items-center justify-center text-sm font-bold text-white shrink-0', avatarGrad)}>
@@ -230,12 +256,23 @@ export default function ContactosPage() {
                         </span>
                         {canEdit && (
                           <button
-                            onClick={e => { e.stopPropagation(); handleDelete(c.id) }}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); openEdit(c) }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-blue-400"
+                            title="Editar datos"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {isSuperAdmin && (
+                          <button
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); handleDelete(c.id) }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-red-400"
+                            title="Eliminar (solo superadmin)"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-blue-400" />
                       </div>
                     </div>
                     {c.empresa && (
@@ -257,6 +294,16 @@ export default function ContactosPage() {
                           <span className="font-medium">{c.telefono}</span>
                         </div>
                       )}
+                      {(c.departamento || c.municipio) && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <MapPin className="w-3 h-3 text-slate-600" />
+                          <span className="truncate">
+                            {c.municipio && <span className="text-slate-400">{c.municipio}</span>}
+                            {c.municipio && c.departamento && <span className="text-slate-600">, </span>}
+                            {c.departamento}
+                          </span>
+                        </div>
+                      )}
                       {c.pais && c.pais !== 'Guatemala' && (
                         <div className="flex items-center gap-1.5 text-xs text-slate-600">
                           <MapPin className="w-3 h-3" />
@@ -272,7 +319,7 @@ export default function ContactosPage() {
                     )}
                   </div>
                 </div>
-              </div>
+              </Link>
             )
           })}
         </div>
@@ -304,19 +351,71 @@ export default function ContactosPage() {
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block">Tipo</label>
                   <select value={form.tipo} onChange={e => p('tipo', e.target.value)}
+                    style={{ colorScheme: 'dark' }}
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors">
-                    <option value="cliente">Cliente</option>
-                    <option value="prospecto">Prospecto</option>
-                    <option value="proveedor">Proveedor</option>
+                    <option value="cliente" className="bg-[#0d1526] text-white">Cliente</option>
+                    <option value="prospecto" className="bg-[#0d1526] text-white">Prospecto</option>
+                    <option value="proveedor" className="bg-[#0d1526] text-white">Proveedor</option>
                   </select>
                 </div>
                 <FormInput label="País" value={form.pais} onChange={v => p('pais', v)} placeholder="Guatemala" />
+
+                {/* Ubicación GT — cascading: Departamento → Municipio */}
+                {form.pais === 'Guatemala' && (
+                  <>
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> Departamento
+                      </label>
+                      <select
+                        value={form.departamento}
+                        onChange={e => {
+                          // Al cambiar depto, reset municipio (porque no aplica)
+                          setForm(prev => ({ ...prev, departamento: e.target.value, municipio: '' }))
+                        }}
+                        style={{ colorScheme: 'dark' }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
+                      >
+                        <option value="" className="bg-[#0d1526] text-white">— Seleccionar —</option>
+                        {DEPARTAMENTOS_GT.map(d => (
+                          <option key={d} value={d} className="bg-[#0d1526]">{d}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> Municipio
+                        {!form.departamento && (
+                          <span className="text-[10px] text-slate-600 ml-auto">elegí depto primero</span>
+                        )}
+                      </label>
+                      <select
+                        value={form.municipio}
+                        disabled={!form.departamento}
+                        onChange={e => p('municipio', e.target.value)}
+                        style={{ colorScheme: 'dark' }}
+                        className={cn(
+                          'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500/50 transition-colors appearance-none',
+                          form.departamento ? 'text-white cursor-pointer' : 'text-slate-600 cursor-not-allowed'
+                        )}
+                      >
+                        <option value="" className="bg-[#0d1526] text-white">— Seleccionar —</option>
+                        {getMunicipios(form.departamento).map(m => (
+                          <option key={m} value={m} className="bg-[#0d1526]">{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+
                 {isSuperAdmin && (
                   <div>
                     <label className="text-xs text-slate-500 mb-1.5 block">Asignado a</label>
                     <select value={form.vendedor} onChange={e => p('vendedor', e.target.value)}
+                      style={{ colorScheme: 'dark' }}
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors">
-                      {VENDEDORES.map(v => <option key={v} value={v}>{v}</option>)}
+                      {vendedoresDB.map(v => <option key={v} value={v} className="bg-[#0d1526] text-white">{v}</option>)}
                     </select>
                   </div>
                 )}

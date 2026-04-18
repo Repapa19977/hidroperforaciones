@@ -29,6 +29,15 @@ interface BitacoraEntry {
   horasPerforacion: number; bentonitaSacos: number; pipas: number
   horasLimpieza: number; horasAforo: number
   diaAdverso: boolean; notaInterna: string; notaCliente: string
+  // Campos del Excel DATOS BITACORA DIARIA
+  diaActivo?: boolean
+  tubosExtraidos?: number; diamExtraidos?: string
+  tubosInstalados?: number; diamInstalados?: string
+  quimicoProducto?: string; quimicoCanecas?: number
+  camareo?: string; otrosTrabajos?: string
+  // Nuevos: formación y % circulación
+  formacionGeologica?: string
+  circulacionPct?: number
 }
 interface Proyecto {
   id: string; correlativo: string; cliente: string; empresa: string; nombre: string
@@ -36,6 +45,10 @@ interface Proyecto {
   entradas: BitacoraEntry[]
   telefonoCliente?: string
   emailCliente?: string
+  profundidadTotal?: number
+  diasHabilesTotal?: number
+  bentonitaPlan?: number
+  pipasPlan?: number
 }
 
 type FormData = Omit<BitacoraEntry, 'id'>
@@ -52,6 +65,13 @@ function emptyForm(tipo: string, lastEntry?: BitacoraEntry): FormData {
     horasPerforacion: 0, bentonitaSacos: 0, pipas: 0,
     horasLimpieza: 0, horasAforo: 0,
     diaAdverso: false, notaInterna: '', notaCliente: '',
+    // Nuevos campos Excel DATOS BITACORA DIARIA
+    diaActivo: true,
+    tubosExtraidos: 0, diamExtraidos: '',
+    tubosInstalados: 0, diamInstalados: '',
+    quimicoProducto: '', quimicoCanecas: 0,
+    camareo: '', otrosTrabajos: '',
+    formacionGeologica: '', circulacionPct: 0,
   }
 }
 
@@ -105,6 +125,9 @@ export default function ProyectoDetallePage() {
   const [emailLoad, setEmailLoad]     = useState<string | null>(null)
   const [emailSent, setEmailSent]     = useState<string | null>(null)
   const [expandedId, setExpandedId]   = useState<string | null>(null)
+  const [profObjetivo, setProfObjetivo]       = useState<number | null>(null)
+  const [duracionEstimada, setDuracionEstimada] = useState<number | null>(null)
+  const [modalHorasTurno, setModalHorasTurno]   = useState(8)
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -124,16 +147,34 @@ export default function ProyectoDetallePage() {
 
   useEffect(() => { if (id) load() }, [id])
 
+  // Fetch profundidad objetivo desde la cotización asociada
+  useEffect(() => {
+    if (!proyecto?.correlativo) return
+    fetch(`/api/cotizaciones/${encodeURIComponent(proyecto.correlativo)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(cot => {
+        if (!cot) return
+        const datos = typeof cot.datos === 'string' ? JSON.parse(cot.datos) : (cot.datos ?? {})
+        const prof = datos?.ip?.profundidad ?? null
+        if (prof) setProfObjetivo(Number(prof))
+        const dur = datos?.duracion ?? null
+        if (dur) setDuracionEstimada(Number(dur))
+      })
+      .catch(() => {})
+  }, [proyecto?.correlativo])
+
   function openNew() {
     const last = proyecto?.entradas.at(-1)
     setEditEntry(null)
     setForm(emptyForm(proyecto?.tipo ?? 'perforacion', last))
+    setModalHorasTurno(8)
     setShowModal(true)
   }
 
   function openEdit(e: BitacoraEntry) {
     setEditEntry(e)
     setForm({ ...e })
+    setModalHorasTurno(e.turno === 'noche' ? 12 : 8)
     setShowModal(true)
   }
 
@@ -186,21 +227,41 @@ export default function ProyectoDetallePage() {
     load()
   }
 
+  // Modal selector de plantilla PDF (4 opciones)
+  const [plantillaModal, setPlantillaModal] = useState<{ entry: BitacoraEntry | null } | null>(null)
+
   async function pdfEntrada(e: BitacoraEntry) {
-    if (!proyecto) return
-    setPdfLoad(e.id)
-    try {
-      const b = await generarPDFEntrada(proyecto as ProyectoBitacora, e)
-      descargarPDF(b, `Bitacora_${proyecto.correlativo}_${e.fecha}.pdf`)
-    } finally { setPdfLoad(null) }
+    // Abre el selector de plantilla — el usuario elige qué enviar al cliente
+    setPlantillaModal({ entry: e })
   }
 
   async function pdfExpediente() {
-    if (!proyecto) return
-    setPdfLoad('exp')
+    setPlantillaModal({ entry: null })
+  }
+
+  async function generarConPlantilla(plantilla: 'dia-sin' | 'dia-con' | 'exp-con' | 'exp-sin') {
+    if (!proyecto || !plantillaModal) return
+    // Si plantilla "día" y no hay entry específica, usar la más reciente
+    const sorted = [...(proyecto.entradas ?? [])].sort((a, b) => b.fecha.localeCompare(a.fecha))
+    const entry = plantillaModal.entry ?? sorted[0] ?? null
+    setPdfLoad(entry ? entry.id : 'exp')
+    setPlantillaModal(null)
     try {
-      const b = await generarPDFExpediente(proyecto as ProyectoBitacora)
-      descargarPDF(b, `Expediente_${proyecto.correlativo}.pdf`)
+      if (plantilla === 'dia-sin' || plantilla === 'dia-con') {
+        if (!entry) {
+          alert('No hay entradas de bitácora todavía. Agregá al menos una.')
+          return
+        }
+        const b = await generarPDFEntrada(proyecto as ProyectoBitacora, entry, {
+          incluirConsumos: plantilla === 'dia-con',
+        })
+        descargarPDF(b, `Bitacora_${proyecto.correlativo}_${entry.fecha}.pdf`)
+      } else {
+        const b = await generarPDFExpediente(proyecto as ProyectoBitacora, {
+          incluirConsumos: plantilla === 'exp-con',
+        })
+        descargarPDF(b, `Expediente_${proyecto.correlativo}.pdf`)
+      }
     } finally { setPdfLoad(null) }
   }
 
@@ -283,10 +344,14 @@ export default function ProyectoDetallePage() {
   const diasAmp1       = sorted.filter(e => e.ampliacion1Dia > 0).length
   const turnosDiurnos  = sorted.filter(e => e.turno === 'dia').length
   const turnosNocturnos= sorted.filter(e => e.turno === 'noche').length
-  const diasProyecto   = proyecto
-    ? differenceInDays(new Date(), parseISO(proyecto.fechaInicio)) + 1
-    : 0
-  const diasInactivos  = diasProyecto - sorted.length
+  const diasProyecto   = (() => {
+    if (!proyecto?.fechaInicio) return 0
+    try {
+      const d = differenceInDays(new Date(), parseISO(proyecto.fechaInicio)) + 1
+      return Number.isFinite(d) && d >= 0 ? d : 0
+    } catch { return 0 }
+  })()
+  const diasInactivos  = Math.max(0, diasProyecto - sorted.length)
   const promPerf       = diasPerf > 0 ? totalPerfDia / diasPerf : 0
   const perfAcum       = last?.perforacionTotal ?? 0
   const hayHoy         = sorted.some(e => e.fecha === today)
@@ -380,6 +445,142 @@ export default function ProyectoDetallePage() {
 
       <div className="p-4 sm:p-6 space-y-5">
 
+        {/* ── RESUMEN RÁPIDO ──────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="bg-[#0d1526] rounded-xl border border-blue-500/20 p-4">
+            <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Pies perforados</p>
+            <p className="text-2xl font-bold text-blue-300 leading-none">{perfAcum.toFixed(1)}</p>
+            <p className="text-[10px] text-slate-600 mt-1">pies lineales acumulados</p>
+          </div>
+          <div className="bg-[#0d1526] rounded-xl border border-white/5 p-4">
+            <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">% Completado</p>
+            {profObjetivo ? (
+              <>
+                <p className="text-2xl font-bold text-emerald-300 leading-none">
+                  {Math.min(100, (perfAcum / profObjetivo) * 100).toFixed(1)}%
+                </p>
+                <div className="mt-2 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (perfAcum / profObjetivo) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">{perfAcum.toFixed(0)} / {profObjetivo} pies obj.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-slate-500 leading-none">—</p>
+                <p className="text-[10px] text-slate-700 mt-1">sin profundidad objetivo</p>
+              </>
+            )}
+          </div>
+          <div className="bg-[#0d1526] rounded-xl border border-white/5 p-4">
+            <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Días en obra</p>
+            <p className="text-2xl font-bold text-white leading-none">{diasProyecto}</p>
+            <p className="text-[10px] text-slate-600 mt-1">{sorted.length} días con entrada</p>
+          </div>
+          {/* Bentonita con plan + % */}
+          <div className="bg-[#0d1526] rounded-xl border border-amber-500/20 p-4">
+            <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Bentonita</p>
+            {proyecto.bentonitaPlan ? (() => {
+              const pct = Math.min(100, (totalBentonita / proyecto.bentonitaPlan) * 100)
+              const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
+              return <>
+                <p className="text-2xl font-bold text-amber-300 leading-none tabular-nums">
+                  {totalBentonita}<span className="text-sm text-slate-500"> / {proyecto.bentonitaPlan}</span>
+                </p>
+                <div className="mt-2 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className={cn('h-full transition-all', color)} style={{ width: `${pct}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">sacos · llevamos <b className="text-amber-400">{pct.toFixed(0)}%</b></p>
+              </>
+            })() : (
+              <>
+                <p className="text-2xl font-bold text-white leading-none">{totalBentonita}</p>
+                <p className="text-[10px] text-slate-600 mt-1">sacos consumidos</p>
+              </>
+            )}
+          </div>
+          {/* Pipas con plan estimado + % */}
+          <div className="bg-[#0d1526] rounded-xl border border-cyan-500/20 p-4">
+            <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Pipas de agua</p>
+            {proyecto.pipasPlan ? (() => {
+              const pct = Math.min(100, (totalPipas / proyecto.pipasPlan) * 100)
+              const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
+              return <>
+                <p className="text-2xl font-bold text-cyan-300 leading-none tabular-nums">
+                  {totalPipas}<span className="text-sm text-slate-500"> / {proyecto.pipasPlan}</span>
+                </p>
+                <div className="mt-2 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className={cn('h-full transition-all', color)} style={{ width: `${pct}%` }} />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">pipas · llevamos <b className="text-cyan-400">{pct.toFixed(0)}%</b></p>
+              </>
+            })() : (
+              <>
+                <p className="text-2xl font-bold text-white leading-none">{totalPipas}</p>
+                <p className="text-[10px] text-slate-600 mt-1">pipas consumidas</p>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── ALERTA DÍAS EXCEDIDOS ───────────────────────────────────────── */}
+        {proyecto.estado === 'activo' && duracionEstimada && diasProyecto > duracionEstimada && (
+          <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/25 rounded-xl px-4 py-3">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-300">Proyecto fuera de plazo</p>
+              <p className="text-xs text-red-400/80 mt-0.5">
+                Se cotizó en <b>{duracionEstimada} días</b> — llevan <b>{diasProyecto} días</b> en campo
+                {' '}(<b>+{diasProyecto - duracionEstimada} días</b> sobre el plazo).
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── RESUMEN DE CIERRE ────────────────────────────────────────────── */}
+        {proyecto.estado === 'completado' && (
+          <div className="bg-emerald-500/8 border border-emerald-500/20 rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+              <p className="text-sm font-semibold text-emerald-300">Proyecto completado — Resumen final</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-[#0a1a14] rounded-lg border border-emerald-500/15 p-3">
+                <p className="text-[10px] text-slate-500 mb-1">Pies perforados</p>
+                <p className="text-lg font-bold text-white">{perfAcum.toFixed(1)}</p>
+                {profObjetivo && (
+                  <p className={cn('text-[10px] mt-0.5', perfAcum >= profObjetivo ? 'text-emerald-400' : 'text-amber-400')}>
+                    {perfAcum >= profObjetivo ? '✓' : '↓'} objetivo: {profObjetivo} pies
+                  </p>
+                )}
+              </div>
+              <div className="bg-[#0a1a14] rounded-lg border border-emerald-500/15 p-3">
+                <p className="text-[10px] text-slate-500 mb-1">Días en obra</p>
+                <p className="text-lg font-bold text-white">{diasProyecto}</p>
+                {duracionEstimada && (
+                  <p className={cn('text-[10px] mt-0.5', diasProyecto <= duracionEstimada ? 'text-emerald-400' : 'text-red-400')}>
+                    {diasProyecto <= duracionEstimada ? `✓ ${duracionEstimada - diasProyecto}d antes` : `+${diasProyecto - duracionEstimada}d sobre plazo`}
+                  </p>
+                )}
+              </div>
+              <div className="bg-[#0a1a14] rounded-lg border border-emerald-500/15 p-3">
+                <p className="text-[10px] text-slate-500 mb-1">Días adversos</p>
+                <p className="text-lg font-bold text-amber-300">{diasAdversos}</p>
+                <p className="text-[10px] text-slate-600 mt-0.5">de {sorted.length} días registrados</p>
+              </div>
+              <div className="bg-[#0a1a14] rounded-lg border border-emerald-500/15 p-3">
+                <p className="text-[10px] text-slate-500 mb-1">Bentonita total</p>
+                <p className="text-lg font-bold text-white">{totalBentonita}</p>
+                <p className="text-[10px] text-slate-600 mt-0.5">sacos · {totalPipas} pipas</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── TOTALES ─────────────────────────────────────────────────────── */}
         <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -387,18 +588,10 @@ export default function ProyectoDetallePage() {
           </p>
 
           <div className="space-y-4">
-            {/* Pies */}
+            {/* Pies + promedio — solo el real que trackean */}
             <div className="flex flex-wrap gap-2">
-              <StatChip label="Perforado" value={`${perfAcum.toFixed(1)} pies`} accent />
-              <StatChip label="Ampliación 1" value={`${totalAmp1.toFixed(1)} pies`} />
-              <StatChip label="Ampliación 2" value={`${totalAmp2.toFixed(1)} pies`} />
-              <StatChip label="Rehabilitación" value={`${totalRehab.toFixed(1)} pies`} />
-            </div>
-
-            {/* Promedios */}
-            <div className="flex flex-wrap gap-2">
-              <StatChip label="Promedio perf./día" value={`${promPerf.toFixed(1)} pies`} sub={`${diasPerf} días activos`} />
-              <StatChip label="Promedio amp. 1/día" value={diasAmp1 > 0 ? `${(totalAmp1/diasAmp1).toFixed(1)} pies` : '—'} />
+              <StatChip label="Perforado total" value={`${perfAcum.toFixed(1)} pies`} accent />
+              <StatChip label="Promedio/día" value={`${promPerf.toFixed(1)} pies`} sub={`${diasPerf} día(s) activos`} />
             </div>
 
             {/* Días */}
@@ -411,7 +604,6 @@ export default function ProyectoDetallePage() {
                 ['Días adversos',    diasAdversos],
                 ['Turnos diurnos',   turnosDiurnos],
                 ['Turnos nocturnos', turnosNocturnos],
-                ['Amp. 1 días',      diasAmp1],
               ].map(([l, v]) => (
                 <div key={String(l)} className="flex justify-between py-1 border-b border-white/4">
                   <span className="text-slate-500">{l}</span>
@@ -492,7 +684,14 @@ export default function ProyectoDetallePage() {
                   <tbody className="divide-y divide-white/4">
                     {[...sorted].reverse().map(e => (
                       <>
-                        <tr key={e.id} className={cn('hover:bg-white/2 transition-colors', e.fecha === today && 'bg-blue-500/5')}>
+                        <tr key={e.id} className={cn(
+                          'transition-colors',
+                          e.diaAdverso
+                            ? 'bg-amber-500/5 hover:bg-amber-500/8 border-l-2 border-l-amber-500/40'
+                            : e.fecha === today
+                              ? 'bg-blue-500/5 hover:bg-blue-500/8'
+                              : 'hover:bg-white/2'
+                        )}>
                           <td className="px-4 py-3">
                             <p className="text-slate-200 font-medium">
                               {format(parseISO(e.fecha), "EEEE, dd-MM-yyyy", { locale: es })}
@@ -506,7 +705,13 @@ export default function ProyectoDetallePage() {
                             </span>
                             {e.estado && <p className="text-[10px] text-slate-600 mt-0.5">{e.estado}</p>}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-blue-300">{e.perforacionDia > 0 ? e.perforacionDia.toFixed(1) : '—'}</td>
+                          <td className={cn('px-4 py-3 text-right font-semibold',
+                            e.perforacionDia === 0 ? 'text-slate-600'
+                              : e.perforacionDia < 20 ? 'text-red-400'
+                              : e.perforacionDia === 20 ? 'text-amber-400'
+                              : 'text-emerald-400')}>
+                            {e.perforacionDia > 0 ? e.perforacionDia.toFixed(1) : '—'}
+                          </td>
                           <td className="px-4 py-3 text-right font-bold text-white">{e.perforacionTotal.toFixed(1)}</td>
                           <td className="px-4 py-3 text-right text-slate-400">{e.ampliacion1Dia > 0 ? e.ampliacion1Dia.toFixed(1) : '—'}</td>
                           <td className="px-4 py-3 text-right text-slate-400">{e.horasPerforacion > 0 ? e.horasPerforacion.toFixed(1) : '—'}</td>
@@ -601,7 +806,10 @@ export default function ProyectoDetallePage() {
               {/* Mobile cards */}
               <div className="md:hidden divide-y divide-white/5">
                 {[...sorted].reverse().map(e => (
-                  <div key={e.id} className={cn('px-4 py-4', e.fecha === today && 'bg-blue-500/5')}>
+                  <div key={e.id} className={cn(
+                    'px-4 py-4',
+                    e.diaAdverso ? 'bg-amber-500/5 border-l-2 border-l-amber-500/40' : (e.fecha === today && 'bg-blue-500/5')
+                  )}>
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="text-sm font-semibold text-slate-200">
@@ -633,16 +841,21 @@ export default function ProyectoDetallePage() {
                               ? <CheckCircle className="w-3.5 h-3.5" />
                               : <Mail className="w-3.5 h-3.5" />}
                         </button>
-                        <button onClick={() => openEdit(e)} className="text-slate-600 hover:text-slate-300 transition-colors text-[10px] border border-white/5 px-1.5 py-0.5 rounded">
+                        <button onClick={() => openEdit(e)} className="text-slate-400 hover:text-slate-200 transition-colors text-[10px] border border-white/10 px-1.5 py-0.5 rounded">
                           Editar
                         </button>
-                        <button onClick={() => handleDelete(e.id)} className="text-slate-700 hover:text-red-400 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
+                        <button onClick={() => handleDelete(e.id)} aria-label="Eliminar entrada" className="text-slate-500 hover:text-red-400 active:scale-90 transition-all p-1">
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-                      <span className="text-slate-500">Perf. día: <b className="text-blue-300">{e.perforacionDia > 0 ? `${e.perforacionDia} pies` : '—'}</b></span>
+                      <span className="text-slate-500">Perf. día: <b className={cn(
+                        e.perforacionDia === 0 ? 'text-slate-500'
+                          : e.perforacionDia < 20 ? 'text-red-400'
+                          : e.perforacionDia === 20 ? 'text-amber-400'
+                          : 'text-emerald-400'
+                      )}>{e.perforacionDia > 0 ? `${e.perforacionDia} pies` : '—'}</b></span>
                       <span className="text-slate-500">Acum.: <b className="text-white">{e.perforacionTotal} pies</b></span>
                       {e.bentonitaSacos > 0 && <span className="text-slate-500">Bentonita: <b className="text-slate-300">{e.bentonitaSacos} sac.</b></span>}
                       {e.pipas > 0 && <span className="text-slate-500">Pipas: <b className="text-slate-300">{e.pipas}</b></span>}
@@ -669,133 +882,234 @@ export default function ProyectoDetallePage() {
               </button>
             </div>
 
-            <div className="p-6 space-y-5 overflow-auto max-h-[75vh]">
-              {/* Fecha + turno + tipo */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-[10px] text-slate-400 font-medium block mb-1">Fecha *</label>
-                  <input type="date" value={form.fecha}
-                    onChange={e => patchForm('fecha', e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 font-medium block mb-1">Turno de trabajo</label>
-                  <select value={form.turno} onChange={e => patchForm('turno', e.target.value as 'dia'|'noche')}
-                    style={{ colorScheme: 'dark' }}
-                    className="w-full bg-[#0d1526] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none">
-                    <option value="dia">☀️ Diurno (6am–6pm)</option>
-                    <option value="noche">🌙 Nocturno (6pm–6am)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 font-medium block mb-1">Método / Fluido de perforación</label>
-                  <select value={form.tipo} onChange={e => patchForm('tipo', e.target.value)}
-                    style={{ colorScheme: 'dark' }}
-                    className="w-full bg-[#0d1526] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none">
-                    <option value="lodo">Lodo bentonítico</option>
-                    <option value="aire">Aire comprimido</option>
-                    <option value="perforacion">Rotación directa</option>
-                    <option value="limpieza">Limpieza/Desarrollo</option>
-                  </select>
-                </div>
+            <div className="p-5 space-y-3 overflow-auto max-h-[78vh]">
+              {/* 1 · Fecha */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 mb-1 block">Fecha</label>
+                <input type="date" value={form.fecha}
+                  onChange={e => patchForm('fecha', e.target.value)}
+                  style={{ colorScheme: 'dark' }}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50" />
+                <p className="text-[10px] text-slate-600 mt-0.5">Por defecto se toma la fecha de hoy, editable.</p>
               </div>
 
-              {/* Estado + día adverso */}
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex-1 min-w-[200px]">
-                  <label className="text-[10px] text-slate-400 font-medium block mb-1">Estado/actividad del día</label>
-                  <input value={form.estado} onChange={e => patchForm('estado', e.target.value)}
-                    placeholder="Ej: Perforando, Esperando tubería, Detenidos por lluvia..."
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 placeholder:text-slate-600" />
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-400 pt-5">
-                  <input type="checkbox" checked={form.diaAdverso} onChange={e => patchForm('diaAdverso', e.target.checked)} className="accent-amber-500 w-4 h-4" />
-                  Día adverso (clima, avería u otro)
+              {/* 2 · Día inactivo (toggle) + motivo si aplica */}
+              <div className="bg-white/3 border border-white/5 rounded-xl p-3 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.diaActivo === false}
+                    onChange={e => {
+                      patchForm('diaActivo', !e.target.checked)
+                      if (e.target.checked) patchForm('perforacionDia', 0)
+                    }}
+                    className="w-4 h-4 accent-amber-500" />
+                  <span className="text-sm font-medium text-slate-200">Día inactivo</span>
+                  <span className="text-[10px] text-slate-500">(marcar si NO se trabajó en el pozo)</span>
                 </label>
+                {form.diaActivo === false && (
+                  <input value={form.estado ?? ''} onChange={e => patchForm('estado', e.target.value)}
+                    placeholder="Detalle del día inactivo (lluvia, avería, feriado, falta pago...)"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50" />
+                )}
               </div>
 
-              {/* Perforación */}
-              {esPerf && (
+              {/* Campos de trabajo — solo si día activo */}
+              {form.diaActivo !== false && (
                 <>
+                  {/* 3 · Pies perforados (con semáforo: <20 rojo, =20 amarillo, >20 verde) */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-300 mb-0.5">Avance del día (en pies lineales)</p>
-                    <p className="text-[10px] text-slate-600 mb-3">Ingresa los pies perforados HOY por fase. Los totales se calculan solos.</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <NF label="Perforación principal" hint="Pase inicial del pozo"
-                        value={form.perforacionDia} onChange={v => patchForm('perforacionDia', v)} />
-                      <NF label="Ampliación 1° diámetro" hint="Ensanche a mayor Ø"
-                        value={form.ampliacion1Dia} onChange={v => patchForm('ampliacion1Dia', v)} />
-                      <NF label="Ampliación 2° diámetro" hint="2do ensanche de Ø"
-                        value={form.ampliacion2Dia} onChange={v => patchForm('ampliacion2Dia', v)} />
-                      <NF label="Rehabilitación" hint="Pozo existente"
-                        value={form.rehabilitacionDia} onChange={v => patchForm('rehabilitacionDia', v)} />
+                    {(() => {
+                      const pies = form.perforacionDia
+                      const color = pies === 0 ? { border: 'border-blue-500/40', bg: 'bg-white/10', text: 'text-white', chip: '', label: '' }
+                        : pies < 20 ? { border: 'border-red-500/60', bg: 'bg-red-500/10', text: 'text-red-300', chip: 'bg-red-500/20 text-red-300', label: '🔴 Adverso (< 20 pies)' }
+                        : pies === 20 ? { border: 'border-amber-500/60', bg: 'bg-amber-500/10', text: 'text-amber-200', chip: 'bg-amber-500/20 text-amber-300', label: '🟡 Mínimo exacto (20 pies)' }
+                        : { border: 'border-emerald-500/60', bg: 'bg-emerald-500/10', text: 'text-emerald-200', chip: 'bg-emerald-500/20 text-emerald-300', label: '🟢 Día normal' }
+                      return <>
+                        <label className="text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                          <span>Pies perforados</span>
+                          {color.label && <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-medium', color.chip)}>{color.label}</span>}
+                        </label>
+                        <input type="number" inputMode="decimal" step="0.1" min={0}
+                          value={form.perforacionDia}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value) || 0
+                            patchForm('perforacionDia', v)
+                            if (v > 0 && v < 20) patchForm('diaAdverso', true)
+                            else if (v >= 20) patchForm('diaAdverso', false)
+                          }}
+                          className={cn('w-full rounded-lg px-3 py-2.5 text-lg font-bold tabular-nums outline-none transition-colors border',
+                            color.bg, color.border, color.text)} />
+                      </>
+                    })()}
+                  </div>
+
+                  {/* 4 · Bentonita */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-300 mb-1 block">Bentonita</label>
+                    <div className="relative">
+                      <input type="number" inputMode="decimal" step="1" min={0}
+                        value={form.bentonitaSacos}
+                        onChange={e => patchForm('bentonitaSacos', parseFloat(e.target.value) || 0)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg pl-3 pr-14 py-2 text-sm text-white tabular-nums focus:border-blue-500/50 outline-none" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">sacos</span>
                     </div>
                   </div>
+
+                  {/* 5 · Pipas de agua */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-300 mb-0.5">Totales acumulados (desde inicio del proyecto)</p>
-                    <p className="text-[10px] text-slate-600 mb-3">Se actualizan automáticamente, pero puedes corregirlos si hay un error.</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <NF label="Total perforación" hint="Pies acumulados"
-                        value={form.perforacionTotal} onChange={v => patchForm('perforacionTotal', v)} />
-                      <NF label="Total Ampliación 1°" hint="Pies acumulados"
-                        value={form.ampliacion1Total} onChange={v => patchForm('ampliacion1Total', v)} />
-                      <NF label="Total Ampliación 2°" hint="Pies acumulados"
-                        value={form.ampliacion2Total} onChange={v => patchForm('ampliacion2Total', v)} />
-                      <NF label="Total Rehabilitación" hint="Pies acumulados"
-                        value={form.rehabilitacionTotal} onChange={v => patchForm('rehabilitacionTotal', v)} />
+                    <label className="text-[11px] font-semibold text-slate-300 mb-1 block">Pipas de agua</label>
+                    <div className="relative">
+                      <input type="number" inputMode="decimal" step="1" min={0}
+                        value={form.pipas}
+                        onChange={e => patchForm('pipas', parseFloat(e.target.value) || 0)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg pl-3 pr-14 py-2 text-sm text-white tabular-nums focus:border-blue-500/50 outline-none" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">pipas</span>
                     </div>
+                  </div>
+
+                  {/* 6 · Circulación */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-300 mb-1 block">Circulación</label>
+                    <div className="flex items-center gap-3">
+                      <input type="range" min={0} max={100} step={10}
+                        value={form.circulacionPct ?? 0}
+                        onChange={e => patchForm('circulacionPct', parseInt(e.target.value) || 0)}
+                        className="flex-1 accent-blue-500" />
+                      <span className={cn('text-base font-bold tabular-nums min-w-[60px] text-right',
+                        (form.circulacionPct ?? 0) >= 70 ? 'text-emerald-400'
+                          : (form.circulacionPct ?? 0) >= 40 ? 'text-amber-400'
+                          : (form.circulacionPct ?? 0) > 0 ? 'text-red-400' : 'text-slate-500')}>
+                        {form.circulacionPct ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 7 · Formación */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-300 mb-1 block">Formación geológica</label>
+                    <textarea value={form.formacionGeologica ?? ''}
+                      onChange={e => patchForm('formacionGeologica', e.target.value)}
+                      rows={2}
+                      placeholder="Ej: arcilla reactiva 30-45 m, roca caliza 45-60 m"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50 outline-none resize-none" />
                   </div>
                 </>
               )}
 
-              {/* Insumos */}
+              {/* 8 · Nota para el cliente */}
               <div>
-                <p className="text-xs font-semibold text-slate-300 mb-0.5">Insumos y horas de operación</p>
-                <p className="text-[10px] text-slate-600 mb-3">Registra lo consumido y trabajado durante este turno.</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <NF label="Horas máquina" hint="Hrs. taladrando hoy"
-                    value={form.horasPerforacion} onChange={v => patchForm('horasPerforacion', v)} />
-                  <NF label="Bentonita (sacos)" hint="Sacos usados hoy"
-                    value={form.bentonitaSacos} onChange={v => patchForm('bentonitaSacos', v)} />
-                  <NF label="Pipas de agua" hint="Pipas recibidas hoy"
-                    value={form.pipas} onChange={v => patchForm('pipas', v)} />
-                  <NF label="Horas desarrollo/limpieza" hint="Hrs. limpiando el pozo"
-                    value={form.horasLimpieza} onChange={v => patchForm('horasLimpieza', v)} />
-                  <NF label="Horas prueba de aforo" hint="Hrs. midiendo caudal"
-                    value={form.horasAforo} onChange={v => patchForm('horasAforo', v)} />
-                </div>
+                <label className="text-[11px] font-semibold text-blue-300 mb-1 block">Nota para el cliente 📎</label>
+                <textarea value={form.notaCliente} onChange={e => patchForm('notaCliente', e.target.value)}
+                  rows={2} placeholder="Si queda vacía, no aparece en el PDF"
+                  className="w-full bg-blue-500/5 border border-blue-500/25 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/60 outline-none resize-none" />
               </div>
 
-              {/* Notas */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">Nota interna (no se imprime)</label>
+              {/* Nota interna opcional (colapsada) */}
+              <details className="bg-white/3 border border-white/5 rounded-lg group">
+                <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-slate-500 hover:text-slate-300 flex items-center justify-between">
+                  <span>+ Nota interna (no se imprime)</span>
+                  <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
+                </summary>
+                <div className="px-3 pb-3 pt-1">
                   <textarea value={form.notaInterna} onChange={e => patchForm('notaInterna', e.target.value)}
-                    rows={3} placeholder="Observaciones internas..."
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 resize-none placeholder:text-slate-600" />
+                    rows={2} placeholder="Observaciones internas, visibles solo al equipo"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50 outline-none resize-none" />
                 </div>
-                <div>
-                  <label className="text-[10px] text-blue-400 block mb-1">Nota para el cliente (aparece en PDF)</label>
-                  <textarea value={form.notaCliente} onChange={e => patchForm('notaCliente', e.target.value)}
-                    rows={3} placeholder="Mensaje visible para el cliente..."
-                    className="w-full bg-blue-500/5 border border-blue-500/20 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 resize-none placeholder:text-slate-600" />
-                </div>
-              </div>
+              </details>
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/5">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-white/5 flex-wrap">
+              <button onClick={() => setShowModal(false)}
+                className="px-3 py-2 text-xs text-slate-400 hover:text-slate-200 transition-colors">
                 Cancelar
               </button>
-              <button onClick={handleSave} disabled={saving}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
-                {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                {editEntry ? 'Guardar cambios' : 'Agregar entrada'}
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={handleSave} disabled={saving}
+                  className="flex items-center gap-2 border border-white/10 hover:border-white/20 text-slate-200 px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                  {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  {editEntry ? 'Guardar cambios' : 'Guardar'}
+                </button>
+                <button onClick={async () => {
+                  await handleSave()
+                  // Tras guardar abrir el selector de plantillas (usa la entrada recién creada o editada)
+                  setPlantillaModal({ entry: editEntry ?? null })
+                }}
+                  disabled={saving}
+                  title="Guarda la entrada y abre el selector de las 4 plantillas para enviar al cliente"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 shadow-lg shadow-blue-500/25">
+                  {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                  Guardar y enviar
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Modal: selector de plantilla PDF (4 opciones SIEMPRE) ──────────── */}
+      {plantillaModal && (() => {
+        const sorted = [...(proyecto?.entradas ?? [])].sort((a, b) => b.fecha.localeCompare(a.fecha))
+        const entryUsado = plantillaModal.entry ?? sorted[0] ?? null
+        const fechaDiaPDF = entryUsado?.fecha ?? '(sin entradas)'
+        return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0d1526] rounded-2xl border border-white/10 w-full max-w-2xl shadow-2xl overflow-auto max-h-[92vh]">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
+              <h3 className="text-sm font-semibold text-white">Elegí qué enviar al cliente</h3>
+              <button onClick={() => setPlantillaModal(null)} className="text-slate-500 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-[11px] text-slate-500">
+                El PDF se vincula al correlativo <b className="text-blue-400">{proyecto?.correlativo}</b>.
+              </p>
+
+              {/* Grupo 1: BITÁCORA DEL DÍA */}
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  📄 Bitácora del día <span className="text-blue-400 font-normal normal-case">· {fechaDiaPDF}</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button onClick={() => generarConPlantilla('dia-sin')} disabled={!entryUsado}
+                    className="text-left bg-white/3 border border-white/10 hover:border-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl p-4 transition-colors">
+                    <div className="text-xs font-bold text-blue-300 mb-1">1 · Sin consumos</div>
+                    <div className="text-[11px] text-slate-500">Solo perforación/avance. Oculta bentonita y pipas.</div>
+                  </button>
+                  <button onClick={() => generarConPlantilla('dia-con')} disabled={!entryUsado}
+                    className="text-left bg-emerald-500/5 border border-emerald-500/30 hover:border-emerald-500/60 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl p-4 transition-colors">
+                    <div className="text-xs font-bold text-emerald-300 mb-1">2 · Con consumos</div>
+                    <div className="text-[11px] text-slate-500">Incluye bentonita y pipas de agua del día.</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Grupo 2: INFORME COMPLETO */}
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  📚 Informe completo <span className="text-blue-400 font-normal normal-case">· {sorted.length} día(s)</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button onClick={() => generarConPlantilla('exp-con')}
+                    className="text-left bg-emerald-500/5 border border-emerald-500/30 hover:border-emerald-500/60 rounded-xl p-4 transition-colors">
+                    <div className="text-xs font-bold text-emerald-300 mb-1">3 · Con consumos</div>
+                    <div className="text-[11px] text-slate-500">Todos los días con bentonita y pipas.</div>
+                  </button>
+                  <button onClick={() => generarConPlantilla('exp-sin')}
+                    className="text-left bg-white/3 border border-white/10 hover:border-blue-500/50 rounded-xl p-4 transition-colors">
+                    <div className="text-xs font-bold text-blue-300 mb-1">4 · Sin consumos</div>
+                    <div className="text-[11px] text-slate-500">Todos los días, sin bentonita ni pipas.</div>
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-600">
+                ℹ Las 4 plantillas están disponibles. La del "día" usa la fecha mostrada arriba.
+              </p>
+            </div>
+          </div>
+        </div>
+        )
+      })()}
     </div>
   )
 }

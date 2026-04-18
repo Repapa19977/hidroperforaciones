@@ -2,16 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
 import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
+import { loginSchema, formatZodError } from '@/lib/validators'
+import { checkRateLimit, cleanupRateLimit, getClientIp } from '@/lib/rate-limit'
 
 function sha256(s: string) {
   return createHash('sha256').update(s).digest('hex')
 }
 
-export async function POST(request: NextRequest) {
-  const { username, password } = await request.json()
+// Límites: 10 intentos por IP en 15 min + 5 intentos por username en 15 min.
+const WINDOW_MS = 15 * 60 * 1000
+const IP_LIMIT = 10
+const USER_LIMIT = 5
 
-  if (!username || !password) {
-    return NextResponse.json({ error: 'Usuario y contraseña requeridos' }, { status: 400 })
+export async function POST(request: NextRequest) {
+  const raw = await request.json().catch(() => null)
+  const parsed = loginSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(formatZodError(parsed.error), { status: 400 })
+  }
+  const { username, password } = parsed.data
+
+  // Rate limit por IP y por username — limpieza ocasional
+  if (Math.random() < 0.05) cleanupRateLimit()
+  const ip = getClientIp(request)
+  const ipCheck = checkRateLimit(`ip:${ip}`, IP_LIMIT, WINDOW_MS)
+  const userCheck = checkRateLimit(`user:${username.toLowerCase()}`, USER_LIMIT, WINDOW_MS)
+  if (!ipCheck.ok || !userCheck.ok) {
+    const resetAt = Math.max(ipCheck.resetAt, userCheck.resetAt)
+    const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
+    return NextResponse.json(
+      { error: 'Demasiados intentos. Intenta de nuevo más tarde.', retryAfter },
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+    )
   }
 
   const hash = sha256(password)

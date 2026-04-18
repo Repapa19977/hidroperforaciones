@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   Download,
+  Trash2,
 } from 'lucide-react'
 import type { Rol } from '@/lib/config-store'
 import { cn } from '@/lib/utils'
@@ -74,6 +75,19 @@ export default function ProyectosPage() {
     setRows(resRows.ok ? await resRows.json() : [])
     setSinActualizar(resSinActualizar.ok ? await resSinActualizar.json() : [])
     setLoading(false)
+  }
+
+  async function handleDelete(r: ProyectoRow) {
+    const msg = r.entradas.length > 0
+      ? `¿Eliminar el proyecto "${r.nombre}"?\n\nSe borrarán también las ${r.entradas.length} entrada(s) de bitácora. Esta acción no se puede deshacer.`
+      : `¿Eliminar el proyecto "${r.nombre}"?\n\nEsta acción no se puede deshacer.`
+    if (!confirm(msg)) return
+    const res = await fetch(`/api/proyectos/${r.id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      alert('No se pudo eliminar el proyecto.')
+      return
+    }
+    await loadData()
   }
 
   // Lee cookies solo en el cliente (después de hidratación) y carga datos
@@ -295,12 +309,23 @@ export default function ProyectosPage() {
                     </td>
                     <td className="px-5 py-3.5 text-slate-400 text-xs">{r.vendedor}</td>
                     <td className="px-5 py-3.5 text-right">
-                      <Link
-                        href={`/proyectos/${r.id}`}
-                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
-                      >
-                        Abrir <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
+                      <div className="inline-flex items-center gap-3">
+                        <Link
+                          href={`/proyectos/${r.id}`}
+                          className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                        >
+                          Abrir <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => handleDelete(r)}
+                            title="Eliminar proyecto y todas sus entradas"
+                            className="text-slate-600 hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -310,23 +335,31 @@ export default function ProyectosPage() {
 
           <div className="md:hidden flex-1 overflow-auto divide-y divide-white/5">
             {filtrados.map(r => (
-              <Link key={r.id} href={`/proyectos/${r.id}`} className="block px-4 py-3.5 hover:bg-white/2 transition-colors">
-                <div className="flex items-start justify-between gap-3 mb-1">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-slate-200 truncate">{r.cliente}</p>
-                    <p className="text-xs text-slate-500 truncate">{r.nombre}</p>
+              <div key={r.id} className="flex items-stretch hover:bg-white/2 transition-colors">
+                <Link href={`/proyectos/${r.id}`} className="flex-1 min-w-0 px-4 py-3.5">
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-200 truncate">{r.cliente}</p>
+                      <p className="text-xs text-slate-500 truncate">{r.nombre}</p>
+                    </div>
+                    <p className="font-bold text-white text-sm shrink-0">{formatQ(r.monto)}</p>
                   </div>
-                  <p className="font-bold text-white text-sm shrink-0">{formatQ(r.monto)}</p>
-                </div>
-                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-[10px] text-blue-400">{r.correlativo}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400">{tipoLabel(r.tipo)}</span>
                     <span className={cn('text-[10px] px-1.5 py-0.5 rounded', estadoBadge(r.estado))}>{r.estado}</span>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-600" />
-                </div>
-              </Link>
+                </Link>
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => handleDelete(r)}
+                    aria-label="Eliminar proyecto"
+                    className="px-4 flex items-center justify-center text-slate-600 hover:text-red-400 active:scale-90 border-l border-white/5 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </>

@@ -6,7 +6,8 @@ import { type Rol } from '@/lib/config-store'
 import {
   TrendingUp, CheckCircle, FileText, Send, AlertCircle,
   Plus, Download, Printer, Users, Award, XCircle,
-  RefreshCw, ChevronDown, ArrowUpRight, Archive, X
+  RefreshCw, ChevronDown, ArrowUpRight, Archive, X, HardHat, Clock,
+  Drill, FlaskConical, Droplets
 } from 'lucide-react'
 import type { QuotationData } from '@/lib/quotation-store'
 import {
@@ -208,6 +209,19 @@ export default function DashboardPage() {
   const [zipSelected, setZipSelected]   = useState<Set<string>>(new Set())
   const [zipProgress, setZipProgress]   = useState<{ done: number; total: number } | null>(null)
   const [sinBitacora, setSinBitacora]   = useState<{ id: string; cliente: string; vendedor: string }[]>([])
+  const [proyectosActivos, setProyectosActivos] = useState<{
+    id: string; correlativo: string; cliente: string; empresa: string
+    nombre: string; tipo: string; monto: number; vendedor: string
+    fechaInicio: string; estado: string
+    entradas: { fecha: string }[]
+  }[]>([])
+  const [operaciones, setOperaciones] = useState<{
+    proyectosActivos: number
+    bentonita: { real: number; plan: number; clientePago: number; clienteQ: number; costoRealQ: number; pctUsado: number }
+    pies:      { real: number; plan: number; pctUsado: number }
+    pipas:     { real: number; clienteQ: number }
+    alertas:   { gastosVencidos: number; gastosPorVencer: number }
+  } | null>(null)
 
   // Read auth cookies once
   useEffect(() => {
@@ -225,6 +239,26 @@ export default function DashboardPage() {
       .then(setSinBitacora)
       .catch(() => {})
   }, [init, role, vendedor])
+
+  // Fetch proyectos activos para widget en campo
+  useEffect(() => {
+    if (!init) return
+    const params = new URLSearchParams({ estado: 'activo' })
+    if (role !== 'superadmin' && vendedor) params.set('vendedor', vendedor)
+    fetch(`/api/proyectos?${params}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setProyectosActivos)
+      .catch(() => {})
+  }, [init, role, vendedor])
+
+  // Fetch métricas operativas agregadas (bentonita, pies, alertas)
+  useEffect(() => {
+    if (!init) return
+    fetch('/api/dashboard/operaciones')
+      .then(r => r.ok ? r.json() : null)
+      .then(setOperaciones)
+      .catch(() => {})
+  }, [init])
 
   // Fetch period-filtered report (re-runs whenever period or auth changes)
   useEffect(() => {
@@ -332,12 +366,18 @@ export default function DashboardPage() {
         import('@/lib/pdf-cotizacion'),
         import('jszip'),
       ])
+      // Cargar cuentas bancarias una sola vez para todos los PDFs
+      let cuentasBancarias: { banco: string; tipo: string; numero: string }[] = []
+      try {
+        const cfg = await fetch('/api/config').then(r => r.ok ? r.json() : null)
+        cuentasBancarias = cfg?.cuentasBancarias ?? []
+      } catch { /* ignore */ }
       const zip = new JSZip()
       for (let i = 0; i < cots.length; i++) {
         const c = cots[i]
         try {
           const qdata = JSON.parse(c.datos ?? '{}') as QuotationData
-          const pdfBytes = await generarPDF(qdata)
+          const pdfBytes = await generarPDF(qdata, cuentasBancarias)
           const folder = sanitize(c.vendedor)
           const fileName = `${c.correlativo}_${sanitize(c.cliente)}.pdf`
           zip.folder(folder)?.file(fileName, pdfBytes)
@@ -454,6 +494,69 @@ export default function DashboardPage() {
               <KPICard icon={<Award       className="w-4 h-4 text-violet-400"  />} label="Conversión"   value={`${data.resumen.conversionPct}%`}       sub={`${data.resumen.confirmadas}/${data.resumen.total}`} color="violet" />
             </div>
 
+            {/* Operaciones en campo — bentonita, pies, pipas consumidos vs plan */}
+            {operaciones && operaciones.proyectosActivos > 0 && (
+              <div className="bg-[#0d1526] rounded-2xl border border-white/5 p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Operaciones en campo</p>
+                    <p className="text-[10px] text-slate-600">Agregado de los {operaciones.proyectosActivos} proyecto(s) activos</p>
+                  </div>
+                  {(operaciones.alertas.gastosVencidos > 0 || operaciones.alertas.gastosPorVencer > 0) && (
+                    <div className="flex items-center gap-2 text-[11px]">
+                      {operaciones.alertas.gastosVencidos > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 font-semibold">
+                          ⚠ {operaciones.alertas.gastosVencidos} pago(s) vencidos
+                        </span>
+                      )}
+                      {operaciones.alertas.gastosPorVencer > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold">
+                          {operaciones.alertas.gastosPorVencer} por vencer ≤ 3 días
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Pies perforados */}
+                  <OpCard
+                    icon={<Drill className="w-3.5 h-3.5" />}
+                    label="Pies perforados"
+                    real={operaciones.pies.real}
+                    plan={operaciones.pies.plan}
+                    pct={operaciones.pies.pctUsado}
+                    unidad="pies"
+                    colorBase="blue"
+                    subPagado={`${operaciones.pies.plan.toLocaleString('es-GT')} pies contratados`}
+                  />
+                  {/* Bentonita — con comparativa cliente pagó vs consumido */}
+                  <OpCard
+                    icon={<FlaskConical className="w-3.5 h-3.5" />}
+                    label="Bentonita"
+                    real={operaciones.bentonita.real}
+                    plan={operaciones.bentonita.clientePago}
+                    pct={operaciones.bentonita.pctUsado}
+                    unidad="sacos"
+                    colorBase="amber"
+                    subPagado={`Cliente pagó Q ${operaciones.bentonita.clienteQ.toLocaleString('es-GT')} · costo real Q ${operaciones.bentonita.costoRealQ.toLocaleString('es-GT')}`}
+                  />
+                  {/* Pipas — consumo real vs pago del cliente */}
+                  <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-semibold text-cyan-300 flex items-center gap-1.5"><Droplets className="w-3.5 h-3.5" /> Pipas de agua</span>
+                    </div>
+                    <p className="text-2xl font-bold text-white tabular-nums">
+                      {operaciones.pipas.real.toLocaleString('es-GT')}
+                      <span className="text-sm font-normal text-slate-500"> pipas consumidas</span>
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      Cliente pagó <b className="text-cyan-400">Q {operaciones.pipas.clienteQ.toLocaleString('es-GT')}</b> (global)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Bitácora pendiente */}
             {sinBitacora.length > 0 && (
               <div className="rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 flex items-start gap-3">
@@ -469,6 +572,62 @@ export default function DashboardPage() {
                 <Link href="/proyectos" className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-lg transition-colors shrink-0">
                   Ver proyectos
                 </Link>
+              </div>
+            )}
+
+            {/* Proyectos activos en campo */}
+            {proyectosActivos.length > 0 && (
+              <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <HardHat className="w-4 h-4 text-amber-400" />
+                    <p className="text-sm font-semibold text-slate-300">Proyectos en campo</p>
+                    <span className="text-xs text-slate-600 bg-white/4 px-2 py-0.5 rounded-full">{proyectosActivos.length}</span>
+                  </div>
+                  <Link href="/proyectos" className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                    Ver todos <ArrowUpRight className="w-3 h-3" />
+                  </Link>
+                </div>
+                <div className="divide-y divide-white/4">
+                  {proyectosActivos.map(p => {
+                    const diasEnObra = Math.max(1, Math.floor((Date.now() - new Date(p.fechaInicio).getTime()) / 86400000) + 1)
+                    const lastEntry  = p.entradas?.[0]?.fecha ?? null
+                    const today      = new Date().toISOString().slice(0, 10)
+                    const sinEntrada = lastEntry !== today
+                    return (
+                      <Link key={p.id} href={`/proyectos/${p.id}`}
+                        className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/2 transition-colors group">
+                        <div className={cn(
+                          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold',
+                          p.tipo === 'perforacion' ? 'bg-blue-500/15 text-blue-400' : 'bg-cyan-500/15 text-cyan-400'
+                        )}>
+                          {p.tipo === 'perforacion' ? 'PERF' : 'LIMP'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">
+                            {p.cliente}{p.empresa ? ` · ${p.empresa}` : ''}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono">{p.correlativo} · {p.vendedor}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 text-right">
+                          <div>
+                            <p className="text-xs font-bold text-white">{diasEnObra}d</p>
+                            <p className="text-[10px] text-slate-600">en obra</p>
+                          </div>
+                          {sinEntrada ? (
+                            <div className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                              <Clock className="w-2.5 h-2.5" /> Sin entrada hoy
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                              ✓ Al día
+                            </div>
+                          )}
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
@@ -791,6 +950,47 @@ function VendorRow({ v, cotizaciones, expanded, onToggle }: {
         </tr>
       )}
     </>
+  )
+}
+
+// ── OpCard (operaciones: consumo real vs plan) ──────────────────────────────
+function OpCard({ icon, label, real, plan, pct, unidad, colorBase, subPagado }: {
+  icon: React.ReactNode; label: string; real: number; plan: number; pct: number; unidad: string
+  colorBase: 'blue' | 'amber'
+  subPagado?: string
+}) {
+  const over = pct >= 100
+  const alto = pct >= 80 && pct < 100
+  const cls = over
+    ? 'border-red-500/30 bg-red-500/8'
+    : alto
+      ? 'border-amber-500/30 bg-amber-500/8'
+      : colorBase === 'blue'
+        ? 'border-blue-500/20 bg-blue-500/5'
+        : 'border-amber-500/20 bg-amber-500/5'
+  const barColor = over ? 'bg-red-500' : alto ? 'bg-amber-500' : 'bg-emerald-500'
+  const txtLabel = colorBase === 'blue' ? 'text-blue-300' : 'text-amber-300'
+  return (
+    <div className={cn('rounded-xl border p-3', cls)}>
+      <div className="flex items-center justify-between mb-1">
+        <span className={cn('text-[11px] font-semibold flex items-center gap-1.5', txtLabel)}>{icon} {label}</span>
+        <span className={cn('text-[10px] font-bold tabular-nums',
+          over ? 'text-red-400' : alto ? 'text-amber-400' : 'text-emerald-400')}>
+          {pct.toFixed(0)}%
+        </span>
+      </div>
+      <p className="text-2xl font-bold text-white tabular-nums">
+        {real.toLocaleString('es-GT')}
+        <span className="text-sm font-normal text-slate-500"> / {plan.toLocaleString('es-GT')}</span>
+      </p>
+      <p className="text-[10px] text-slate-500 mb-1.5">{unidad} consumidos / {unidad === 'sacos' ? 'pagados cliente' : 'contratados'}</p>
+      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+        <div className={cn('h-full transition-all', barColor)} style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+      {subPagado && (
+        <p className="text-[10px] text-slate-500 mt-1.5 leading-tight">{subPagado}</p>
+      )}
+    </div>
   )
 }
 

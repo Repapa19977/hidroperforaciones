@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FileText, Users, Settings, ClipboardList,
-  Menu, ShieldCheck, Shield, LogOut, Sun, Moon, X, BarChart2
+  Menu, ShieldCheck, Shield, LogOut, Sun, Moon, X, BarChart2,
+  TrendingUp, Package, BookOpen, MoreHorizontal
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
@@ -21,10 +22,14 @@ function getRolFromCookie(): Rol {
 }
 
 const navItems = [
-  { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'    },
+  { href: '/contactos',    icon: Users,            label: 'Contactos'    },
+  { href: '/crm',          icon: TrendingUp,       label: 'Oportunidades'},
   { href: '/cotizaciones', icon: FileText,         label: 'Cotizaciones' },
-  { href: '/proyectos',    icon: ClipboardList,    label: 'Bitácora' },
-  { href: '/contactos',    icon: Users,            label: 'Contactos' },
+  { href: '/proyectos',    icon: ClipboardList,    label: 'Bitácora'     },
+  { href: '/gastos',       icon: Package,          label: 'Control Gastos' },  // solo superadmin
+  { href: '/reportes',     icon: BarChart2,        label: 'Reportes'     },
+  { href: '/presentacion', icon: BookOpen,         label: 'Guía'         },
 ]
 
 export function Sidebar() {
@@ -38,8 +43,10 @@ export function Sidebar() {
   useEffect(() => {
     const update = () => setRol(getRolFromCookie())
     update()
-    const id = setInterval(update, 1000)
-    return () => clearInterval(id)
+    // Re-leemos el rol cuando la ventana recupera foco (login/logout en otra pestaña)
+    // en vez de hacer polling cada segundo.
+    window.addEventListener('focus', update)
+    return () => window.removeEventListener('focus', update)
   }, [])
 
   // Cerrar drawer móvil al navegar
@@ -55,7 +62,11 @@ export function Sidebar() {
   }
 
   const isSuperAdmin = rol === 'superadmin'
-  const visibleNavItems = navItems.filter(item => item.href !== '/proyectos' || isSuperAdmin)
+  const visibleNavItems = navItems.filter(item => {
+    if (item.href === '/proyectos') return isSuperAdmin
+    if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
+    return true
+  })
   const user = VENDEDORES[0]
   const initials = user.split(' ').map(n => n[0]).join('').slice(0, 2)
 
@@ -164,14 +175,14 @@ export function Sidebar() {
       </aside>
 
       {/* ── MOBILE HEADER (< md) ────────────────────────────────── */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-[#0d1526] border-b border-white/5">
+      <header className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-2.5 bg-[#0d1526]/85 backdrop-blur-xl border-b border-white/5" style={{ paddingTop: 'calc(0.625rem + env(safe-area-inset-top))' }}>
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0">
+          <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-sm shadow-blue-500/20">
             <Image src="/logo.png" alt="HP" width={28} height={28} className="object-contain" />
           </div>
-          <p className="text-sm font-bold text-white">HidroCRM</p>
+          <p className="text-sm font-bold text-white tracking-tight">HidroCRM</p>
         </div>
-        <button onClick={() => setMobileOpen(true)} className="text-slate-400 hover:text-white p-1">
+        <button onClick={() => setMobileOpen(true)} className="text-slate-400 hover:text-white p-1.5 rounded-lg active:scale-90 transition-transform" aria-label="Menú">
           <Menu className="w-5 h-5" />
         </button>
       </header>
@@ -261,21 +272,65 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* ── MOBILE BOTTOM NAV ───────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center bg-[#0d1526] border-t border-white/5">
-        {[...visibleNavItems, { href: '/configuracion', icon: Settings, label: 'Config' }].map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || pathname.startsWith(href)
-          return (
-            <Link key={href} href={href} className={cn(
-              'flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-all',
-              active ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300'
-            )}>
-              <Icon className={cn('w-5 h-5', active ? 'text-blue-400' : '')} />
-              <span>{label}</span>
-            </Link>
-          )
-        })}
-      </nav>
+      {/* ── MOBILE BOTTOM NAV (5 items: 4 fijos + Más) ─────────── */}
+      <MobileBottomNav
+        isSuperAdmin={isSuperAdmin}
+        pathname={pathname}
+        onMore={() => setMobileOpen(true)}
+      />
     </>
   )
 }
+
+/**
+ * Bottom nav reducido — solo 4 accesos directos + Más.
+ * Admin:       Dashboard · Contactos · Cotizaciones · Oportunidades · Más
+ * SuperAdmin:  Dashboard · Cotizaciones · Proyectos · Gastos · Más
+ */
+function MobileBottomNav({
+  isSuperAdmin, pathname, onMore,
+}: {
+  isSuperAdmin: boolean
+  pathname: string
+  onMore: () => void
+}) {
+  const items = isSuperAdmin
+    ? [
+        { href: '/dashboard',    icon: LayoutDashboard, label: 'Inicio'      },
+        { href: '/cotizaciones', icon: FileText,         label: 'Cotizar'    },
+        { href: '/proyectos',    icon: ClipboardList,    label: 'Bitácora'   },
+        { href: '/gastos',       icon: Package,          label: 'Gastos'     },
+      ]
+    : [
+        { href: '/dashboard',    icon: LayoutDashboard, label: 'Inicio'        },
+        { href: '/contactos',    icon: Users,            label: 'Contactos'    },
+        { href: '/cotizaciones', icon: FileText,         label: 'Cotizar'      },
+        { href: '/crm',          icon: TrendingUp,       label: 'Oportunidades'},
+      ]
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch bg-[#0d1526]/95 backdrop-blur-md border-t border-white/5 pb-[env(safe-area-inset-bottom)]">
+      {items.map(({ href, icon: Icon, label }) => {
+        const active = pathname === href || pathname.startsWith(href)
+        return (
+          <Link key={href} href={href} className={cn(
+            'flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-[10px] font-medium transition-all relative',
+            active ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300'
+          )}>
+            {active && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 bg-blue-400 rounded-b-full" />}
+            <Icon className={cn('w-[22px] h-[22px]', active ? 'text-blue-400' : '')} />
+            <span className="leading-tight">{label}</span>
+          </Link>
+        )
+      })}
+      <button
+        onClick={onMore}
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-[10px] font-medium text-slate-500 hover:text-slate-300 transition-all"
+      >
+        <MoreHorizontal className="w-[22px] h-[22px]" />
+        <span className="leading-tight">Más</span>
+      </button>
+    </nav>
+  )
+}
+

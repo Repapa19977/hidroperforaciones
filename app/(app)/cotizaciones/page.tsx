@@ -6,7 +6,8 @@ import { updateEstadoCotizacion, deleteCotizacion, type CotizacionRecord } from 
 import {
   Plus, Search, FileText, Send, CheckCircle, XCircle, FileEdit,
   ArrowUpRight, Trash2, ChevronDown, Loader2, LayoutList, Kanban,
-  TrendingUp, Award, Drill, Wrench, ExternalLink, Download
+  TrendingUp, Award, Drill, Wrench, ExternalLink, Download,
+  Pencil, Clock, X
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -60,9 +61,13 @@ export default function CotizacionesPage() {
   const [search, setSearch]         = useState('')
   const [filterStatus, setFStatus]  = useState('todos')
   const [filterVendedor, setFVend]  = useState('Todos')
-  const [menuOpen, setMenuOpen]     = useState<string | null>(null)
-  const [role, setRole]             = useState<Rol>('admin')
-  const [myVendedor, setMyVendedor] = useState('')
+  const [menuOpen, setMenuOpen]       = useState<string | null>(null)
+  const [role, setRole]               = useState<Rol>('admin')
+  const [myVendedor, setMyVendedor]   = useState('')
+  const [historialOpen, setHisOpen]   = useState<string | null>(null)
+  const [historialRows, setHisRows]   = useState<{ id: string; campo: string; valorAntes: string; valorDespues: string; usuario: string; createdAt: string }[]>([])
+  const [historialLoading, setHisLd]  = useState(false)
+  const [proyectoNoti, setProjNoti]   = useState<{ correlativo: string; id: string } | null>(null)
 
   // Persist view
   useEffect(() => {
@@ -118,9 +123,20 @@ export default function CotizacionesPage() {
   }
 
   async function changeEstado(correlativo: string, estado: CotizacionRecord['estado']) {
-    await updateEstadoCotizacion(correlativo, estado, myVendedor || 'sistema')
+    const result = await updateEstadoCotizacion(correlativo, estado, myVendedor || 'sistema')
+    if (estado === 'confirmada' && result?.proyectoCreado) {
+      setProjNoti(result.proyectoCreado)
+    }
     await fetchRows(myVendedor, role)
     setMenuOpen(null)
+  }
+
+  async function openHistorial(correlativo: string) {
+    setHisOpen(correlativo)
+    setHisLd(true)
+    const res = await fetch(`/api/cotizaciones/historial?correlativo=${encodeURIComponent(correlativo)}`)
+    setHisRows(res.ok ? await res.json() : [])
+    setHisLd(false)
   }
 
   async function handleDelete(correlativo: string) {
@@ -291,6 +307,27 @@ export default function CotizacionesPage() {
       </div>
 
       {/* ── CONTENT ─────────────────────────────────────────────────── */}
+      {/* Notificación de proyecto creado */}
+      {proyectoNoti && (
+        <div className="mx-4 mt-3 flex items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <p className="text-sm text-emerald-300 font-medium">
+              Cotización confirmada · Proyecto {proyectoNoti.correlativo} creado automáticamente
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link href={`/proyectos/${proyectoNoti.id}`}
+              className="text-xs text-emerald-400 hover:text-emerald-300 underline">
+              Ver proyecto →
+            </Link>
+            <button onClick={() => setProjNoti(null)} className="text-emerald-600 hover:text-emerald-400">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex-1 flex items-center justify-center gap-3 text-slate-500">
           <Loader2 className="w-5 h-5 animate-spin" />
@@ -300,7 +337,8 @@ export default function CotizacionesPage() {
         <ListView
           filtered={filtered} search={search} isSuperAdmin={isSuperAdmin}
           menuOpen={menuOpen} setMenuOpen={setMenuOpen}
-          changeEstado={changeEstado} handleDelete={handleDelete} openCotizacion={openCotizacion}
+          changeEstado={changeEstado} handleDelete={handleDelete}
+          openCotizacion={openCotizacion} openHistorial={openHistorial}
         />
       ) : (
         <KanbanView
@@ -311,12 +349,64 @@ export default function CotizacionesPage() {
       )}
 
       {menuOpen && <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />}
+
+      {/* Modal Historial */}
+      {historialOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setHisOpen(null)} />
+          <div className="relative bg-[#0d1526] border border-white/10 rounded-2xl w-full max-w-lg p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-bold text-white">Historial de cambios</h2>
+                <p className="text-xs text-slate-500 font-mono">{historialOpen}</p>
+              </div>
+              <button onClick={() => setHisOpen(null)} className="text-slate-500 hover:text-slate-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {historialLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+            ) : historialRows.length === 0 ? (
+              <p className="text-center text-slate-600 text-sm py-8">Sin cambios registrados aún</p>
+            ) : (
+              <div className="overflow-auto max-h-80">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-white/8 text-left">
+                      <th className="py-2 pr-3 text-slate-500 font-medium">Fecha</th>
+                      <th className="py-2 pr-3 text-slate-500 font-medium">Campo</th>
+                      <th className="py-2 pr-3 text-slate-500 font-medium">Antes</th>
+                      <th className="py-2 pr-3 text-slate-500 font-medium">Después</th>
+                      <th className="py-2 text-slate-500 font-medium">Usuario</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/4">
+                    {historialRows.map(h => (
+                      <tr key={h.id}>
+                        <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">
+                          {new Date(h.createdAt).toLocaleString('es-GT', { dateStyle: 'short', timeStyle: 'short' })}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">{h.campo}</span>
+                        </td>
+                        <td className="py-2 pr-3 text-slate-500">{h.valorAntes || '—'}</td>
+                        <td className="py-2 pr-3 text-slate-200 font-medium">{h.valorDespues || '—'}</td>
+                        <td className="py-2 text-slate-500">{h.usuario || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── Lista view ─────────────────────────────────────────────────────────────────
-function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion }: {
+function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial }: {
   filtered: CotizacionRecord[]
   search: string
   isSuperAdmin: boolean
@@ -325,6 +415,7 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
   changeEstado: (c: string, e: CotizacionRecord['estado']) => void
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
+  openHistorial: (c: string) => void
 }) {
   if (filtered.length === 0) {
     return (
@@ -364,7 +455,8 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
             {filtered.map(c => (
               <ListRow key={c.correlativo} c={c}
                 menuOpen={menuOpen} setMenuOpen={setMenuOpen}
-                changeEstado={changeEstado} handleDelete={handleDelete} openCotizacion={openCotizacion} />
+                changeEstado={changeEstado} handleDelete={handleDelete}
+                openCotizacion={openCotizacion} openHistorial={openHistorial} />
             ))}
           </tbody>
         </table>
@@ -375,7 +467,8 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
         {filtered.map(c => (
           <MobileRow key={c.correlativo} c={c}
             menuOpen={menuOpen} setMenuOpen={setMenuOpen}
-            changeEstado={changeEstado} handleDelete={handleDelete} openCotizacion={openCotizacion} />
+            changeEstado={changeEstado} handleDelete={handleDelete}
+            openCotizacion={openCotizacion} openHistorial={openHistorial} />
         ))}
       </div>
     </>
@@ -383,13 +476,14 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
 }
 
 // ── List row ───────────────────────────────────────────────────────────────────
-function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion }: {
+function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial }: {
   c: CotizacionRecord
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
   changeEstado: (correlativo: string, estado: CotizacionRecord['estado']) => void
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
+  openHistorial: (c: string) => void
 }) {
   const s = statusMap[c.estado]
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -439,7 +533,7 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
         {isOpen && dropPos && typeof document !== 'undefined' && createPortal(
           <div
             style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
-            className="bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[160px] overflow-hidden"
+            className="hidden md:block bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[160px] overflow-hidden"
           >
             {(['borrador', 'enviada', 'confirmada', 'cancelada'] as const).map(e => (
               <button key={e} onClick={() => changeEstado(c.correlativo, e)}
@@ -460,10 +554,18 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
       <td className="px-5 py-3.5 text-slate-500 text-xs">{c.fecha}</td>
       <td className="px-5 py-3.5 text-slate-400 text-xs">{c.vendedor}</td>
       <td className="px-5 py-3.5">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <Link href={`/cotizaciones/nueva?edit=${c.correlativo}`} title="Editar"
+            className="text-slate-500 hover:text-amber-400 transition-colors">
+            <Pencil className="w-4 h-4" />
+          </Link>
           <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
             className="text-slate-500 hover:text-blue-400 transition-colors">
             <ArrowUpRight className="w-4 h-4" />
+          </button>
+          <button onClick={() => openHistorial(c.correlativo)} title="Historial"
+            className="text-slate-500 hover:text-violet-400 transition-colors">
+            <Clock className="w-4 h-4" />
           </button>
           <button onClick={() => handleDelete(c.correlativo)} title="Eliminar"
             className="text-slate-600 hover:text-red-400 transition-colors">
@@ -476,13 +578,14 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
 }
 
 // ── Mobile row (card) ─────────────────────────────────────────────────────────
-function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion }: {
+function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial }: {
   c: CotizacionRecord
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
   changeEstado: (correlativo: string, estado: CotizacionRecord['estado']) => void
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
+  openHistorial: (c: string) => void
 }) {
   const s = statusMap[c.estado]
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -529,7 +632,7 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
           {isOpen && dropPos && typeof document !== 'undefined' && createPortal(
             <div
               style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
-              className="bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[160px] overflow-hidden"
+              className="md:hidden bg-[#1a2540] border border-white/10 rounded-lg shadow-2xl min-w-[160px] overflow-hidden"
             >
               {(['borrador', 'enviada', 'confirmada', 'cancelada'] as const).map(e => (
                 <button key={e} onClick={() => changeEstado(c.correlativo, e)}
@@ -547,10 +650,18 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
             document.body
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <Link href={`/cotizaciones/nueva?edit=${c.correlativo}`} title="Editar"
+            className="text-slate-500 hover:text-amber-400 transition-colors">
+            <Pencil className="w-4 h-4" />
+          </Link>
           <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
             className="text-slate-500 hover:text-blue-400 transition-colors">
             <ArrowUpRight className="w-4 h-4" />
+          </button>
+          <button onClick={() => openHistorial(c.correlativo)} title="Historial"
+            className="text-slate-500 hover:text-violet-400 transition-colors">
+            <Clock className="w-4 h-4" />
           </button>
           <button onClick={() => handleDelete(c.correlativo)} title="Eliminar"
             className="text-slate-600 hover:text-red-400 transition-colors">
