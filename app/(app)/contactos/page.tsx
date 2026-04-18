@@ -327,20 +327,23 @@ export default function ContactosPage() {
 
       {/* ── Modal / Formulario ────────────────────────────────────────────── */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0d1526] rounded-2xl border border-white/10 w-full max-w-lg shadow-2xl">
-            {/* Header modal */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 sm:flex sm:items-center sm:justify-center sm:p-4">
+          {/* Móvil: modal ocupa toda la pantalla con fixed inset-0 (evita problemas de h-screen + notch/URL bar iOS) */}
+          {/* Desktop: relative con max-w-lg centrado */}
+          <div className="fixed inset-0 bg-[#0d1526] sm:relative sm:inset-auto sm:rounded-2xl sm:border border-white/10 sm:w-full sm:max-w-lg sm:max-h-[90vh] shadow-2xl flex flex-col"
+               style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+            {/* Header modal (sticky arriba) */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-white/5 shrink-0">
               <h2 className="text-base font-semibold text-white">
                 {editing ? 'Editar Contacto' : 'Nuevo Contacto'}
               </h2>
-              <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white transition-colors">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white transition-colors p-1 -mr-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Campos */}
-            <div className="px-6 py-5 space-y-4">
+            {/* Campos (scrolleables) */}
+            <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-1 sm:col-span-2">
                   <FormInput label="Nombre *" value={form.nombre} onChange={v => p('nombre', v)} placeholder="Juan García" />
@@ -428,16 +431,16 @@ export default function ContactosPage() {
               </div>
             </div>
 
-            {/* Footer modal */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/5">
+            {/* Footer modal (sticky, siempre visible) */}
+            <div className="flex items-center justify-end gap-2 sm:gap-3 px-5 sm:px-6 py-3 sm:py-4 border-t border-white/5 shrink-0 bg-[#0d1526] rounded-b-2xl">
               <button onClick={() => setShowForm(false)}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all">
+                className="px-3 sm:px-4 py-2 text-sm text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all">
                 Cancelar
               </button>
               <button onClick={handleSave} disabled={!form.nombre.trim() || saving}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors">
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors">
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                {editing ? 'Guardar cambios' : 'Crear contacto'}
+                {editing ? 'Guardar' : 'Crear'}
               </button>
             </div>
           </div>
