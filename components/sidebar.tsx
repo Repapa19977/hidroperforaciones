@@ -21,6 +21,12 @@ function getRolFromCookie(): Rol {
   return (match?.[1] as Rol) ?? 'admin'
 }
 
+function getVendedorFromCookie(): string {
+  if (typeof document === 'undefined') return ''
+  const match = document.cookie.match(/user_vendedor=([^;]+)/)
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
 const navItems = [
   { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'    },
   { href: '/contactos',    icon: Users,            label: 'Contactos'    },
@@ -38,12 +44,16 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [rol, setRol] = useState<Rol>('admin')
+  const [vendedor, setVendedor] = useState<string>('')
   const { theme, toggle: toggleTheme } = useTheme()
 
   useEffect(() => {
-    const update = () => setRol(getRolFromCookie())
+    const update = () => {
+      setRol(getRolFromCookie())
+      setVendedor(getVendedorFromCookie())
+    }
     update()
-    // Re-leemos el rol cuando la ventana recupera foco (login/logout en otra pestaña)
+    // Re-leemos rol + vendedor cuando la ventana recupera foco (login/logout en otra pestaña)
     // en vez de hacer polling cada segundo.
     window.addEventListener('focus', update)
     return () => window.removeEventListener('focus', update)
@@ -67,8 +77,9 @@ export function Sidebar() {
     if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
     return true
   })
-  const user = VENDEDORES[0]
-  const initials = user.split(' ').map(n => n[0]).join('').slice(0, 2)
+  // Si la cookie no tiene vendedor (cookie vieja o primer render), caemos al primero de la lista como placeholder
+  const user = vendedor || VENDEDORES[0]
+  const initials = user.split(' ').map(n => n[0] ?? '').join('').slice(0, 2).toUpperCase() || '??'
 
   return (
     <>

@@ -729,6 +729,7 @@ function ConfigInput({ label, value, onChange, unit, locked, hint, accent }: {
           type="number"
           value={value}
           aria-describedby={hintId}
+          onFocus={e => e.target.select()}
           onChange={e => !locked && onChange(parseFloat(e.target.value) || 0)}
           disabled={locked}
           className={cn(

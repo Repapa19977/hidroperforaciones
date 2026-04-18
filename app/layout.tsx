@@ -17,8 +17,7 @@ export const metadata: Metadata = {
   },
   icons: {
     // app/favicon.ico se auto-sirve para la pestaña del navegador.
-    // Apple touch icon (iOS PWA) usa logo.png.
-    apple: "/logo.png",
+    apple: { url: "/apple-icon.png", sizes: "180x180" },
   },
   openGraph: {
     title: "HidroCRM — Hidroperforaciones, S.A.",
@@ -26,14 +25,14 @@ export const metadata: Metadata = {
     url: "https://hidrocrm.com",
     siteName: "HidroCRM",
     locale: "es_GT",
-    images: [{ url: "/logo.png", width: 512, height: 512, alt: "Hidroperforaciones Guatemala — Perforación de pozos mecánicos" }],
+    images: [{ url: "/og-image.jpg", width: 1200, height: 630, alt: "Hidroperforaciones Guatemala — Perforación de pozos mecánicos" }],
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: "HidroCRM — Hidroperforaciones",
     description: "Cotizador técnico · Proyectos · Bitácora · Reportes",
-    images: ["/logo.png"],
+    images: ["/og-image.jpg"],
   },
 }
 

@@ -931,30 +931,15 @@ export default function NuevaCotizacionPage() {
                 </div>
               </div>
 
-              {/* VALOR POR PIE — edita directamente el precio/pie manual del usuario */}
+              {/* Recordatorio: el valor por pie se edita en la "Calculadora — Perforación" arriba */}
               {tipo === 'perforacion' && ip.profundidad > 0 && (
-                <div className="mt-3 pt-3 border-t border-white/10">
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">Valor por pie (al cliente)</span>
-                  </div>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-500">Q</span>
-                    <input
-                      type="number" step="1" min={0}
-                      value={ip.precioPorPieVenta}
-                      onChange={e => setIp(prev => ({ ...prev, precioPorPieVenta: parseInt(e.target.value) || 0 }))}
-                      inputMode="decimal"
-                      className="w-full bg-white/5 border border-blue-500/30 rounded-lg pl-7 pr-3 py-2 text-base sm:text-sm font-semibold text-white outline-none focus:border-blue-500/50 transition-colors tabular-nums"
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                    Precio/pie = con IVA e ISR incluidos. Apagá un toggle y ese impuesto se <b>resta</b> del total.
-                    <br/>
-                    Total actual: <span className="text-blue-400 font-semibold">{formatQ(totalConIva)}</span>
-                    {(!aplicarIva || !aplicarIsr) && (
-                      <span className="text-slate-600"> (base {formatQ(ip.profundidad * ip.precioPorPieVenta)} con ambos impuestos)</span>
-                    )}
-                  </p>
+                <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-slate-500 leading-relaxed">
+                  Valor/pie: <span className="text-blue-400 font-semibold tabular-nums">Q {ip.precioPorPieVenta.toLocaleString('es-GT')}</span> × {ip.profundidad} pies
+                  {(!aplicarIva || !aplicarIsr) && (
+                    <span className="text-slate-600"> · base con ambos impuestos: {formatQ(ip.profundidad * ip.precioPorPieVenta)}</span>
+                  )}
+                  <br/>
+                  <span className="text-slate-600">Editá el precio/pie arriba en la Calculadora.</span>
                 </div>
               )}
             </div>
@@ -1209,6 +1194,33 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
           <span className="hidden sm:inline">Bentonita: <b className="text-white">{sacos} sacos</b></span>
         </div>
       </div>
+
+      {/* 0. VALOR POR PIE — input principal destacado al inicio */}
+      {ip.profundidad > 0 && (
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div>
+              <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Valor por pie (al cliente)</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">Precio de venta unitario — con IVA e ISR incluidos</p>
+            </div>
+            <span className="text-[10px] text-slate-500 hidden sm:inline">× {ip.profundidad} pies</span>
+          </div>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
+            <input
+              type="number" step="1" min={0}
+              value={ip.precioPorPieVenta}
+              onFocus={e => e.target.select()}
+              onChange={e => patchIp('precioPorPieVenta', parseInt(e.target.value) || 0)}
+              inputMode="decimal"
+              className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-3 text-lg font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
+            />
+          </div>
+          <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+            Apagá los toggles IVA/ISR en el panel derecho y ese impuesto se <b>resta</b> del total final.
+          </p>
+        </div>
+      )}
 
       {/* 1. Parámetros del pozo */}
       <div>
@@ -1831,6 +1843,7 @@ function NumInput({ label, value, onChange, hint, accent }: {
         inputMode="decimal"
         value={value}
         aria-describedby={hintId}
+        onFocus={e => e.target.select()}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
         className={cn('w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors',
           accent
