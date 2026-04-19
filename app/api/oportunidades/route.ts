@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
-// GET — listar oportunidades (filtra por vendedor si no es superadmin)
+// GET — listar oportunidades (filtra por vendedor si no es superadmin).
+// Query: ?vendedor=X · ?papelera=1 (solo eliminadas)
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const vendedor = searchParams.get('vendedor')  // null = todas
+  const vendedor = searchParams.get('vendedor')
+  const papelera = searchParams.get('papelera') === '1'
+
+  const where: Record<string, unknown> = { eliminadaEn: papelera ? { not: null } : null }
+  if (vendedor) where.vendedor = vendedor
 
   const rows = await prisma.oportunidad.findMany({
-    where: vendedor ? { vendedor } : undefined,
+    where,
     orderBy: { createdAt: 'desc' },
   })
 

@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
-// GET — listar todas (o filtrar por vendedor)
+// GET — listar todas activas (filtra eliminadas por default).
+// Query params: ?vendedor=X · ?papelera=1 (solo eliminadas)
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const vendedor = searchParams.get('vendedor')
+  const papelera = searchParams.get('papelera') === '1'
+
+  const where: Record<string, unknown> = {
+    eliminadaEn: papelera ? { not: null } : null,
+  }
+  if (vendedor) where.vendedor = vendedor
 
   const rows = await prisma.cotizacion.findMany({
-    where: vendedor ? { vendedor } : undefined,
+    where,
     orderBy: { createdAt: 'desc' },
   })
 
@@ -25,11 +32,11 @@ export async function POST(request: NextRequest) {
     create: { correlativo, cliente, empresa: empresa ?? '', proyecto, tipo, estado: estado ?? 'borrador', monto, fecha, vendedor, datos: JSON.stringify(datos ?? {}) },
   })
 
-  // Auto-upsert contacto si el cliente tiene teléfono registrado
+  // Auto-upsert contacto si el cliente tiene teléfono registrado (ignora contactos eliminados)
   const telefono: string = (typeof datos === 'object' ? datos?.telefono : '') ?? ''
   if (cliente && telefono) {
     const existing = await prisma.contacto.findFirst({
-      where: { nombre: cliente, vendedor },
+      where: { nombre: cliente, vendedor, eliminadoEn: null },
     })
     if (existing) {
       // Update phone if it changed or was empty

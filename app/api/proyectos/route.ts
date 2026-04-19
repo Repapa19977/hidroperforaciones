@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
-// GET — listar proyectos (superadmin: todos; admin: solo los suyos)
+// GET — listar proyectos (superadmin: todos; admin: solo los suyos).
+// Query: ?vendedor=X · ?estado=Y · ?papelera=1 (solo eliminados)
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const vendedor = searchParams.get('vendedor')
   const estado = searchParams.get('estado')
+  const papelera = searchParams.get('papelera') === '1'
 
   const rows = await prisma.proyecto.findMany({
     where: {
+      eliminadoEn: papelera ? { not: null } : null,
       ...(vendedor ? { vendedor } : {}),
       ...(estado ? { estado } : {}),
     },

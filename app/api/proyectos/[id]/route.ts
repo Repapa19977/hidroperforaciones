@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { calcularPerforacion, type InputsPerforacion } from '@/lib/calculator'
+import { requireSuperAdmin, getRequestInfo } from '@/lib/auth'
+import { auditLog } from '@/lib/audit'
 
 // GET — obtener proyecto con todas sus entradas + totales de la cotización
 // (profundidadTotal, diasHabilesTotal) para la barra de avance del PDF
@@ -69,9 +71,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   return NextResponse.json(row)
 }
 
-// DELETE — eliminar proyecto (y en cascada sus entradas)
-export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// DELETE — soft delete del proyecto (conserva bitácora e historial para auditoría)
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
-  await prisma.proyecto.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+  const motivo = new URL(request.url).searchParams.get('motivo') ?? ''
+
+  const before = await prisma.proyecto.findUnique({ where: { id } })
+  if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (before.eliminadoEn) return NextResponse.json({ error: 'Ya estaba eliminado' }, { status: 409 })
+
+  const row = await prisma.proyecto.update({
+    where: { id },
+    data: { eliminadoEn: new Date(), eliminadoPor: auth.user.username, motivoBorrado: motivo || null },
+  })
+
+  const info = getRequestInfo(request)
+  await auditLog({ user: auth.user, accion: 'delete', entidad: 'proyecto', entidadId: id, antes: before, despues: row, ...info })
+
+  return NextResponse.json({ ok: true, soft: true })
 }

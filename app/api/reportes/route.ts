@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const fromDate = from ? new Date(from) : null
   const toDate = to ? new Date(new Date(to).setHours(23, 59, 59, 999)) : null
 
-  const where: { vendedor?: string; createdAt?: { gte?: Date; lte?: Date } } = {}
+  const where: { vendedor?: string; createdAt?: { gte?: Date; lte?: Date }; eliminadaEn: null } = { eliminadaEn: null }
   if (vendedor && vendedor !== 'all') where.vendedor = vendedor
   if (fromDate || toDate) {
     where.createdAt = {}

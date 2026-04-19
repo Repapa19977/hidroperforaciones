@@ -7,7 +7,7 @@ import { calcularPerforacion, type InputsPerforacion } from '@/lib/calculator'
 // consumido vs presupuestado.
 export async function GET() {
   const proyectos = await prisma.proyecto.findMany({
-    where: { estado: 'activo' },
+    where: { estado: 'activo', eliminadoEn: null },
     include: { entradas: true },
   })
 
@@ -26,7 +26,7 @@ export async function GET() {
   // Cotizaciones para los proyectos activos (match por correlativo)
   const correlativos = proyectos.map(p => p.correlativo)
   const cotizaciones = correlativos.length > 0
-    ? await prisma.cotizacion.findMany({ where: { correlativo: { in: correlativos } } })
+    ? await prisma.cotizacion.findMany({ where: { correlativo: { in: correlativos }, eliminadaEn: null } })
     : []
   const cotsMap = new Map(cotizaciones.map(c => [c.correlativo, c]))
 

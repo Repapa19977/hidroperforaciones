@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   const proyectosActivos = await prisma.proyecto.findMany({
     where: {
       estado: 'activo',
+      eliminadoEn: null,
       ...(vendedor ? { vendedor } : {}),
     },
     include: {

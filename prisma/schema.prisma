@@ -20,13 +20,20 @@ model Cotizacion {
   fecha       String
   vendedor    String
   datos       String   @default("{}") // JSON: QuotationData completo (para re-abrir/imprimir)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  contactoId  String? // FK a Contacto.id — opcional por backwards compat (backfill en A.1.b)
+  // ── Soft delete ──
+  eliminadaEn   DateTime? // null = activa, set = en papelera
+  eliminadaPor  String? // username del que la borró
+  motivoBorrado String? // opcional: "Error de captura", "Duplicada", etc.
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([estado])
   @@index([vendedor])
   @@index([tipo])
   @@index([vendedor, estado])
+  @@index([contactoId])
+  @@index([eliminadaEn])
 }
 
 // ── Historial de cambios en cotizaciones ─────────────────────────────────────
@@ -58,24 +65,39 @@ model Oportunidad {
   profundidad      Int?
   proyecto         String   @default("")
   diasSinActividad Int      @default(0)
+  contactoId       String? // FK a Contacto.id — backfill por string match en A.1.b
+  // ── Soft delete ──
+  eliminadaEn   DateTime?
+  eliminadaPor  String?
+  motivoBorrado String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([etapa])
   @@index([vendedor])
   @@index([vendedor, etapa])
+  @@index([contactoId])
+  @@index([eliminadaEn])
 }
 
 // ── Usuarios del sistema ──────────────────────────────────────────────────────
 model Usuario {
-  id           String   @id @default(cuid())
-  username     String   @unique
+  id           String    @id @default(cuid())
+  username     String    @unique
   nombre       String // nombre del vendedor (aparece en cotizaciones y CRM)
-  rol          String   @default("admin") // "admin" | "superadmin"
+  rol          String    @default("admin") // "admin" | "superadmin" | "cliente_final"
   passwordHash String
-  activo       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  activo       Boolean   @default(true)
+  // Para rol "cliente_final": link al Contacto al que pertenece
+  contactoId   String?
+  email        String    @default("") // para magic link
+  ultimoAcceso DateTime? // último login efectivo
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([rol])
+  @@index([contactoId])
+  @@index([email])
 }
 
 // ── Contactos ─────────────────────────────────────────────────────────────────
@@ -91,11 +113,16 @@ model Contacto {
   municipio    String   @default("")
   notas        String   @default("")
   vendedor     String // admin que creó el contacto
+  // ── Soft delete ──
+  eliminadoEn   DateTime?
+  eliminadoPor  String?
+  motivoBorrado String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@index([vendedor])
   @@index([tipo])
+  @@index([eliminadoEn])
 }
 
 // ── Configuración del sistema (singleton) ────────────────────────────────────
@@ -118,6 +145,13 @@ model Proyecto {
   vendedor     String
   estado       String          @default("activo") // "activo" | "completado" | "pausado"
   fechaInicio  String
+  contactoId   String? // FK a Contacto.id — backfill por string match en A.1.b
+  // ── Portal cliente ──
+  visibleParaCliente Boolean @default(true) // si el cliente puede verlo en su portal
+  // ── Soft delete ──
+  eliminadoEn   DateTime?
+  eliminadoPor  String?
+  motivoBorrado String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   entradas     BitacoraEntry[]
@@ -126,6 +160,8 @@ model Proyecto {
   @@index([vendedor])
   @@index([tipo])
   @@index([vendedor, estado])
+  @@index([contactoId])
+  @@index([eliminadoEn])
 }
 
 // ── Entradas diarias de la bitácora ──────────────────────────────────────────
@@ -253,4 +289,79 @@ model GastoExtra {
   @@index([proyectoId])
   @@index([fecha])
   @@index([fechaVencimiento])
+}
+
+// ── ServiceToken — API keys para bots/integraciones (OpenClaw, webhooks, etc.) ──
+// El token REAL solo se muestra al crear; en DB guardamos solo el SHA-256.
+// Scopes son strings tipo "cotizaciones:read", "bitacora:write", "contactos:read".
+model ServiceToken {
+  id         String    @id @default(cuid())
+  nombre     String    @unique // "openclaw-bot", "zapier-integration", etc.
+  tokenHash  String    @unique // SHA-256 del token real
+  scopes     String    @default("[]") // JSON array de scopes
+  activo     Boolean   @default(true)
+  ultimoUso  DateTime?
+  vecesUsado Int       @default(0)
+  creadoPor  String    @default("")
+  notas      String    @default("")
+  expiraEn   DateTime? // null = no expira
+  createdAt  DateTime  @default(now())
+
+  @@index([activo])
+  @@index([tokenHash])
+}
+
+// ── AuditLog — bitácora de acciones sensibles (quién, qué, cuándo) ──
+// Objetivo: saber en qué se involucra cada usuario y el bot. Útil para seguridad,
+// debugging y auditorías. No es activity feed para el usuario final.
+model AuditLog {
+  id        String   @id @default(cuid())
+  usuario   String   @default("") // nombre humano o nombre del token (bot)
+  rol       String   @default("") // "admin" | "superadmin" | "bot" | "cliente_final"
+  accion    String // "create" | "update" | "delete" | "restore" | "login" | "approve" | ...
+  entidad   String // "cotizacion" | "contacto" | "proyecto" | "oportunidad" | ...
+  entidadId String   @default("") // id del recurso afectado
+  antes     String   @default("") // JSON del estado anterior (para delete/update)
+  despues   String   @default("") // JSON del estado nuevo (para create/update)
+  ip        String   @default("")
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([usuario])
+  @@index([entidad, entidadId])
+  @@index([createdAt])
+  @@index([rol])
+}
+
+// ── MagicLink — login sin contraseña para el portal del cliente ──
+// El token se manda al cliente por WhatsApp/email. TTL corto (15 min). Un solo uso.
+model MagicLink {
+  id        String    @id @default(cuid())
+  token     String    @unique // token aleatorio largo, visible en la URL
+  usuarioId String // a quién autentica (Usuario.id con rol="cliente_final")
+  expiraEn  DateTime // now() + 15 min
+  usadoEn   DateTime? // null = válido, set = ya usado (no re-usable)
+  ip        String    @default("")
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+  @@index([usuarioId])
+  @@index([expiraEn])
+}
+
+// ── OportunidadAI — mensajes y recomendaciones del asistente IA por oportunidad ──
+// Historia conversacional entre el asesor y el bot. El bot tiene contexto de la
+// oportunidad + historial del cliente + reglas de negocio (márgenes, precio mínimo).
+// Se usa en el módulo /crm como co-pilot de ventas.
+model OportunidadAI {
+  id            String   @id @default(cuid())
+  oportunidadId String // FK lógica a Oportunidad.id
+  rol           String // "asesor" | "asistente" | "sistema"
+  mensaje       String // texto del mensaje
+  metadata      String   @default("{}") // JSON: tokens usados, modelo, latencia, recomendación estructurada
+  usuario       String   @default("") // asesor que hizo la consulta (si rol=asesor)
+  createdAt     DateTime @default(now())
+
+  @@index([oportunidadId])
+  @@index([oportunidadId, createdAt])
 }

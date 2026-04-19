@@ -4,6 +4,8 @@ import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
 import { loginSchema, formatZodError } from '@/lib/validators'
 import { checkRateLimit, cleanupRateLimit, getClientIp } from '@/lib/rate-limit'
+import { auditLog } from '@/lib/audit'
+import { getRequestInfo } from '@/lib/auth'
 
 function sha256(s: string) {
   return createHash('sha256').update(s).digest('hex')
@@ -58,12 +60,34 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const info = getRequestInfo(request)
+
   if (!role) {
+    // Log intento fallido (útil para detectar ataques de fuerza bruta)
+    await auditLog({
+      user: null, accion: 'login', entidad: 'usuario', entidadId: username,
+      despues: { resultado: 'falla', motivo: 'credenciales_incorrectas' },
+      ...info,
+    })
     return NextResponse.json({ error: 'Usuario o contraseña incorrectos' }, { status: 401 })
   }
 
+  // Actualizar ultimoAcceso (sin bloquear el login si falla)
+  prisma.usuario.updateMany({
+    where: { username, activo: true },
+    data: { ultimoAcceso: new Date() },
+  }).catch(() => {})
+
+  // Log login exitoso
+  await auditLog({
+    user: { username, role: role as 'admin' | 'superadmin' | 'cliente_final' | 'bot', vendedor },
+    accion: 'login', entidad: 'usuario', entidadId: username,
+    despues: { resultado: 'exito' },
+    ...info,
+  })
+
   const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
-  const token  = await new SignJWT({ sub: username, role })
+  const token  = await new SignJWT({ sub: username, role, vendedor })
     .setProtectedHeader({ alg: 'HS256' })
     .setExpirationTime('8h')
     .setIssuedAt()

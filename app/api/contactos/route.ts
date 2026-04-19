@@ -4,9 +4,13 @@ import { prisma } from '@/lib/db'
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const vendedor = searchParams.get('vendedor')
+  const papelera = searchParams.get('papelera') === '1'
+
+  const where: Record<string, unknown> = { eliminadoEn: papelera ? { not: null } : null }
+  if (vendedor) where.vendedor = vendedor
 
   const rows = await prisma.contacto.findMany({
-    where: vendedor ? { vendedor } : undefined,
+    where,
     orderBy: { createdAt: 'desc' },
   })
 

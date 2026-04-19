@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sacosDebentonita } from '@/lib/calculator'
 import { patchCotizacionSchema, formatZodError } from '@/lib/validators'
+import { getCurrentUser, getRequestInfo } from '@/lib/auth'
+import { auditLog } from '@/lib/audit'
 
 // GET — obtener cotización con datos completos (para re-abrir/imprimir)
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -127,10 +129,48 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   return NextResponse.json({ ...row, proyectoCreado })
 }
 
-// DELETE — eliminar
-export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// DELETE — soft delete (marca como eliminada, conserva correlativo para no romper secuencia)
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const user = await getCurrentUser(request)
+  const url = new URL(request.url)
+  const motivo = url.searchParams.get('motivo') ?? ''
 
-  await prisma.cotizacion.delete({ where: { correlativo: id } })
-  return NextResponse.json({ ok: true })
+  const before = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
+  if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (before.eliminadaEn) {
+    return NextResponse.json({ error: 'Ya estaba eliminada' }, { status: 409 })
+  }
+
+  // Bloquear soft-delete si tiene proyecto activo (regla del jefe: primero cerrar proyecto)
+  const proyectoAsociado = await prisma.proyecto.findUnique({
+    where: { correlativo: id },
+    select: { id: true, estado: true, eliminadoEn: true },
+  })
+  if (proyectoAsociado && !proyectoAsociado.eliminadoEn && proyectoAsociado.estado !== 'completado') {
+    return NextResponse.json({
+      error: 'No se puede eliminar: la cotización tiene un proyecto activo. Cerrá el proyecto primero.',
+    }, { status: 409 })
+  }
+
+  const row = await prisma.cotizacion.update({
+    where: { correlativo: id },
+    data: {
+      eliminadaEn: new Date(),
+      eliminadaPor: user?.username ?? '',
+      motivoBorrado: motivo || null,
+    },
+  })
+
+  const info = getRequestInfo(request)
+  await auditLog({
+    user, accion: 'delete', entidad: 'cotizacion', entidadId: id,
+    antes: before, despues: { eliminadaEn: row.eliminadaEn, motivoBorrado: row.motivoBorrado },
+    ip: info.ip, userAgent: info.userAgent,
+  })
+
+  return NextResponse.json({ ok: true, soft: true })
 }
+
+// POST — restaurar desde papelera (quitar soft delete)
+// Endpoint usado via /api/cotizaciones/[id]/restaurar (ver route.ts hermano)
