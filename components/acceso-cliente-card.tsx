@@ -5,7 +5,7 @@
 // - Si YA existe: muestra username, email, último acceso, botón regenerar password
 
 import { useState, useEffect, useCallback } from 'react'
-import { Key, Loader2, RefreshCw, Copy, CheckCircle2, User, Mail, Clock, X } from 'lucide-react'
+import { Key, Loader2, RefreshCw, Copy, CheckCircle2, User, Mail, Clock, X, Trash2, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from './confirm-dialog'
 
@@ -28,6 +28,8 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
   const [creating, setCreating] = useState(false)
   const [revealedPass, setRevealedPass] = useState<{ username: string; password: string; email: string } | null>(null)
   const [confirmRegenerar, setConfirmRegenerar] = useState(false)
+  const [confirmDesactivar, setConfirmDesactivar] = useState(false)
+  const [desactivando, setDesactivando] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
@@ -84,6 +86,27 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
 
+  async function desactivarAcceso() {
+    setDesactivando(true)
+    try {
+      const r = await fetch(`/api/contactos/${contactoId}/acceso-cliente`, { method: 'DELETE' })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        alert(err.error || 'Error al desactivar')
+        return
+      }
+      await load()
+    } finally {
+      setDesactivando(false)
+      setConfirmDesactivar(false)
+    }
+  }
+
+  async function reactivarAcceso() {
+    // Reactivar = regenerar password (crea de nuevo, activo=true)
+    await crear(true)
+  }
+
   if (loading) {
     return (
       <div className="bg-[#0d1526] rounded-2xl border border-white/5 p-4 flex items-center gap-2 text-slate-500 text-sm">
@@ -138,11 +161,25 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
                 ? <span>Último acceso: {new Date(usuario.ultimoAcceso).toLocaleString('es-GT')}</span>
                 : <span>Todavía no ha entrado</span>}
             </div>
-            <div className="flex gap-2 pt-2">
-              <button onClick={() => setConfirmRegenerar(true)}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/10 hover:border-violet-500/40 px-3 py-1.5 rounded-lg transition-colors">
-                <RefreshCw className="w-3 h-3" /> Regenerar contraseña
-              </button>
+            <div className="flex gap-2 pt-2 flex-wrap">
+              {usuario.activo ? (
+                <>
+                  <button onClick={() => setConfirmRegenerar(true)}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/10 hover:border-violet-500/40 px-3 py-1.5 rounded-lg transition-colors">
+                    <RefreshCw className="w-3 h-3" /> Regenerar contraseña
+                  </button>
+                  <button onClick={() => setConfirmDesactivar(true)}
+                    className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 px-3 py-1.5 rounded-lg transition-colors">
+                    <Power className="w-3 h-3" /> Desactivar acceso
+                  </button>
+                </>
+              ) : (
+                <button onClick={reactivarAcceso} disabled={creating}
+                  className="flex items-center gap-1.5 text-xs bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors">
+                  {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Power className="w-3 h-3" />}
+                  Reactivar (genera nueva contraseña)
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -205,6 +242,17 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
         variant="info"
         confirmLabel="Sí, regenerar"
         loading={creating}
+      />
+
+      <ConfirmDialog
+        open={confirmDesactivar}
+        onCancel={() => setConfirmDesactivar(false)}
+        onConfirm={desactivarAcceso}
+        title="¿Desactivar acceso del cliente?"
+        description="El cliente no podrá entrar al portal. Podés reactivarlo después (te va a pedir generar una nueva contraseña)."
+        variant="destructive"
+        confirmLabel="Sí, desactivar"
+        loading={desactivando}
       />
     </>
   )

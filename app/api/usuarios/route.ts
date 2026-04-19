@@ -29,10 +29,28 @@ export async function GET(request: NextRequest) {
 
   const usuarios = await prisma.usuario.findMany({
     orderBy: { createdAt: 'asc' },
-    select: { id: true, username: true, nombre: true, rol: true, activo: true, createdAt: true },
+    select: {
+      id: true, username: true, nombre: true, rol: true, activo: true,
+      email: true, contactoId: true, ultimoAcceso: true, createdAt: true,
+    },
   })
 
-  return NextResponse.json(usuarios)
+  // Para cliente_final, traer empresa del contacto asociado (más info útil)
+  const contactoIds = usuarios.filter(u => u.contactoId).map(u => u.contactoId as string)
+  const contactos = contactoIds.length > 0
+    ? await prisma.contacto.findMany({
+        where: { id: { in: contactoIds } },
+        select: { id: true, empresa: true },
+      })
+    : []
+  const contactoMap = new Map(contactos.map(c => [c.id, c.empresa]))
+
+  return NextResponse.json(
+    usuarios.map(u => ({
+      ...u,
+      empresaCliente: u.contactoId ? contactoMap.get(u.contactoId) ?? '' : '',
+    })),
+  )
 }
 
 // POST — crear nuevo usuario

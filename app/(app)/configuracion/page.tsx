@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useId } from 'react'
+import Link from 'next/link'
 import {
   getRol, setRol, verificarPinSuperAdmin,
   DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type Rol
@@ -22,6 +23,10 @@ interface UsuarioItem {
   nombre: string
   rol: string
   activo: boolean
+  email?: string
+  contactoId?: string | null
+  empresaCliente?: string
+  ultimoAcceso?: string | null
   createdAt: string
 }
 
@@ -570,48 +575,75 @@ export default function ConfiguracionPage() {
               <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/20 text-violet-400">Super Admin</span>
             </div>
 
-            {usuarios.map(u => (
-              <div key={u.id} className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all',
-                u.activo ? 'bg-white/3 border-white/5' : 'bg-white/1 border-white/3 opacity-50'
-              )}>
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                  {u.nombre.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-200">{u.nombre}</p>
-                  <p className="text-xs text-slate-500">@{u.username}</p>
-                </div>
-                <span className={cn(
-                  'px-2 py-0.5 rounded-full text-[11px] font-medium',
-                  u.rol === 'superadmin' ? 'bg-violet-500/20 text-violet-400' : 'bg-blue-500/20 text-blue-400'
+            {usuarios.map(u => {
+              const esClienteFinal = u.rol === 'cliente_final'
+              const gradient = u.rol === 'superadmin' ? 'from-violet-500 to-purple-600'
+                              : esClienteFinal ? 'from-cyan-500 to-blue-600'
+                              : 'from-blue-500 to-blue-700'
+              const rolLabel = u.rol === 'superadmin' ? 'Super Admin'
+                              : esClienteFinal ? 'Cliente Portal'
+                              : 'Admin'
+              const rolPill = u.rol === 'superadmin' ? 'bg-violet-500/20 text-violet-400'
+                              : esClienteFinal ? 'bg-cyan-500/20 text-cyan-400'
+                              : 'bg-blue-500/20 text-blue-400'
+              return (
+                <div key={u.id} className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all',
+                  u.activo ? 'bg-white/3 border-white/5' : 'bg-white/1 border-white/3 opacity-50'
                 )}>
-                  {u.rol === 'superadmin' ? 'Super Admin' : 'Admin'}
-                </span>
-                <button
-                  onClick={() => handleToggleActivo(u.id, u.activo)}
-                  title={u.activo ? 'Desactivar acceso' : 'Activar acceso'}
-                  className={cn(
-                    'p-1.5 rounded-lg border transition-all',
-                    u.activo
-                      ? 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
-                      : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                  <div className={cn('w-7 h-7 rounded-full bg-gradient-to-br flex items-center justify-center text-[10px] font-bold text-white shrink-0', gradient)}>
+                    {u.nombre.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-200 truncate">{u.nombre}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {esClienteFinal
+                        ? <>✉ {u.email}{u.empresaCliente && <span className="text-slate-600"> · {u.empresaCliente}</span>}</>
+                        : <>@{u.username}</>
+                      }
+                    </p>
+                    {u.ultimoAcceso && (
+                      <p className="text-[10px] text-slate-600">Último acceso: {new Date(u.ultimoAcceso).toLocaleString('es-GT')}</p>
+                    )}
+                  </div>
+                  <span className={cn('px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0', rolPill)}>
+                    {rolLabel}
+                  </span>
+                  {esClienteFinal ? (
+                    <Link href={u.contactoId ? `/contactos/${u.contactoId}` : '#'}
+                      title="Gestionar desde el contacto"
+                      className="p-1.5 rounded-lg border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 transition-all text-[10px] px-2">
+                      Ver contacto →
+                    </Link>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleToggleActivo(u.id, u.activo)}
+                        title={u.activo ? 'Desactivar acceso' : 'Activar acceso'}
+                        className={cn(
+                          'p-1.5 rounded-lg border transition-all',
+                          u.activo
+                            ? 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+                            : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                        )}
+                      >
+                        {u.activo
+                          ? <ToggleRight className="w-4 h-4" />
+                          : <ToggleLeft className="w-4 h-4" />
+                        }
+                      </button>
+                      <button
+                        onClick={() => handleEliminarUsuario(u.id, u.nombre)}
+                        title="Eliminar usuario"
+                        className="p-1.5 rounded-lg border border-red-500/20 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
-                >
-                  {u.activo
-                    ? <ToggleRight className="w-4 h-4" />
-                    : <ToggleLeft className="w-4 h-4" />
-                  }
-                </button>
-                <button
-                  onClick={() => handleEliminarUsuario(u.id, u.nombre)}
-                  title="Eliminar usuario"
-                  className="p-1.5 rounded-lg border border-red-500/20 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-all"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+                </div>
+              )
+            })}
 
             {usuarios.length === 0 && (
               <p className="text-xs text-slate-600 text-center py-3">Sin usuarios adicionales creados</p>
