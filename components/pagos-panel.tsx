@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Loader2, Plus, DollarSign, CheckCircle2, Clock, AlertCircle, TrendingUp,
-  Banknote, Receipt, Building, CreditCard, Trash2,
+  Banknote, Receipt, Building, CreditCard, Trash2, Settings2, RotateCcw, X, Save,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from './confirm-dialog'
@@ -21,6 +21,13 @@ interface HitoCalculado {
   montoPendiente: number
   estado: 'pagado' | 'parcial' | 'pendiente' | 'excedido'
   pagos: Array<{ id: string; fecha: string; monto: number; metodo: string; referencia: string }>
+}
+
+interface HitoEditable {
+  id: string
+  label: string
+  pct: number
+  fijo?: boolean
 }
 
 interface PagoRow {
@@ -38,6 +45,8 @@ interface PagoRow {
 interface Response {
   hitos: HitoCalculado[]
   pagos: PagoRow[]
+  planPagos: HitoEditable[]
+  planSource: 'proyecto' | 'cotizacion' | 'default'
   totales: { proyecto: number; recibido: number; pendiente: number; pctCobrado: number }
 }
 
@@ -64,6 +73,10 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  // Editor de plan de pagos
+  const [showEditor, setShowEditor] = useState(false)
+  const [editPlan, setEditPlan] = useState<HitoEditable[]>([])
+  const [savingPlan, setSavingPlan] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -132,6 +145,62 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
     }
   }
 
+  // ── Editor de plan de pagos ──────────────────────────────────────────
+  const sumaPct = editPlan.reduce((a, h) => a + (h.pct || 0), 0)
+  const sumaCuadra = Math.abs(sumaPct - 100) < 0.01
+
+  function updateHito(idx: number, patch: Partial<HitoEditable>) {
+    setEditPlan(prev => prev.map((h, i) => i === idx ? { ...h, ...patch } : h))
+  }
+  function removeHito(idx: number) {
+    setEditPlan(prev => prev.filter((_, i) => i !== idx))
+  }
+  function addHito() {
+    const newId = `custom-${Date.now()}`
+    setEditPlan(prev => [...prev, { id: newId, label: 'Nuevo hito', pct: 0, fijo: false }])
+  }
+  function distribuirParejo() {
+    if (editPlan.length === 0) return
+    const per = 100 / editPlan.length
+    setEditPlan(prev => prev.map(h => ({ ...h, pct: Math.round(per * 100) / 100 })))
+  }
+  async function resetearAlDefault() {
+    if (!confirm('¿Descartar el plan personalizado y volver al plan de la cotización original?')) return
+    setSavingPlan(true)
+    try {
+      const r = await fetch(`/api/proyectos/${proyectoId}/plan-pagos`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planPagos: null }),
+      })
+      if (r.ok) { setShowEditor(false); await load() }
+      else {
+        const err = await r.json().catch(() => ({}))
+        alert(err.error || 'Error al resetear')
+      }
+    } finally {
+      setSavingPlan(false)
+    }
+  }
+  async function guardarPlan() {
+    if (!sumaCuadra) return
+    setSavingPlan(true)
+    try {
+      const r = await fetch(`/api/proyectos/${proyectoId}/plan-pagos`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planPagos: editPlan }),
+      })
+      if (r.ok) { setShowEditor(false); await load() }
+      else {
+        const err = await r.json().catch(() => ({}))
+        alert(err.error || 'Error al guardar el plan')
+      }
+    } finally {
+      setSavingPlan(false)
+    }
+  }
+
   if (loading || !data) {
     return <div className="flex items-center gap-2 text-slate-500 text-sm py-6"><Loader2 className="w-4 h-4 animate-spin" /> Cargando pagos...</div>
   }
@@ -145,13 +214,24 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
         <div className="flex items-center gap-2">
           <DollarSign className="w-5 h-5 text-emerald-400" />
           <h2 className="text-base font-semibold text-white">Control de Pagos</h2>
+          {data.planSource === 'proyecto' && (
+            <span className="text-[10px] bg-violet-500/15 text-violet-300 px-2 py-0.5 rounded-full border border-violet-500/30">Plan personalizado</span>
+          )}
         </div>
-        <div className="text-right">
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Cobrado</p>
-          <p className="text-base font-bold text-emerald-400 tabular-nums">
-            {formatQ(data.totales.recibido)} / {formatQ(data.totales.proyecto)}
-          </p>
-          <p className="text-[10px] text-slate-500">{pctCobrado.toFixed(0)}% · pendiente {formatQ(data.totales.pendiente)}</p>
+        <div className="flex items-center gap-3">
+          {isSuperAdmin && (
+            <button onClick={() => { setEditPlan([...data.planPagos]); setShowEditor(true) }}
+              className="flex items-center gap-1.5 text-xs bg-violet-600/80 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg transition-colors">
+              <Settings2 className="w-3.5 h-3.5" /> Editar plan
+            </button>
+          )}
+          <div className="text-right">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Cobrado</p>
+            <p className="text-base font-bold text-emerald-400 tabular-nums">
+              {formatQ(data.totales.recibido)} / {formatQ(data.totales.proyecto)}
+            </p>
+            <p className="text-[10px] text-slate-500">{pctCobrado.toFixed(0)}% · pendiente {formatQ(data.totales.pendiente)}</p>
+          </div>
         </div>
       </div>
 
@@ -298,6 +378,103 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editor del plan de pagos */}
+      {showEditor && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => !savingPlan && setShowEditor(false)}>
+          <div className="bg-[#0d1526] rounded-2xl border border-white/10 w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Editar plan de pagos</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Ajustá porcentajes, agregá o quitá hitos. Suma total = 100%.</p>
+              </div>
+              <button onClick={() => setShowEditor(false)} disabled={savingPlan} className="text-slate-500 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 overflow-y-auto flex-1 space-y-2">
+              {editPlan.map((h, idx) => (
+                <div key={idx} className="bg-white/3 border border-white/5 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input value={h.label} onChange={e => updateHito(idx, { label: e.target.value })}
+                      placeholder="Nombre del hito"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-violet-500/50" />
+                    <button onClick={() => removeHito(idx)} disabled={h.fijo}
+                      title={h.fijo ? 'Este hito no se puede quitar' : 'Quitar hito'}
+                      className="text-slate-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed p-1">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" step="0.1" min={0} max={100}
+                      value={h.pct}
+                      onChange={e => updateHito(idx, { pct: parseFloat(e.target.value) || 0 })}
+                      className="w-20 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white font-mono outline-none focus:border-violet-500/50" />
+                    <span className="text-xs text-slate-500">%</span>
+                    <input type="range" min={0} max={100} step="0.5"
+                      value={h.pct}
+                      onChange={e => updateHito(idx, { pct: parseFloat(e.target.value) })}
+                      className="flex-1 accent-violet-500" />
+                    <span className="text-[10px] text-slate-500 w-12 text-right">ID: {h.id.slice(0, 8)}</span>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addHito}
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-violet-300 hover:text-violet-200 border border-violet-500/30 hover:border-violet-500/50 border-dashed rounded-lg py-2 transition-colors">
+                <Plus className="w-3.5 h-3.5" /> Agregar hito
+              </button>
+            </div>
+
+            <div className="px-6 py-3 border-t border-white/5 bg-[#0a1020]">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-slate-400">Suma total:</span>
+                <span className={cn('text-sm font-bold tabular-nums',
+                  sumaCuadra ? 'text-emerald-400' : 'text-red-400')}>
+                  {sumaPct.toFixed(1)}% / 100%
+                </span>
+              </div>
+              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <div className={cn('h-full transition-all',
+                  sumaCuadra ? 'bg-emerald-500' : sumaPct > 100 ? 'bg-red-500' : 'bg-amber-500')}
+                  style={{ width: `${Math.min(100, sumaPct)}%` }} />
+              </div>
+              {!sumaCuadra && (
+                <p className="text-[10px] text-red-400 mt-1">
+                  {sumaPct < 100
+                    ? `Falta ${(100 - sumaPct).toFixed(1)}% para completar`
+                    : `Te pasaste por ${(sumaPct - 100).toFixed(1)}%`}
+                </p>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-white/5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={distribuirParejo} disabled={savingPlan || editPlan.length === 0}
+                  className="text-[11px] text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-md px-2.5 py-1">
+                  Distribuir parejo
+                </button>
+                {data.planSource === 'proyecto' && (
+                  <button type="button" onClick={resetearAlDefault} disabled={savingPlan}
+                    title="Volver al plan de la cotización original"
+                    className="flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded-md px-2.5 py-1">
+                    <RotateCcw className="w-3 h-3" /> Reset al original
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setShowEditor(false)} disabled={savingPlan}
+                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg">Cancelar</button>
+                <button type="button" onClick={guardarPlan} disabled={savingPlan || !sumaCuadra}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium">
+                  {savingPlan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Guardar plan
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

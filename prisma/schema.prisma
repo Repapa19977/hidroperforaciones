@@ -146,6 +146,9 @@ model Proyecto {
   estado       String          @default("activo") // "activo" | "completado" | "pausado"
   fechaInicio  String
   contactoId   String? // FK a Contacto.id — backfill por string match en A.1.b
+  // Plan de pagos editable a nivel proyecto (JSON array de HitoPago). Si es null,
+  // se usa el plan original de la cotización. Al editar, se congela acá.
+  planPagos    String? // JSON: [{ id, label, pct, fijo }]
   // ── Portal cliente ──
   visibleParaCliente Boolean @default(true) // si el cliente puede verlo en su portal
   // ── Soft delete ──

@@ -42,17 +42,33 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const proyecto = await prisma.proyecto.findUnique({ where: { id } })
   if (!proyecto) return NextResponse.json({ error: 'Proyecto no encontrado' }, { status: 404 })
 
-  // Cargar plan de pagos desde la cotización
-  const cotizacion = await prisma.cotizacion.findUnique({ where: { correlativo: proyecto.correlativo } })
+  // Prioridad: plan override del proyecto > plan de la cotización > fallback default
   let planPagos: PlanPagosItem[] = []
-  try {
-    if (cotizacion?.datos) {
-      const d = typeof cotizacion.datos === 'string' ? JSON.parse(cotizacion.datos) : cotizacion.datos
-      if (Array.isArray(d.planPagos)) planPagos = d.planPagos
-    }
-  } catch { /* ignore parse errors */ }
-
-  // Fallback si la cotización no tiene plan (casos viejos)
+  let planSource: 'proyecto' | 'cotizacion' | 'default' = 'default'
+  // 1) Override a nivel proyecto
+  if (proyecto.planPagos) {
+    try {
+      const parsed = JSON.parse(proyecto.planPagos)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        planPagos = parsed
+        planSource = 'proyecto'
+      }
+    } catch { /* ignore */ }
+  }
+  // 2) Plan original de la cotización
+  if (planPagos.length === 0) {
+    const cotizacion = await prisma.cotizacion.findUnique({ where: { correlativo: proyecto.correlativo } })
+    try {
+      if (cotizacion?.datos) {
+        const d = typeof cotizacion.datos === 'string' ? JSON.parse(cotizacion.datos) : cotizacion.datos
+        if (Array.isArray(d.planPagos) && d.planPagos.length > 0) {
+          planPagos = d.planPagos
+          planSource = 'cotizacion'
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  // 3) Fallback default
   if (planPagos.length === 0) {
     planPagos = [
       { id: 'reserva',    label: 'Reserva',                    pct: 10 },
@@ -61,6 +77,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       { id: 'entubar',    label: 'Antes de entubar',           pct: 15 },
       { id: 'prueba',     label: 'Antes de prueba de bombeo',  pct: 5 },
     ]
+    planSource = 'default'
   }
 
   // Traer pagos activos del proyecto
@@ -143,6 +160,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       id: proyecto.id, correlativo: proyecto.correlativo, nombre: proyecto.nombre,
       monto: totalProyecto, estado: proyecto.estado,
     },
+    planPagos,        // el plan usado (para que el editor lo cargue)
+    planSource,       // "proyecto" | "cotizacion" | "default"
     hitos,
     pagos,
     totales: {
