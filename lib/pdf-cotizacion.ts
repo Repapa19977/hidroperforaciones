@@ -6,9 +6,9 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { QuotationData, HitoPago } from './quotation-store'
 import { getLineaConfig } from './quotation-store'
-import { calcularPerforacion, calcularLimpieza, formatQ, IVA, ISR, formatBroca } from './calculator'
+import { calcularPerforacion, calcularLimpieza, formatQ, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
-import { DEFAULT_PRECIOS_LINEAS, type PreciosLineas, type CuentaBancaria } from './config-store'
+import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type CuentaBancaria } from './config-store'
 import { COSTOS_BASE } from './costos-base'
 import { numeroAQuetzalesEnLetras } from './numero-a-letras'
 import { resolverCondiciones } from './condiciones-perf'
@@ -35,7 +35,13 @@ function buildLineasPerf(
   preciosVentaOverride: Record<string, number> = {},
   aplicarIva = true,
   aplicarIsr = false,
+  opcionesVenta: Partial<Pick<AppConfig, 'pipaPrecioVentaUnitario' | 'camionadaGravaPrecioVentaUnitario' | 'capacidadCamionM3'>> = {},
 ) {
+  const pipaPrecioVenta     = opcionesVenta.pipaPrecioVentaUnitario ?? DEFAULT_CONFIG.pipaPrecioVentaUnitario
+  const camionadaPrecioVta  = opcionesVenta.camionadaGravaPrecioVentaUnitario ?? DEFAULT_CONFIG.camionadaGravaPrecioVentaUnitario
+  const capacidadCamion     = opcionesVenta.capacidadCamionM3 ?? DEFAULT_CONFIG.capacidadCamionM3
+  const pipasAlCliente      = pipasClienteCantidad(ip.profundidad, ip.rendimientoPorDia ?? 20)
+  const camionadasAlCliente = camionadasGrava(res.m3Grava, capacidadCamion)
   const piesLisa       = ip.tubosLisos     * 20
   const piesRan        = ip.tubosRanurados * 20
   const precioLisaPie  = piesLisa > 0 ? Math.round(res.precioTubLisa     / 20) : 0
@@ -80,7 +86,7 @@ function buildLineasPerf(
 
     { key: 'pipas-agua',
       nombre: 'Pipas para abastecimiento de agua para perforación.',
-      unidad: 'Pipa', cant: 1, precio: ip.costoPipasAgua },
+      unidad: 'Pipa', cant: pipasAlCliente, precio: preciosVentaOverride['pipas-agua'] ?? pipaPrecioVenta },
 
     ...(ip.incluirRegistroElectrico ? [{ key: 'registro-electrico',
       nombre: 'Registro eléctrico para la detección de formaciones permeables.',
@@ -104,7 +110,7 @@ function buildLineasPerf(
 
     { key: 'transporte-grava',
       nombre: 'Transporte de grava o piedrín al área de trabajo.',
-      unidad: 'Global', cant: 1, precio: pl.transGrava },
+      unidad: 'Camionada', cant: camionadasAlCliente, precio: preciosVentaOverride['transporte-grava'] ?? camionadaPrecioVta },
 
     { key: 'instalacion-grava',
       nombre: 'Instalación de grava o piedrín de calibre seleccionado para filtro.',
@@ -360,8 +366,13 @@ export async function generarPDF(
   type LineaBase = { key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }
   type LineaFinal = LineaBase & { esExtra?: boolean; extraMostrar?: boolean; extraCobrar?: boolean }
 
+  const opcionesVenta = {
+    pipaPrecioVentaUnitario: data.pipaPrecioVentaUnitario,
+    camionadaGravaPrecioVentaUnitario: data.camionadaGravaPrecioVentaUnitario,
+    capacidadCamionM3: data.capacidadCamionM3,
+  }
   const lineasBase: LineaBase[] = data.tipo === 'perforacion' && data.ip && resPerf
-    ? buildLineasPerf(data.ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, aplicarIvaForBuild, aplicarIsrForBuild)
+    ? buildLineasPerf(data.ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, aplicarIvaForBuild, aplicarIsrForBuild, opcionesVenta)
     : data.il && resLimp
       ? buildLineasLimp(data.il, resLimp, pl)
       : []

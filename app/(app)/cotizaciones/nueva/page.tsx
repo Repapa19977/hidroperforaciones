@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useId } from 'react'
 import {
   calcularPerforacion, calcularLimpieza, calcularAforoDetallado,
   defaultInputsPerforacion, defaultInputsLimpieza, defaultInputsAforoDetallado,
-  sacosDebentonita, IVA, ISR, formatBroca,
+  sacosDebentonita, pipasClienteCantidad, camionadasGrava, IVA, ISR, formatBroca,
   getPrecioTuberia, getEspesoresDisponibles, getDiametrosTuberia, DIAMETROS_BROCA,
   PERFORACION_MM, TUBERIA_MM, calcGravaM3,
   PRECIOS_POR_PIE_PERFORACION, PRECIOS_BROCAS,
@@ -137,6 +137,10 @@ export default function NuevaCotizacionPage() {
             if (typeof d.aplicarIsr === 'boolean') setAplicarIsr(d.aplicarIsr)
             if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
             if (d.planPagos)       setPlanPagos(d.planPagos)
+            // Snapshots de pipas y grava — si la cotización los guardó, usarlos; sino defaults de Config
+            if (typeof d.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(d.pipaPrecioVentaUnitario)
+            if (typeof d.camionadaGravaPrecioVentaUnitario === 'number') setCamionadaGravaPrecioVentaUnitario(d.camionadaGravaPrecioVentaUnitario)
+            if (typeof d.capacidadCamionM3 === 'number') setCapacidadCamionM3(d.capacidadCamionM3)
           } catch { /* ignore parse errors */ }
         })
         .catch(() => {})
@@ -170,6 +174,10 @@ export default function NuevaCotizacionPage() {
           if (cfg.preciosLineas) setPl({ ...DEFAULT_PRECIOS_LINEAS, ...cfg.preciosLineas })
           if (cfg.costosBaseOverride) setCostosBaseOverride(cfg.costosBaseOverride)
           setPreciosBloqueados(cfg.bloquearPreciosAdmin === true)
+          // Snapshot de precios venta pipas/grava al crear cotización
+          if (typeof cfg.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(cfg.pipaPrecioVentaUnitario)
+          if (typeof cfg.camionadaGravaPrecioVentaUnitario === 'number') setCamionadaGravaPrecioVentaUnitario(cfg.camionadaGravaPrecioVentaUnitario)
+          if (typeof cfg.capacidadCamionM3 === 'number') setCapacidadCamionM3(cfg.capacidadCamionM3)
         })
     }
   }, [])
@@ -211,6 +219,11 @@ export default function NuevaCotizacionPage() {
   const [aplicarIva, setAplicarIva] = useState(true)   // default: IVA activo (suma al total)
   const [aplicarIsr, setAplicarIsr] = useState(true)   // default: ISR activo (suma al total); apagar si cliente no retiene
   const [mostrarDesgloseImpuestos, setMostrarDesgloseImpuestos] = useState(false)  // desglose visible en PDF
+
+  // Precios desde Configuración para líneas del PDF — snapshot al crear cotización
+  const [pipaPrecioVentaUnitario, setPipaPrecioVentaUnitario] = useState(700)
+  const [camionadaGravaPrecioVentaUnitario, setCamionadaGravaPrecioVentaUnitario] = useState(6000)
+  const [capacidadCamionM3, setCapacidadCamionM3] = useState(12)
 
   const resPerf = useMemo(() => calcularPerforacion(ip), [ip])
   const resLimp = useMemo(() => calcularLimpieza(il), [il])
@@ -263,7 +276,7 @@ export default function NuevaCotizacionPage() {
     setIl(prev => ({ ...prev, [key]: val }))
 
   const lineasBase = tipo === 'perforacion'
-    ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, aplicarIva, aplicarIsr)
+    ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, aplicarIva, aplicarIsr, { pipaPrecioVentaUnitario, camionadaGravaPrecioVentaUnitario, capacidadCamionM3 })
     : buildLineasLimp(il, resLimp, pl)
 
   // Líneas extras (Fase 2) — ítems libres agregados por el usuario
@@ -348,6 +361,10 @@ export default function NuevaCotizacionPage() {
       aplicarIva,
       aplicarIsr,
       mostrarDesgloseImpuestos,
+      // Snapshot de precios venta pipas/grava/capacidad para que al re-abrir/imprimir se mantengan
+      pipaPrecioVentaUnitario,
+      camionadaGravaPrecioVentaUnitario,
+      capacidadCamionM3,
       mostrarEspesor,
       descripcionSimple,
       notas,
@@ -1991,7 +2008,13 @@ function buildLineasPerf(
   preciosVentaOverride: Record<string, number> = {},
   aplicarIva = true,
   aplicarIsr = false,
+  opcionesVenta: { pipaPrecioVentaUnitario?: number; camionadaGravaPrecioVentaUnitario?: number; capacidadCamionM3?: number } = {},
 ): LineaCot[] {
+  const pipaPrecioVenta     = opcionesVenta.pipaPrecioVentaUnitario ?? 700
+  const camionadaPrecioVta  = opcionesVenta.camionadaGravaPrecioVentaUnitario ?? 6000
+  const capacidadCamion     = opcionesVenta.capacidadCamionM3 ?? 12
+  const pipasAlCliente      = pipasClienteCantidad(ip.profundidad, ip.rendimientoPorDia ?? 20)
+  const camionadasAlCliente = camionadasGrava(res.m3Grava, capacidadCamion)
   const piesLisa       = ip.tubosLisos     * 20
   const piesRan        = ip.tubosRanurados * 20
   const precioLisaPie  = piesLisa > 0 ? Math.round(res.precioTubLisa     / 20) : 0
@@ -2040,7 +2063,7 @@ function buildLineasPerf(
 
     { key: 'pipas-agua',
       nombre: 'Pipas para abastecimiento de agua para perforación.',
-      unidad: 'Global', cant: 1, precio: ip.costoPipasAgua },
+      unidad: 'Pipa', cant: pipasAlCliente, precio: preciosVentaOverride['pipas-agua'] ?? pipaPrecioVenta },
 
     ...(ip.incluirRegistroElectrico ? [{ key: 'registro-electrico',
       nombre: 'Registro eléctrico para la detección de formaciones permeables',
@@ -2064,7 +2087,7 @@ function buildLineasPerf(
 
     { key: 'transporte-grava',
       nombre: 'Transporte de grava o piedrín al área de trabajo.',
-      unidad: 'Global', cant: 1, precio: pl.transGrava },
+      unidad: 'Camionada', cant: camionadasAlCliente, precio: preciosVentaOverride['transporte-grava'] ?? camionadaPrecioVta },
 
     { key: 'instalacion-grava',
       nombre: 'Instalación de grava o piedrín de calibre seleccionado para filtro.',

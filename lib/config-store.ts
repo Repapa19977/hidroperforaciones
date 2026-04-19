@@ -76,6 +76,17 @@ export interface AppConfig {
   comisionVendedorPct: number    // 1%
   markupQuimicosLimpieza: number // 1.5 = 50% markup sobre costo de químicos en cotización de limpieza
 
+  // ── Pipas de agua (perforación) ─────────────────────────────────────
+  // Fórmula: internas = profundidad / 20 · cliente = ceil(internas / 2)
+  pipaCostoUnitario: number      // Q 500/pipa — costo interno nuestro
+  pipaPrecioVentaUnitario: number // Q 700/pipa — se refleja al cliente en PDF
+
+  // ── Transporte grava (perforación) ──────────────────────────────────
+  // Fórmula: camionadas = ceil(m³Grava / capacidadCamionM3)
+  capacidadCamionM3: number                // 12 m³ por camión (máx por flete)
+  camionadaGravaCostoUnitario: number      // Q 5,000 costo nuestro por camionada
+  camionadaGravaPrecioVentaUnitario: number // Q 6,000 venta al cliente por camionada
+
   // ── Precios de líneas de cotización ──────────────────────────────
   preciosLineas: PreciosLineas
   bloquearPreciosAdmin: boolean  // true = solo superadmin puede editar precios de línea
@@ -112,6 +123,13 @@ export const DEFAULT_CONFIG: AppConfig = {
   costoGravaDefault: 9000,
   comisionVendedorPct: 1,
   markupQuimicosLimpieza: 1.5,  // 50% markup default; editable por superadmin
+  // Pipas de agua — reunión 2026-04-18 con el jefe
+  pipaCostoUnitario: 500,
+  pipaPrecioVentaUnitario: 700,
+  // Transporte grava — reunión 2026-04-18: Q 5,000 costo / Q 6,000 venta por 12 m³
+  capacidadCamionM3: 12,
+  camionadaGravaCostoUnitario: 5000,
+  camionadaGravaPrecioVentaUnitario: 6000,
   preciosLineas: DEFAULT_PRECIOS_LINEAS,
   bloquearPreciosAdmin: false,
   costosBaseOverride: {},

@@ -1,291 +1,201 @@
 'use client'
 
+// Vista previa e impresión de cotización.
+// Estrategia: generar el PDF real con `generarPDF()` y mostrarlo en un iframe.
+// Así el preview y el PDF descargado son IDÉNTICOS (una sola fuente de verdad).
+
 import { useEffect, useState } from 'react'
 import { loadQuotation, type QuotationData } from '@/lib/quotation-store'
-import { calcularPerforacion, calcularLimpieza, formatQ, IVA, formatBroca } from '@/lib/calculator'
-import { DEFAULT_PRECIOS_LINEAS, type PreciosLineas } from '@/lib/config-store'
-import Image from 'next/image'
+import { ArrowLeft, Download, Loader2 } from 'lucide-react'
+import type { CuentaBancaria } from '@/lib/config-store'
 
 export default function ImprimirPage() {
   const [data, setData] = useState<QuotationData | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
 
+  // 1) Cargar la cotización desde localStorage
   useEffect(() => {
     const q = loadQuotation()
     setData(q)
+    if (!q) {
+      setLoading(false)
+      setError('No hay cotización para mostrar.')
+    }
   }, [])
 
-  if (!data) return (
-    <div className="flex items-center justify-center h-screen bg-white">
-      <p className="text-gray-400 text-sm">Cargando cotización...</p>
-    </div>
-  )
+  // 2) Generar el PDF real (igual al de descarga) y exponerlo como blob URL
+  useEffect(() => {
+    if (!data) return
+    let cancelled = false
+    let urlToRevoke: string | null = null
+    ;(async () => {
+      try {
+        // Cargar cuentas bancarias desde la config (misma fuente que usa generarPDF)
+        const cfgRes = await fetch('/api/config').catch(() => null)
+        const cfg = cfgRes?.ok ? await cfgRes.json() : {}
+        const cuentas: CuentaBancaria[] | undefined = cfg?.cuentasBancarias
 
-  const pl      = { ...DEFAULT_PRECIOS_LINEAS, ...data.preciosLineas }
-  const resPerf = data.ip ? calcularPerforacion(data.ip) : null
-  const resLimp = data.il ? calcularLimpieza(data.il) : null
+        const { generarPDF } = await import('@/lib/pdf-cotizacion')
+        const bytes = await generarPDF(data, cuentas)
+        if (cancelled) return
+        const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+        urlToRevoke = url
+        setPdfBlob(blob)
+        setPdfUrl(url)
+      } catch (e) {
+        console.error(e)
+        if (!cancelled) setError('No se pudo generar el PDF. Revisá la consola.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke)
+    }
+  }, [data])
 
-  const lineas: { nombre: string; unidad: string; cant: number; precio: number; total: number }[] =
-    data.tipo === 'perforacion' && data.ip && resPerf
-      ? buildLineasPerf(data.ip, resPerf, pl)
-      : data.il && resLimp
-        ? buildLineasLimp(data.il, resLimp, pl)
-        : []
+  function nombreArchivo() {
+    if (!data) return 'Cotizacion.pdf'
+    const slug = (data.cliente || 'cliente').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40)
+    return `${data.correlativo}_${slug}.pdf`
+  }
 
-  const subtotal = lineas.reduce((a, b) => a + b.total, 0)
-  const iva = subtotal * IVA
-  const total = subtotal + iva
+  function descargarPdf() {
+    if (!pdfBlob) return
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(pdfBlob)
+    a.download = nombreArchivo()
+    a.click()
+    // Revocar después de un rato para dar tiempo a la descarga
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  }
+
+  // WhatsApp — dos rutas:
+  //   Móvil con soporte Web Share API + files: abre share sheet nativa (permite elegir WhatsApp con PDF adjunto)
+  //   Desktop o navegadores sin soporte: abre wa.me con texto + dispara descarga automática del PDF
+  async function compartirWhatsApp() {
+    if (!data || !pdfBlob) return
+    setSharing(true)
+    try {
+      const mensaje =
+        `Hola ${data.cliente}, le compartimos la cotización *${data.correlativo}* de Hidroperforaciones Guatemala.\n\n` +
+        `Proyecto: ${data.proyecto}\nVendedor: ${data.vendedor}\n\n` +
+        `Adjuntamos el PDF. Quedamos a sus órdenes para cualquier consulta.`
+
+      const file = new File([pdfBlob], nombreArchivo(), { type: 'application/pdf' })
+      type NavigatorWithShare = Navigator & {
+        canShare?: (data: { files?: File[]; text?: string; title?: string }) => boolean
+        share?: (data: { files?: File[]; text?: string; title?: string }) => Promise<void>
+      }
+      const nav = navigator as NavigatorWithShare
+      const puedeCompartirFiles = typeof nav.canShare === 'function' &&
+        nav.canShare({ files: [file] })
+
+      if (puedeCompartirFiles && typeof nav.share === 'function') {
+        await nav.share({
+          files: [file],
+          title: `Cotización ${data.correlativo}`,
+          text: mensaje,
+        })
+        return
+      }
+
+      // Fallback: descarga PDF + abre WhatsApp con texto pre-escrito
+      descargarPdf()
+      const tel = (data.telefono || '').replace(/\D/g, '')
+      const waUrl = tel
+        ? `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`
+        : `https://wa.me/?text=${encodeURIComponent(mensaje)}`
+      window.open(waUrl, '_blank', 'noopener,noreferrer')
+    } catch (e) {
+      // AbortError cuando el usuario cierra el share sheet — no es un error real
+      const err = e as { name?: string }
+      if (err.name !== 'AbortError') {
+        console.error(e)
+        alert('No se pudo compartir. El PDF se descargó — podés adjuntarlo manualmente.')
+      }
+    } finally {
+      setSharing(false)
+    }
+  }
 
   return (
-    <>
-      <style>{`
-        @media print {
-          @page { size: letter portrait; margin: 15mm 18mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .no-print { display: none !important; }
-          .page-break { page-break-before: always; }
-        }
-        body { background: white; color: #1a1a2e; font-family: 'Segoe UI', Arial, sans-serif; }
-      `}</style>
-
-      {/* Botón volver — solo en pantalla */}
-      <div className="no-print fixed top-4 right-4 flex gap-2 z-50">
-        <button onClick={() => window.history.back()}
-          className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-          ← Volver
-        </button>
-        {data?.telefono && (
-          <a
-            href={`https://wa.me/${data.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(
-              `Hola ${data.cliente}, le compartimos la cotización *${data.correlativo}* de Hidroperforaciones Guatemala.\n\nProyecto: ${data.proyecto}\nMonto total: Q${Math.round(total).toLocaleString('es-GT')}\nVendedor: ${data.vendedor}\n\nQuedamos a sus órdenes para cualquier consulta.`
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-lg transition-colors font-medium">
-            <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-            WhatsApp
-          </a>
-        )}
-        <button onClick={() => window.print()}
-          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
-          🖨️ Imprimir / Guardar PDF
-        </button>
-      </div>
-
-      {/* DOCUMENTO */}
-      <div className="max-w-[800px] mx-auto py-10 px-8 print:p-0 print:max-w-none">
-
-        {/* ENCABEZADO */}
-        <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-[#1a3a6e]">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-14 h-14 rounded-lg bg-white flex items-center justify-center overflow-hidden shrink-0 border border-gray-200">
-                <Image src="/logo.png" alt="Hidroperforaciones" width={52} height={52} className="object-contain" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-[#1a3a6e] leading-tight">HIDROPERFORACIONES</h1>
-                <p className="text-xs text-gray-500">Soluciones en agua subterránea</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">Guatemala, zona 10</p>
-            <p className="text-xs text-gray-500">Edif. Centro Empresarial, Torre II, Of. 708-709</p>
-            <p className="text-xs text-gray-500">NIT: 6697047-4</p>
-            <p className="text-xs text-gray-500">info@hidroperforaciones.com</p>
+    <div className="min-h-screen bg-slate-100 flex flex-col">
+      {/* Barra superior (sticky) */}
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-[1200px] mx-auto px-3 sm:px-6 py-2.5 flex items-center gap-2">
+          <button onClick={() => window.history.back()}
+            className="flex items-center gap-1.5 text-sm text-slate-700 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Volver</span>
+          </button>
+          <div className="flex-1 min-w-0">
+            {data && (
+              <p className="text-[11px] sm:text-sm text-slate-600 truncate">
+                <span className="font-mono font-bold text-slate-900">{data.correlativo}</span>
+                <span className="hidden sm:inline text-slate-400"> · {data.cliente}</span>
+              </p>
+            )}
           </div>
-          <div className="text-right">
-            <div className="inline-block bg-[#1a3a6e] text-white px-5 py-3 rounded-lg mb-3">
-              <p className="text-xs opacity-80 uppercase tracking-wider">Cotización</p>
-              <p className="text-xl font-bold font-mono">{data.correlativo}</p>
-            </div>
-            <div className="text-xs text-gray-500 space-y-1">
-              <p><span className="font-semibold text-gray-700">Fecha:</span> {data.fecha}</p>
-              <p><span className="font-semibold text-gray-700">Validez:</span> {data.validezDias} días</p>
-              <p><span className="font-semibold text-gray-700">Vendedor:</span> {data.vendedor}</p>
-              <p><span className="font-semibold text-gray-700">Tipo:</span> {data.tipo === 'perforacion' ? 'Perforación de Pozo' : 'Limpieza Mecánica'}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* DATOS DEL CLIENTE */}
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <p className="text-xs font-bold text-[#1a3a6e] uppercase tracking-wider mb-3">Datos del Cliente</p>
-            <table className="w-full text-sm">
-              <tbody>
-                {[
-                  ['Cliente', data.cliente || '—'],
-                  ['Empresa', data.empresa || '—'],
-                  ['NIT / DPI', data.nit || '—'],
-                ].map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="text-gray-500 font-medium pr-3 py-0.5 w-20">{k}:</td>
-                    <td className="text-gray-800 font-semibold py-0.5">{v}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <p className="text-xs font-bold text-[#1a3a6e] uppercase tracking-wider mb-3">Datos del Proyecto</p>
-            <table className="w-full text-sm">
-              <tbody>
-                {[
-                  ['Proyecto', data.proyecto],
-                  ['Dirección', data.direccion || 'Por definir'],
-                  ['Duración', data.duracion],
-                  ...(data.ip ? [['Profundidad', `${data.ip.profundidad} pies (≈${Math.round(data.ip.profundidad * 0.3048)}m)`]] : []),
-                  ...(data.ip ? [['Diámetro perforación', formatBroca(data.ip.diametro)]] : []),
-                  ...(data.ip ? [['Diámetro tubería', `${(data.ip as { diametroTuberia?: number }).diametroTuberia ?? 8} pulgadas`]] : []),
-                  ...(data.il ? [['Horas trabajo', `${data.il.horasLimpieza} horas`]] : []),
-                  ...(data.il ? [['Días trabajo', `${data.il.diasTrabajo} días`]] : []),
-                ].map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="text-gray-500 font-medium pr-3 py-0.5 w-24">{k}:</td>
-                    <td className="text-gray-800 font-semibold py-0.5">{v}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* TABLA DE SERVICIOS */}
-        <div className="mb-6">
-          <p className="text-xs font-bold text-[#1a3a6e] uppercase tracking-wider mb-3">Descripción de Servicios</p>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-[#1a3a6e] text-white text-xs">
-                <th className="text-left px-3 py-2.5 rounded-tl-lg font-semibold w-8">#</th>
-                <th className="text-left px-3 py-2.5 font-semibold">Descripción</th>
-                <th className="text-center px-3 py-2.5 font-semibold w-16">Unid.</th>
-                <th className="text-right px-3 py-2.5 font-semibold w-14">Cant.</th>
-                <th className="text-right px-3 py-2.5 font-semibold w-28">P. Unitario</th>
-                <th className="text-right px-3 py-2.5 rounded-tr-lg font-semibold w-28">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lineas.map((l, i) => (
-                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="px-3 py-2 text-gray-400 text-xs text-center border-b border-gray-100">{i + 1}</td>
-                  <td className="px-3 py-2 text-gray-800 border-b border-gray-100">{l.nombre}</td>
-                  <td className="px-3 py-2 text-center text-gray-500 text-xs border-b border-gray-100">{l.unidad}</td>
-                  <td className="px-3 py-2 text-right text-gray-700 border-b border-gray-100 tabular-nums">{l.cant}</td>
-                  <td className="px-3 py-2 text-right text-gray-700 border-b border-gray-100 tabular-nums">{formatQ(l.precio)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-gray-900 border-b border-gray-100 tabular-nums">{formatQ(l.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {/* TOTALES */}
-          <div className="flex justify-end mt-1">
-            <div className="w-72">
-              <div className="flex justify-between text-sm py-2 px-3 bg-gray-50 border border-gray-200 rounded-t-lg">
-                <span className="text-gray-600">Subtotal (sin IVA)</span>
-                <span className="font-medium tabular-nums">{formatQ(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm py-2 px-3 bg-amber-50 border-x border-b border-gray-200">
-                <span className="text-amber-700 font-medium">IVA (12%)</span>
-                <span className="text-amber-700 font-semibold tabular-nums">{formatQ(iva)}</span>
-              </div>
-              <div className="flex justify-between py-3 px-3 bg-[#1a3a6e] text-white rounded-b-lg">
-                <span className="font-bold text-base">TOTAL</span>
-                <span className="font-bold text-base tabular-nums">{formatQ(total)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* NOTAS */}
-        {data.notas && (
-          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-xs font-bold text-[#1a3a6e] uppercase tracking-wider mb-2">Notas</p>
-            <p className="text-sm text-gray-700">{data.notas}</p>
-          </div>
-        )}
-
-        {/* TÉRMINOS Y CONDICIONES */}
-        <div className="mb-8">
-          <p className="text-xs font-bold text-[#1a3a6e] uppercase tracking-wider mb-2">Términos y Condiciones</p>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            {data.condiciones.split('\n').filter(Boolean).map((line, i) => (
-              <p key={i} className="text-xs text-gray-600 mb-1">{line}</p>
-            ))}
-          </div>
-        </div>
-
-        {/* FIRMAS */}
-        <div className="grid grid-cols-2 gap-12 mt-12 pt-6 border-t border-gray-200">
-          <div className="text-center">
-            <div className="border-b border-gray-400 mb-2 pb-8" />
-            <p className="text-sm font-semibold text-gray-700">Hidroperforaciones</p>
-            <p className="text-xs text-gray-500">{data.vendedor}</p>
-            <p className="text-xs text-gray-500">Vendedor / Representante</p>
-          </div>
-          <div className="text-center">
-            <div className="border-b border-gray-400 mb-2 pb-8" />
-            <p className="text-sm font-semibold text-gray-700">{data.cliente || 'Cliente'}</p>
-            <p className="text-xs text-gray-500">{data.empresa || ''}</p>
-            <p className="text-xs text-gray-500">Aceptación y firma</p>
-          </div>
-        </div>
-
-        {/* FOOTER */}
-        <div className="mt-8 pt-4 border-t border-gray-100 text-center">
-          <p className="text-xs text-gray-400">
-            Hidroperforaciones · Guatemala, zona 10 · NIT: 6697047-4 · info@hidroperforaciones.com
-          </p>
-          <p className="text-xs text-gray-300 mt-1">
-            Cotización {data.correlativo} generada el {data.fecha} — Válida por {data.validezDias} días
-          </p>
+          <button onClick={descargarPdf} disabled={!pdfBlob || loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium">
+            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Descargar PDF</span>
+            <span className="sm:hidden">PDF</span>
+          </button>
+          {data?.telefono && (
+            <button onClick={compartirWhatsApp} disabled={!pdfBlob || loading || sharing}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm bg-[#25D366] hover:bg-[#20bd5a] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium">
+              {sharing ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : (
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" aria-hidden="true">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+              )}
+              <span className="hidden sm:inline">WhatsApp</span>
+              <span className="sm:hidden">WA</span>
+            </button>
+          )}
         </div>
       </div>
-    </>
+
+      {/* Área de preview */}
+      <div className="flex-1 flex items-center justify-center p-2 sm:p-6">
+        {loading && (
+          <div className="flex flex-col items-center gap-3 text-slate-500">
+            <Loader2 className="w-8 h-8 animate-spin" />
+            <p className="text-sm">Generando vista previa...</p>
+          </div>
+        )}
+        {error && (
+          <div className="max-w-md text-center bg-white border border-red-200 rounded-xl p-6">
+            <p className="text-sm text-red-600 mb-3">{error}</p>
+            <button onClick={() => window.history.back()}
+              className="text-sm bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-900">
+              Volver
+            </button>
+          </div>
+        )}
+        {pdfUrl && !error && (
+          <iframe
+            src={pdfUrl}
+            title="Vista previa del PDF"
+            className="w-full h-[85vh] sm:h-[calc(100vh-80px)] max-w-[900px] bg-white rounded-lg shadow-lg border border-slate-200"
+          />
+        )}
+      </div>
+
+      {/* Hint en móvil: iframes con PDF a veces no renderizan en iOS Safari */}
+      {pdfUrl && (
+        <div className="sm:hidden text-center px-4 py-2 text-[11px] text-slate-500 bg-white border-t border-slate-200">
+          Si no se muestra el PDF arriba, tocá <b>Descargar PDF</b> o <b>WhatsApp</b> para enviarlo directo.
+        </div>
+      )}
+    </div>
   )
-}
-
-/* ── Constructores de líneas ── */
-function buildLineasPerf(
-  ip: Parameters<typeof calcularPerforacion>[0],
-  res: ReturnType<typeof calcularPerforacion>,
-  pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS
-) {
-  const lines = [
-    { nombre: 'Traslado de equipo de perforación',                              unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 0.7) },
-    { nombre: 'Traslado de tubería y materiales',                               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 0.3) },
-    { nombre: 'Instalación de equipo de perforación',                           unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
-    { nombre: `Perforación de pozo mecánico Ø ${formatBroca(ip.diametro)}`,     unidad: 'ML',     cant: Math.round(ip.profundidad * 0.3048), precio: Math.round(ip.precioPorPieVenta * 3.28084) },
-    { nombre: `Tubería lisa ${ip.diametroTuberia ?? 8}" × ${ip.espesorLisa ?? 0.25}" pulgadas`,     unidad: 'Tubo', cant: ip.tubosLisos ?? (ip as { numeroDeTubos?: number }).numeroDeTubos ?? 0,     precio: res.precioTubLisa || (ip as { costoPorTubo?: number }).costoPorTubo || 0 },
-    { nombre: `Tubería ranurada ${ip.diametroTuberia ?? 8}" × ${ip.espesorRanurada ?? 0.25}" pulgadas`, unidad: 'Tubo', cant: ip.tubosRanurados ?? (ip as { numeroDeFilteros?: number }).numeroDeFilteros ?? 0, precio: res.precioTubRanurada || (ip as { costoPorFiltro?: number }).costoPorFiltro || 0 },
-    { nombre: 'Pre-filtro de grava sílica',                                     unidad: 'Global', cant: 1,               precio: Math.round(res.costoGrava) },
-    ...(ip.incluirSelloSanitario ? [{ nombre: 'Sello sanitario',                unidad: 'Global', cant: 1,               precio: Math.round(res.costoSelloSanitario) }] : []),
-    { nombre: 'Cementación',                                                    unidad: 'Global', cant: 1,               precio: pl.cementacion },
-    ...(ip.incluirRegistroElectrico ? [{ nombre: 'Registro eléctrico',          unidad: 'Global', cant: 1,               precio: pl.registroElectrico }] : []),
-    ...(ip.incluirExtraccionLodos ? [{ nombre: 'Extracción de lodos',           unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpieza }] : []),
-    { nombre: 'Desarrollo y limpieza de pozo',                                  unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpieza },
-    { nombre: 'Aforo de pozo',                                                  unidad: 'Global', cant: 1,               precio: Math.round(res.costoAforo) },
-    { nombre: 'Análisis físico-químico del agua',                               unidad: 'Unidad', cant: 1,               precio: pl.analisisFisicoQuimico },
-    { nombre: 'Análisis bacteriológico del agua',                               unidad: 'Unidad', cant: 1,               precio: pl.analisisBacteriologico },
-    { nombre: 'Informe final de pozo',                                          unidad: 'Unidad', cant: 1,               precio: pl.informeFinal },
-    { nombre: 'Desinstalación y retiro de equipo',                              unidad: 'Global', cant: 1,               precio: pl.desinstalacion },
-    { nombre: 'Suministro e instalación de bomba sumergible',                   unidad: 'Global', cant: 1,               precio: ip.costoBomba },
-    { nombre: 'Suministro e instalación de sarta de producción',                unidad: 'Global', cant: 1,               precio: pl.sartaProduccion },
-    ...(ip.incluirLimpieza ? [{ nombre: 'Limpieza mecánica de pozo',            unidad: 'Global', cant: 1,               precio: Math.round(res.costoLimpieza * 1.3) }] : []),
-  ]
-  return lines.map(l => ({ ...l, total: l.cant * l.precio })).filter(l => l.total > 0)
-}
-
-function buildLineasLimp(
-  il: Parameters<typeof calcularLimpieza>[0],
-  res: ReturnType<typeof calcularLimpieza>,
-  pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS
-) {
-  return [
-    { nombre: 'Traslado de equipo de limpieza',               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 1.2) },
-    { nombre: 'Instalación de equipo de limpieza',            unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
-    { nombre: `Limpieza mecánica de pozo (${il.horasLimpieza} horas)`, unidad: 'Hora', cant: il.horasLimpieza, precio: il.precioVentaHora },
-    { nombre: 'Químicos y aditivos de limpieza',              unidad: 'Global', cant: 1,               precio: Math.round(res.costoQuimicos * (il.markupQuimicos ?? 1.5)) },
-    { nombre: 'Desarrollo y limpieza final de pozo',          unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpiezaFinal },
-    { nombre: 'Análisis físico-químico del agua',             unidad: 'Unidad', cant: 1,               precio: pl.analisisFisicoQuimico },
-    { nombre: 'Desinstalación y retiro de equipo',            unidad: 'Global', cant: 1,               precio: pl.desinstalacion },
-  ].map(l => ({ ...l, total: l.cant * l.precio }))
 }

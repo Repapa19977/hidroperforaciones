@@ -43,20 +43,21 @@ export const COSTOS_BASE: Record<string, CostoRubro> = {
     key: 'pipasAgua',
     nombre: 'Pipas de agua',
     unidad: 'pipa',
-    costoUnitario: 400,           // Excel R4
-    precioVentaUnitario: 600,
+    costoUnitario: 500,           // Reunión 2026-04-18 con el jefe: Q 500 costo por pipa
+    precioVentaUnitario: 700,     // Reunión 2026-04-18: Q 700 venta al cliente por pipa
     editable: true,
+    notas: 'Cantidad interna = profundidad / 20. Al cliente se refleja ceil(internas / 2).',
   },
 
   // ── SERVICIOS LOGÍSTICOS ───────────────────────────────────
   transporteGrava: {
     key: 'transporteGrava',
     nombre: 'Transporte de grava',
-    unidad: 'global',
-    costoUnitario: 6000,          // Excel "Costos cotización" R7 col I + Bentonita R27 (Q6,000/traslado)
-    precioVentaUnitario: 700,     // Hoja1 Odoo línea 12 — pérdida intencional (se absorbe)
+    unidad: 'camionada',
+    costoUnitario: 5000,          // Reunión 2026-04-18: Q 5,000 costo por camionada de 12 m³
+    precioVentaUnitario: 6000,    // Reunión 2026-04-18: Q 6,000 venta al cliente por camionada
     editable: true,
-    notas: '⚠ 2 traslados típicos × Q6,000 = Q12,000 costo; venta Q700. Pérdida absorbida en otros rubros.',
+    notas: 'Camión capacidad 12 m³. Se cobra por camionadas enteras: 1-12 m³ = 1, 13-24 = 2, etc.',
   },
   instalacionGrava: {
     key: 'instalacionGrava',

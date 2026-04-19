@@ -308,6 +308,48 @@ export default function ConfiguracionPage() {
             locked={!isSuperAdmin}
             hint="Multiplicador sobre costo de químicos (1.5 = +50%)"
           />
+          <ConfigInput
+            label="Pipa agua — Costo"
+            value={config.pipaCostoUnitario}
+            onChange={v => patch('pipaCostoUnitario', v)}
+            unit="Q/pipa"
+            locked={!isSuperAdmin}
+            hint="Lo que nos cuesta cada pipa"
+          />
+          <ConfigInput
+            label="Pipa agua — Venta cliente"
+            value={config.pipaPrecioVentaUnitario}
+            onChange={v => patch('pipaPrecioVentaUnitario', v)}
+            unit="Q/pipa"
+            locked={!isSuperAdmin}
+            hint="Se refleja en PDF. Cliente ve mitad de las internas."
+            accent
+          />
+          <ConfigInput
+            label="Camión grava — Capacidad"
+            value={config.capacidadCamionM3}
+            onChange={v => patch('capacidadCamionM3', v)}
+            unit="m³"
+            locked={!isSuperAdmin}
+            hint="1-12 m³ = 1 camionada, 13-24 = 2, etc."
+          />
+          <ConfigInput
+            label="Camionada grava — Costo"
+            value={config.camionadaGravaCostoUnitario}
+            onChange={v => patch('camionadaGravaCostoUnitario', v)}
+            unit="Q/camión"
+            locked={!isSuperAdmin}
+            hint="Lo que nos cuesta cada flete de 12 m³"
+          />
+          <ConfigInput
+            label="Camionada grava — Venta cliente"
+            value={config.camionadaGravaPrecioVentaUnitario}
+            onChange={v => patch('camionadaGravaPrecioVentaUnitario', v)}
+            unit="Q/camión"
+            locked={!isSuperAdmin}
+            hint="Se refleja en PDF por camionada"
+            accent
+          />
         </div>
       </Section>
 

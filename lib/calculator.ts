@@ -31,6 +31,29 @@ export function sacosDebentonita(diametroPulg: number, profundidadPies: number):
   return Math.ceil(fila.sacosPorPie * profundidadPies)
 }
 
+// ── PIPAS DE AGUA ────────────────────────────────────────────────────────────
+// Regla definida por el dueño (2026-04-18):
+//   Internamente: 1 pipa por cada día de perforación (sin contar los 10 días extras de mantenimiento).
+//   Al cliente se le muestra la MITAD de esas pipas redondeando hacia arriba.
+//   Ej: 1100 pies / 20 pies/día = 55 días → 55 pipas internas → ceil(55/2) = 28 al cliente.
+//   Ej: 800 pies / 20 = 40 días → 40 internas → 20 al cliente.
+export function pipasInternas(profundidadPies: number, rendimientoPorDia: number = 20): number {
+  if (rendimientoPorDia <= 0) return 0
+  return Math.ceil(profundidadPies / rendimientoPorDia)
+}
+export function pipasClienteCantidad(profundidadPies: number, rendimientoPorDia: number = 20): number {
+  return Math.ceil(pipasInternas(profundidadPies, rendimientoPorDia) / 2)
+}
+
+// ── TRANSPORTE GRAVA (camionadas) ───────────────────────────────────────────
+// Regla definida por el dueño (2026-04-18):
+//   Camión capacidad 12 m³. Se cobran camionadas ENTERAS: 1-12 m³ → 1, 13-24 → 2, etc.
+//   Costo nuestro Q 5,000 por camionada · Venta al cliente Q 6,000 por camionada.
+export function camionadasGrava(m3Grava: number, capacidad: number = 12): number {
+  if (m3Grava <= 0 || capacidad <= 0) return 0
+  return Math.ceil(m3Grava / capacidad)
+}
+
 // ── CATÁLOGO DE TUBERÍA ────────────────────────────────────────────────────────
 // Fuente: Hoja de datos de perforaciones — precios reales
 export interface TuberiaSpec {

@@ -58,6 +58,12 @@ export interface QuotationData {
   valorPorPieManual?: number          // override manual del "VALOR POR PIE" del pie del PDF (si 0 o undef, usa auto-calc total/profundidad)
   mostrarEspesor?: boolean
   descripcionSimple?: boolean
+  // Precios snapshot al momento de cotizar (reunión 2026-04-18):
+  //   se congelan al guardar la cotización para que al re-imprimir salga con los mismos números
+  //   aunque el superadmin cambie la config después.
+  pipaPrecioVentaUnitario?: number              // default 700 (editable en Config)
+  camionadaGravaPrecioVentaUnitario?: number    // default 6000 (editable en Config)
+  capacidadCamionM3?: number                    // default 12
   notas: string
 }
 
