@@ -716,10 +716,10 @@ function KanbanView({ filtered, totalActivo, isSuperAdmin, menuOpen, setMenuOpen
                 </div>
               </div>
 
-              {/* Cards */}
+              {/* Cards — en desktop columnas con scroll interno, en móvil crecen con la página (scroll global) */}
               <div className={cn(
-                'flex-1 rounded-b-xl border-x border-b p-2.5 space-y-2.5',
-                'overflow-y-auto max-h-[calc(100vh-360px)] min-h-[180px]',
+                'flex-1 rounded-b-xl border-x border-b p-2.5 space-y-2.5 min-h-[180px]',
+                'md:overflow-y-auto md:max-h-[calc(100vh-360px)]',
                 col.colBg, col.border
               )}>
                 {cards.length === 0 ? (

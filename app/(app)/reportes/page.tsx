@@ -202,7 +202,7 @@ export default function ReportesPage() {
   ] : []
 
   return (
-    <div className="flex flex-col h-full bg-[#070d1a] overflow-y-auto">
+    <div className="flex flex-col bg-[#070d1a] min-h-full md:h-full md:overflow-y-auto">
 
       {/* HEADER */}
       <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-white/5 bg-[#0a1020] shrink-0">

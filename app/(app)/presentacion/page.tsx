@@ -38,7 +38,7 @@ export default function PresentacionPage() {
   ] as const
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-[#070d1a] via-[#0a1526] to-[#070d1a] overflow-auto overscroll-contain">
+    <div className="flex flex-col bg-gradient-to-br from-[#070d1a] via-[#0a1526] to-[#070d1a] min-h-full md:h-full md:overflow-auto md:overscroll-contain">
       {/* ═══ Hero ═══ */}
       <div className="px-6 py-10 text-center border-b border-white/5">
         <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full text-[10px] uppercase tracking-wider text-blue-300 mb-4">

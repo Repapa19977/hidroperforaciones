@@ -377,7 +377,7 @@ export default function ProyectoDetallePage() {
   )
 
   return (
-    <div className="flex flex-col h-full bg-[#070d1a] overflow-auto">
+    <div className="flex flex-col bg-[#070d1a] min-h-full md:h-full md:overflow-auto">
 
       {/* ── HEADER ────────────────────────────────────────────────────────── */}
       <div className="px-4 sm:px-6 py-4 border-b border-white/5 bg-[#0a1020] shrink-0">
