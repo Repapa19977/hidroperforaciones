@@ -14,6 +14,7 @@ import {
   TrendingUp, Activity, CheckCircle2, XCircle, Send, FileEdit, Award, Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AccesoClienteCard } from '@/components/acceso-cliente-card'
 
 interface Contacto {
   id: string
@@ -282,7 +283,10 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
 
       {/* Contenido del tab */}
       {tab === 'resumen' && (
-        <ResumenTab cotizaciones={cotizaciones} proyectos={proyectos} oportunidades={oportunidades} kpis={kpis} nuevaCotURL={nuevaCotURL} />
+        <div className="space-y-4">
+          <AccesoClienteCard contactoId={contacto.id} contactoNombre={contacto.nombre} contactoEmail={contacto.email} />
+          <ResumenTab cotizaciones={cotizaciones} proyectos={proyectos} oportunidades={oportunidades} kpis={kpis} nuevaCotURL={nuevaCotURL} />
+        </div>
       )}
       {tab === 'timeline' && <TimelineTab eventos={timeline} />}
       {tab === 'cotizaciones' && <CotizacionesTab rows={cotizaciones} nuevaCotURL={nuevaCotURL} />}

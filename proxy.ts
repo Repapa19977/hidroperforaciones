@@ -3,7 +3,10 @@ import type { NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
 
 // Rutas que NO requieren autenticación
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout']
+const PUBLIC_PATHS = [
+  '/login', '/api/auth/login', '/api/auth/logout',
+  '/cliente/login', '/api/auth/cliente-login',  // portal del cliente
+]
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -17,7 +20,9 @@ export async function proxy(request: NextRequest) {
 
   if (!token) {
     if (!pathname.startsWith('/api/')) {
-      return NextResponse.redirect(new URL('/login', request.url))
+      // Si va al portal cliente, redirigir al login de cliente
+      const loginUrl = pathname.startsWith('/cliente') ? '/cliente/login' : '/login'
+      return NextResponse.redirect(new URL(loginUrl, request.url))
     }
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
   }
@@ -25,11 +30,27 @@ export async function proxy(request: NextRequest) {
   try {
     const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
     const { payload } = await jwtVerify(token, secret)
+    const role = payload.role as string
+
+    // cliente_final: SOLO puede acceder a /cliente/* y /api/cliente/*
+    if (role === 'cliente_final') {
+      const allowed = pathname.startsWith('/cliente') || pathname.startsWith('/api/cliente') || pathname.startsWith('/api/auth/logout')
+      if (!allowed) {
+        return pathname.startsWith('/api/')
+          ? NextResponse.json({ error: 'No autorizado para esta ruta' }, { status: 403 })
+          : NextResponse.redirect(new URL('/cliente', request.url))
+      }
+    } else {
+      // admin/superadmin: si intenta /cliente/*, redirigir al dashboard normal
+      if (pathname.startsWith('/cliente') && !pathname.startsWith('/cliente/login')) {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+    }
 
     // /proyectos (bitácora) y su API — solo superadmin
     if (
       (pathname.startsWith('/proyectos') || pathname.startsWith('/api/proyectos')) &&
-      payload.role !== 'superadmin'
+      role !== 'superadmin'
     ) {
       return pathname.startsWith('/api/')
         ? NextResponse.json({ error: 'Solo superadmin' }, { status: 403 })
@@ -39,7 +60,7 @@ export async function proxy(request: NextRequest) {
     // /papelera y /api/tokens — solo superadmin
     if (
       (pathname.startsWith('/papelera') || pathname.startsWith('/api/tokens')) &&
-      payload.role !== 'superadmin'
+      role !== 'superadmin'
     ) {
       return pathname.startsWith('/api/')
         ? NextResponse.json({ error: 'Solo superadmin' }, { status: 403 })
