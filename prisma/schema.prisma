@@ -155,6 +155,7 @@ model Proyecto {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   entradas     BitacoraEntry[]
+  pagos        Pago[]
 
   @@index([estado])
   @@index([vendedor])
@@ -289,6 +290,36 @@ model GastoExtra {
   @@index([proyectoId])
   @@index([fecha])
   @@index([fechaVencimiento])
+}
+
+// ── Pagos recibidos por proyecto (Fase E) ──────────────────────────────────
+// Cada Pago se asocia a un hitoId del plan de pagos original de la cotización.
+// Si suma > monto esperado del hito, el excedente se acredita automáticamente
+// al siguiente hito pendiente (lógica en el endpoint de cálculo).
+model Pago {
+  id                  String   @id @default(cuid())
+  proyectoId          String
+  proyecto            Proyecto @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  proyectoCorrelativo String   @default("") // denormalizado
+  hitoId              String   // 'reserva' | 'anticipo' | 'mitad-perf' | 'entubar' | 'prueba' | 'otro'
+  hitoLabel           String   @default("") // snapshot del label del hito al momento
+  monto               Float
+  fecha               String   // YYYY-MM-DD
+  metodo              String   @default("transferencia") // cheque | transferencia | deposito | efectivo | tarjeta
+  referencia          String   @default("") // # cheque, ref bancaria, etc.
+  nota                String   @default("")
+  registradoPor       String   @default("")
+  // Soft delete
+  eliminadoEn         DateTime?
+  eliminadoPor        String?
+  motivoBorrado       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([proyectoId])
+  @@index([hitoId])
+  @@index([fecha])
+  @@index([eliminadoEn])
 }
 
 // ── ServiceToken — API keys para bots/integraciones (OpenClaw, webhooks, etc.) ──

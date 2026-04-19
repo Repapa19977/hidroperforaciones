@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
@@ -20,6 +20,8 @@ import {
 } from '@/lib/pdf-bitacora'
 import { format, parseISO, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { PagosPanel } from '@/components/pagos-panel'
+import { AlertasConsumo } from '@/components/alertas-consumo'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BitacoraEntry {
@@ -445,6 +447,12 @@ export default function ProyectoDetallePage() {
 
       <div className="p-4 sm:p-6 space-y-5">
 
+        {/* ── ALERTAS DE CONSUMO (Fase F) ─────────────────────────────────── */}
+        <AlertasConsumo proyectoId={proyecto.id} />
+
+        {/* ── CONTROL DE PAGOS (Fase E) ───────────────────────────────────── */}
+        <PagosPanel proyectoId={proyecto.id} isSuperAdmin={true} />
+
         {/* ── RESUMEN RÁPIDO ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <div className="bg-[#0d1526] rounded-xl border border-blue-500/20 p-4">
@@ -683,8 +691,8 @@ export default function ProyectoDetallePage() {
                   </thead>
                   <tbody className="divide-y divide-white/4">
                     {[...sorted].reverse().map(e => (
-                      <>
-                        <tr key={e.id} className={cn(
+                      <React.Fragment key={e.id}>
+                        <tr className={cn(
                           'transition-colors',
                           e.diaAdverso
                             ? 'bg-amber-500/5 hover:bg-amber-500/8 border-l-2 border-l-amber-500/40'
@@ -784,7 +792,7 @@ export default function ProyectoDetallePage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     ))}
                   </tbody>
                   {/* Fila de totales */}
