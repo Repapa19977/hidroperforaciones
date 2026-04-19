@@ -1,8 +1,11 @@
 'use client'
 
 // Vista previa e impresión de cotización.
-// Estrategia: generar el PDF real con `generarPDF()` y mostrarlo en un iframe.
-// Así el preview y el PDF descargado son IDÉNTICOS (una sola fuente de verdad).
+// Estrategia:
+//   1. Generamos el PDF real con `generarPDF()` (misma fuente que la descarga)
+//   2. En desktop moderno: iframe con blob URL (nativo)
+//   3. En móvil y fallback universal: rasterizamos cada página con pdfjs-dist y las mostramos como <img>
+//      (iOS Safari y muchos Android NO renderizan PDFs en iframe)
 
 import { useEffect, useState } from 'react'
 import { loadQuotation, type QuotationData } from '@/lib/quotation-store'
@@ -11,53 +14,67 @@ import type { CuentaBancaria } from '@/lib/config-store'
 
 export default function ImprimirPage() {
   const [data, setData] = useState<QuotationData | null>(null)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
+  const [pagesDataUrls, setPagesDataUrls] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
 
-  // 1) Cargar la cotización desde localStorage
+  // 1) Cargar cotización
   useEffect(() => {
     const q = loadQuotation()
     setData(q)
-    if (!q) {
-      setLoading(false)
-      setError('No hay cotización para mostrar.')
-    }
+    if (!q) { setLoading(false); setError('No hay cotización para mostrar.') }
   }, [])
 
-  // 2) Generar el PDF real (igual al de descarga) y exponerlo como blob URL
+  // 2) Generar PDF real + rasterizar páginas a imágenes con pdfjs-dist
   useEffect(() => {
     if (!data) return
     let cancelled = false
-    let urlToRevoke: string | null = null
     ;(async () => {
       try {
-        // Cargar cuentas bancarias desde la config (misma fuente que usa generarPDF)
+        // Cuentas bancarias desde la config (mismas que usa generarPDF)
         const cfgRes = await fetch('/api/config').catch(() => null)
         const cfg = cfgRes?.ok ? await cfgRes.json() : {}
         const cuentas: CuentaBancaria[] | undefined = cfg?.cuentasBancarias
 
+        // Generar el PDF binario
         const { generarPDF } = await import('@/lib/pdf-cotizacion')
         const bytes = await generarPDF(data, cuentas)
         if (cancelled) return
         const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
-        const url = URL.createObjectURL(blob)
-        urlToRevoke = url
         setPdfBlob(blob)
-        setPdfUrl(url)
+
+        // Rasterizar cada página a un data URL (PNG)
+        const pdfjs = await import('pdfjs-dist')
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+        const arrBuf = await blob.arrayBuffer()
+        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrBuf) })
+        const pdf = await loadingTask.promise
+        const urls: string[] = []
+        // Ajuste de escala: móvil quiere algo rápido (1.5x) — suficiente para lectura
+        const scale = 1.5
+        for (let i = 1; i <= pdf.numPages; i++) {
+          if (cancelled) return
+          const page = await pdf.getPage(i)
+          const viewport = page.getViewport({ scale })
+          const canvas = document.createElement('canvas')
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) continue
+          await page.render({ canvas, canvasContext: ctx, viewport }).promise
+          urls.push(canvas.toDataURL('image/png'))
+        }
+        if (!cancelled) setPagesDataUrls(urls)
       } catch (e) {
         console.error(e)
-        if (!cancelled) setError('No se pudo generar el PDF. Revisá la consola.')
+        if (!cancelled) setError('No se pudo generar la vista previa. Descargá el PDF directamente.')
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => {
-      cancelled = true
-      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke)
-    }
+    return () => { cancelled = true }
   }, [data])
 
   function nombreArchivo() {
@@ -72,13 +89,9 @@ export default function ImprimirPage() {
     a.href = URL.createObjectURL(pdfBlob)
     a.download = nombreArchivo()
     a.click()
-    // Revocar después de un rato para dar tiempo a la descarga
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
   }
 
-  // WhatsApp — dos rutas:
-  //   Móvil con soporte Web Share API + files: abre share sheet nativa (permite elegir WhatsApp con PDF adjunto)
-  //   Desktop o navegadores sin soporte: abre wa.me con texto + dispara descarga automática del PDF
   async function compartirWhatsApp() {
     if (!data || !pdfBlob) return
     setSharing(true)
@@ -94,19 +107,14 @@ export default function ImprimirPage() {
         share?: (data: { files?: File[]; text?: string; title?: string }) => Promise<void>
       }
       const nav = navigator as NavigatorWithShare
-      const puedeCompartirFiles = typeof nav.canShare === 'function' &&
-        nav.canShare({ files: [file] })
+      const puedeCompartirFiles = typeof nav.canShare === 'function' && nav.canShare({ files: [file] })
 
       if (puedeCompartirFiles && typeof nav.share === 'function') {
-        await nav.share({
-          files: [file],
-          title: `Cotización ${data.correlativo}`,
-          text: mensaje,
-        })
+        await nav.share({ files: [file], title: `Cotización ${data.correlativo}`, text: mensaje })
         return
       }
 
-      // Fallback: descarga PDF + abre WhatsApp con texto pre-escrito
+      // Fallback desktop: descarga PDF + abre WhatsApp con texto
       descargarPdf()
       const tel = (data.telefono || '').replace(/\D/g, '')
       const waUrl = tel
@@ -114,7 +122,6 @@ export default function ImprimirPage() {
         : `https://wa.me/?text=${encodeURIComponent(mensaje)}`
       window.open(waUrl, '_blank', 'noopener,noreferrer')
     } catch (e) {
-      // AbortError cuando el usuario cierra el share sheet — no es un error real
       const err = e as { name?: string }
       if (err.name !== 'AbortError') {
         console.error(e)
@@ -164,38 +171,39 @@ export default function ImprimirPage() {
         </div>
       </div>
 
-      {/* Área de preview */}
-      <div className="flex-1 flex items-center justify-center p-2 sm:p-6">
+      {/* Preview — renderiza cada página como imagen (compatible 100% con iOS/Android) */}
+      <div className="flex-1 flex flex-col items-center py-3 sm:py-6 px-2 sm:px-4 gap-3 sm:gap-4">
         {loading && (
-          <div className="flex flex-col items-center gap-3 text-slate-500">
+          <div className="flex flex-col items-center gap-3 text-slate-500 py-12">
             <Loader2 className="w-8 h-8 animate-spin" />
-            <p className="text-sm">Generando vista previa...</p>
+            <p className="text-sm">Generando vista previa…</p>
           </div>
         )}
         {error && (
           <div className="max-w-md text-center bg-white border border-red-200 rounded-xl p-6">
             <p className="text-sm text-red-600 mb-3">{error}</p>
-            <button onClick={() => window.history.back()}
-              className="text-sm bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-900">
-              Volver
-            </button>
+            <div className="flex gap-2 justify-center">
+              {pdfBlob && (
+                <button onClick={descargarPdf}
+                  className="text-sm bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-900">
+                  Descargar PDF
+                </button>
+              )}
+              <button onClick={() => window.history.back()}
+                className="text-sm bg-white border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50">
+                Volver
+              </button>
+            </div>
           </div>
         )}
-        {pdfUrl && !error && (
-          <iframe
-            src={pdfUrl}
-            title="Vista previa del PDF"
-            className="w-full h-[85vh] sm:h-[calc(100vh-80px)] max-w-[900px] bg-white rounded-lg shadow-lg border border-slate-200"
+        {!loading && !error && pagesDataUrls.map((src, i) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={i} src={src} alt={`Página ${i + 1} de la cotización`}
+            className="w-full max-w-[900px] h-auto bg-white shadow-lg rounded-md border border-slate-200"
+            loading={i === 0 ? 'eager' : 'lazy'}
           />
-        )}
+        ))}
       </div>
-
-      {/* Hint en móvil: iframes con PDF a veces no renderizan en iOS Safari */}
-      {pdfUrl && (
-        <div className="sm:hidden text-center px-4 py-2 text-[11px] text-slate-500 bg-white border-t border-slate-200">
-          Si no se muestra el PDF arriba, tocá <b>Descargar PDF</b> o <b>WhatsApp</b> para enviarlo directo.
-        </div>
-      )}
     </div>
   )
 }
