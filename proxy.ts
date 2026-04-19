@@ -61,6 +61,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Aplicar a todo excepto archivos estáticos
-  matcher: ['/((?!_next/static|_next/image|favicon\\.ico|manifest\\.json|.*\\.png$|.*\\.svg$|.*\\.ico$|.*\\.webmanifest$).*)'],
+  // Aplicar a todo excepto archivos estáticos (incluye el worker de pdfjs que web workers no mandan cookies)
+  matcher: ['/((?!_next/static|_next/image|favicon\\.ico|manifest\\.json|.*\\.png$|.*\\.svg$|.*\\.ico$|.*\\.webmanifest$|.*\\.mjs$|.*\\.js$|.*\\.wasm$).*)'],
 }
