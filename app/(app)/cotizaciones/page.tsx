@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { type Rol } from '@/lib/config-store'
 import * as XLSX from 'xlsx'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 const formatQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
@@ -68,6 +69,10 @@ export default function CotizacionesPage() {
   const [historialRows, setHisRows]   = useState<{ id: string; campo: string; valorAntes: string; valorDespues: string; usuario: string; createdAt: string }[]>([])
   const [historialLoading, setHisLd]  = useState(false)
   const [proyectoNoti, setProjNoti]   = useState<{ correlativo: string; id: string } | null>(null)
+  // Modal de confirmación para eliminar
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   // Persist view
   useEffect(() => {
@@ -139,10 +144,27 @@ export default function CotizacionesPage() {
     setHisLd(false)
   }
 
-  async function handleDelete(correlativo: string) {
-    if (!confirm(`¿Eliminar cotización ${correlativo}?`)) return
-    await deleteCotizacion(correlativo)
-    await fetchRows(myVendedor, role)
+  function handleDelete(correlativo: string) {
+    setDeleteTarget(correlativo)
+    setDeleteReason('')
+  }
+
+  async function ejecutarDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const url = `/api/cotizaciones/${encodeURIComponent(deleteTarget)}${deleteReason ? `?motivo=${encodeURIComponent(deleteReason)}` : ''}`
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'No se pudo eliminar')
+        return
+      }
+      await fetchRows(myVendedor, role)
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   function exportExcel() {
@@ -401,6 +423,21 @@ export default function CotizacionesPage() {
           </div>
         </div>
       )}
+
+      {/* Modal confirmación eliminar */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onCancel={() => { setDeleteTarget(null); setDeleteReason('') }}
+        onConfirm={ejecutarDelete}
+        title={`¿Eliminar cotización ${deleteTarget ?? ''}?`}
+        description="La cotización pasa a la papelera. Podés restaurarla cuando quieras. El correlativo NO se reutiliza."
+        confirmLabel="Sí, eliminar"
+        variant="destructive"
+        loading={deleting}
+        askReason
+        reason={deleteReason}
+        onReasonChange={setDeleteReason}
+      />
     </div>
   )
 }

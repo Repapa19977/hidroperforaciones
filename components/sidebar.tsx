@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FileText, Users, Settings, ClipboardList,
   Menu, ShieldCheck, Shield, LogOut, Sun, Moon, X, BarChart2,
-  TrendingUp, Package, BookOpen, MoreHorizontal
+  TrendingUp, Package, BookOpen, MoreHorizontal, Trash2
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
@@ -36,6 +36,7 @@ const navItems = [
   { href: '/gastos',       icon: Package,          label: 'Control Gastos' },  // solo superadmin
   { href: '/reportes',     icon: BarChart2,        label: 'Reportes'     },
   { href: '/presentacion', icon: BookOpen,         label: 'Guía'         },
+  { href: '/papelera',     icon: Trash2,           label: 'Papelera'     },  // solo superadmin
 ]
 
 export function Sidebar() {
@@ -75,6 +76,7 @@ export function Sidebar() {
   const visibleNavItems = navItems.filter(item => {
     if (item.href === '/proyectos') return isSuperAdmin
     if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
+    if (item.href === '/papelera') return isSuperAdmin // papelera solo superadmin
     return true
   })
   // Si la cookie no tiene vendedor (cookie vieja o primer render), caemos al primero de la lista como placeholder

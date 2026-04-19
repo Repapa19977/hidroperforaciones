@@ -10,7 +10,7 @@ import {
   Settings, Lock, Unlock, Save, Eye, EyeOff, ShieldCheck,
   ShieldAlert, Percent, DollarSign, Wrench, CheckCircle,
   Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Tag,
-  TrendingUp, RotateCcw
+  TrendingUp, RotateCcw, Key, Plus, Copy, Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -731,6 +731,208 @@ export default function ConfiguracionPage() {
           />
         </div>
       </div>
+
+      {/* ═══════════════ Tokens API (bots e integraciones) ═══════════════ */}
+      {isSuperAdmin && <TokensAPISection />}
+    </div>
+  )
+}
+
+// ── Sección Tokens API — genera/revoca ServiceTokens para bots (OpenClaw, etc.) ──
+interface ServiceTokenItem {
+  id: string
+  nombre: string
+  scopes: string // JSON array
+  activo: boolean
+  ultimoUso: string | null
+  vecesUsado: number
+  creadoPor: string
+  notas: string
+  expiraEn: string | null
+  createdAt: string
+}
+
+function TokensAPISection() {
+  const [tokens, setTokens] = useState<ServiceTokenItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [formNombre, setFormNombre] = useState('')
+  const [formScopes, setFormScopes] = useState<string[]>(['bot:read'])
+  const [formNotas, setFormNotas] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [revealedToken, setRevealedToken] = useState<{ nombre: string; token: string } | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/tokens')
+      if (r.ok) setTokens(await r.json())
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+
+  const SCOPES_DISPONIBLES = [
+    { key: 'bot:read',          label: 'Lectura del CRM',             desc: 'Ver cotizaciones, contactos, proyectos' },
+    { key: 'bot:calc',          label: 'Simular cálculos',            desc: 'Previsualizar cotizaciones y descuentos' },
+    { key: 'bot:write',         label: 'Escribir borradores',         desc: 'Crear cotizaciones borrador, registrar conversaciones' },
+    { key: 'bot:followup',      label: 'Mandar WhatsApp',             desc: 'Enviar mensajes de seguimiento' },
+    { key: 'cliente:read',      label: 'Portal cliente (lectura)',    desc: 'Cliente ve su proyecto' },
+    { key: 'cliente:solicitud', label: 'Cliente deja pedido',         desc: 'Cliente registra queja/solicitud' },
+  ]
+
+  async function crearToken(e: React.FormEvent) {
+    e.preventDefault()
+    if (!formNombre.trim() || formScopes.length === 0) return
+    setCreating(true)
+    try {
+      const r = await fetch('/api/tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: formNombre, scopes: formScopes, notas: formNotas }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        alert(err.error || 'Error creando token')
+        return
+      }
+      const data = await r.json()
+      setRevealedToken({ nombre: data.nombre, token: data.token })
+      setFormNombre(''); setFormNotas(''); setFormScopes(['bot:read'])
+      setShowForm(false)
+      await load()
+    } finally { setCreating(false) }
+  }
+
+  async function revocarToken(id: string, nombre: string) {
+    if (!confirm(`¿Revocar el token "${nombre}"? El bot dejará de funcionar inmediatamente.`)) return
+    const r = await fetch(`/api/tokens/${id}`, { method: 'DELETE' })
+    if (r.ok) await load()
+  }
+
+  return (
+    <div className="bg-[#0d1526] rounded-xl border border-violet-500/20 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Key className="w-4 h-4 text-violet-400" />
+          <p className="text-sm font-semibold text-slate-300">Tokens API · Bots e Integraciones</p>
+        </div>
+        <button onClick={() => setShowForm(true)}
+          className="flex items-center gap-1.5 text-xs bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg transition-colors">
+          <Plus className="w-3.5 h-3.5" /> Nuevo Token
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Tokens para que bots (como Hidra en OpenClaw) consuman los endpoints <code className="text-slate-400">/api/bot/*</code>.
+        El valor del token solo se muestra UNA vez al crearlo. Guardalo en lugar seguro.
+      </p>
+
+      {/* Modal revelar token */}
+      {revealedToken && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0d1526] border border-violet-500/40 rounded-2xl p-6 max-w-lg w-full">
+            <h3 className="text-base font-bold text-white mb-2">Token creado: {revealedToken.nombre}</h3>
+            <p className="text-xs text-amber-400 mb-3">⚠ Copiá este valor ahora — no se puede recuperar después.</p>
+            <div className="bg-black/40 border border-white/10 rounded-lg p-3 mb-3">
+              <code className="text-xs text-emerald-300 break-all font-mono">{revealedToken.token}</code>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { navigator.clipboard.writeText(revealedToken.token); alert('Copiado al portapapeles') }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg">
+                <Copy className="w-3.5 h-3.5" /> Copiar
+              </button>
+              <button onClick={() => setRevealedToken(null)}
+                className="px-3 py-2 text-xs bg-violet-600 hover:bg-violet-500 text-white rounded-lg">Listo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Form nuevo token */}
+      {showForm && (
+        <form onSubmit={crearToken} className="bg-white/3 border border-white/10 rounded-lg p-4 mb-4 space-y-3">
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Nombre (ej. openclaw-hidra)</label>
+            <input value={formNombre} onChange={e => setFormNombre(e.target.value)}
+              placeholder="openclaw-hidra"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500/50" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Scopes (qué puede hacer)</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {SCOPES_DISPONIBLES.map(s => (
+                <label key={s.key} className="flex items-start gap-2 bg-white/3 border border-white/5 rounded-lg p-2 cursor-pointer hover:border-violet-500/30">
+                  <input type="checkbox" checked={formScopes.includes(s.key)}
+                    onChange={e => {
+                      if (e.target.checked) setFormScopes(prev => [...prev, s.key])
+                      else setFormScopes(prev => prev.filter(x => x !== s.key))
+                    }}
+                    className="mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-white">{s.label}</p>
+                    <p className="text-[10px] text-slate-500">{s.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Notas (opcional)</label>
+            <input value={formNotas} onChange={e => setFormNotas(e.target.value)}
+              placeholder="ej. Bot WhatsApp corriendo en Ubuntu VPS"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500/50" />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setShowForm(false)}
+              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg">Cancelar</button>
+            <button type="submit" disabled={creating || !formNombre.trim() || formScopes.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-lg">
+              {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Crear token
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Lista */}
+      {loading ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-4"><Loader2 className="w-4 h-4 animate-spin" /> Cargando...</div>
+      ) : tokens.length === 0 ? (
+        <div className="text-center py-6 text-slate-500 text-sm">
+          Aún no hay tokens. Creá el primero para conectar tu bot.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {tokens.map(t => {
+            let scopesList: string[] = []
+            try { scopesList = JSON.parse(t.scopes) } catch {}
+            return (
+              <div key={t.id} className={cn(
+                'border rounded-lg p-3 flex items-center gap-3',
+                t.activo ? 'bg-white/3 border-white/5' : 'bg-red-500/5 border-red-500/20 opacity-70'
+              )}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-mono font-semibold text-white truncate">{t.nombre}</p>
+                    {!t.activo && <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">Revocado</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Scopes: {scopesList.join(', ') || '(ninguno)'} · Usado {t.vecesUsado}×
+                    {t.ultimoUso && ` · último uso ${new Date(t.ultimoUso).toLocaleString('es-GT')}`}
+                  </p>
+                  {t.notas && <p className="text-[10px] text-slate-400 mt-0.5 italic">{t.notas}</p>}
+                </div>
+                {t.activo && (
+                  <button onClick={() => revocarToken(t.id, t.nombre)}
+                    title="Revocar"
+                    className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

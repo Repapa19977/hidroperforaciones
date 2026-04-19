@@ -36,6 +36,16 @@ export async function proxy(request: NextRequest) {
         : NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
+    // /papelera y /api/tokens — solo superadmin
+    if (
+      (pathname.startsWith('/papelera') || pathname.startsWith('/api/tokens')) &&
+      payload.role !== 'superadmin'
+    ) {
+      return pathname.startsWith('/api/')
+        ? NextResponse.json({ error: 'Solo superadmin' }, { status: 403 })
+        : NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
     // Re-sincronizar user_role con el JWT en cada request.
     // Evita que código cliente (ej. botón PIN de configuración) lo sobreescriba.
     const res = NextResponse.next()

@@ -51,6 +51,18 @@ interface ProyectoResumen {
   fechaInicio: string
 }
 
+interface OportunidadResumen {
+  id: string
+  correlativo: string
+  cliente: string
+  empresa: string
+  monto: number
+  etapa: string
+  vendedor: string
+  fecha: string
+  tipo: string
+}
+
 const TIPO_COLORS: Record<string, string> = {
   cliente:    'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
   prospecto:  'bg-blue-500/20 text-blue-400 border-blue-500/30',
@@ -76,6 +88,7 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
   const [contacto, setContacto] = useState<Contacto | null>(null)
   const [cotizaciones, setCotizaciones] = useState<CotizacionResumen[]>([])
   const [proyectos, setProyectos] = useState<ProyectoResumen[]>([])
+  const [oportunidades, setOportunidades] = useState<OportunidadResumen[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -91,6 +104,7 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
         setContacto(data.contacto)
         setCotizaciones(data.cotizaciones ?? [])
         setProyectos(data.proyectos ?? [])
+        setOportunidades(data.oportunidades ?? [])
       })
       .finally(() => setLoading(false))
   }, [id])
@@ -284,6 +298,47 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
                   {p.estado}
                 </span>
                 <span className="text-sm font-bold text-white tabular-nums min-w-[100px] text-right">{formatQ(p.monto)}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Oportunidades (CRM pipeline) */}
+      <div className="bg-[#0d1526] rounded-2xl border border-white/5 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-semibold text-white">Oportunidades (CRM)</h2>
+            <span className="text-[11px] text-slate-500">({oportunidades.length})</span>
+          </div>
+        </div>
+        {oportunidades.length === 0 ? (
+          <div className="py-10 flex flex-col items-center text-slate-600">
+            <AlertCircle className="w-8 h-8 mb-2 opacity-30" />
+            <p className="text-sm text-slate-500">Sin oportunidades en el pipeline</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {oportunidades.map(o => (
+              <Link key={o.id} href={`/crm?focus=${o.id}`}
+                className="flex items-center gap-3 px-5 py-3 hover:bg-white/2 transition-colors">
+                <span className="font-mono text-[11px] text-amber-400 min-w-[60px]">{o.correlativo}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-200 truncate">{o.tipo}</p>
+                  <p className="text-[10px] text-slate-500">
+                    <Calendar className="inline w-3 h-3 mr-1" />
+                    {o.fecha} · {o.vendedor}
+                  </p>
+                </div>
+                <span className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded-md capitalize',
+                  o.etapa === 'won'  ? 'bg-emerald-500/20 text-emerald-400' :
+                  o.etapa === 'lost' ? 'bg-red-500/20 text-red-400' :
+                  o.etapa === 'negotiation' ? 'bg-amber-500/20 text-amber-400' :
+                  'bg-slate-500/20 text-slate-400'
+                )}>{o.etapa}</span>
+                <span className="text-sm font-bold text-white tabular-nums min-w-[100px] text-right">{formatQ(o.monto)}</span>
               </Link>
             ))}
           </div>

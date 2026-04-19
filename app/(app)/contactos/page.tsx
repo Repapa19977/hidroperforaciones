@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { type Rol } from '@/lib/config-store'
 import { VENDEDORES } from '@/lib/quotation-store'
 import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
@@ -62,6 +63,9 @@ export default function ContactosPage() {
   const [form, setForm]               = useState(EMPTY)
   const [saving, setSaving]           = useState(false)
   const [vendedoresDB, setVendedoresDB] = useState<string[]>([])  // nombres reales desde /api/vendedores
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; nombre: string } | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleting, setDeleting]         = useState(false)
 
   const fetchContacts = useCallback(async (v: string, r: Rol) => {
     const url = r === 'superadmin'
@@ -147,10 +151,28 @@ export default function ContactosPage() {
     fetchContacts(myVendedor, role)
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('¿Eliminar este contacto?')) return
-    await fetch(`/api/contactos/${id}`, { method: 'DELETE' })
-    fetchContacts(myVendedor, role)
+  function handleDelete(id: string) {
+    const c = contacts.find(x => x.id === id)
+    setDeleteTarget({ id, nombre: c?.nombre || id })
+    setDeleteReason('')
+  }
+
+  async function ejecutarDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const url = `/api/contactos/${deleteTarget.id}${deleteReason ? `?motivo=${encodeURIComponent(deleteReason)}` : ''}`
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'No se pudo eliminar')
+        return
+      }
+      fetchContacts(myVendedor, role)
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const p = (key: keyof typeof EMPTY, val: string) =>
@@ -446,6 +468,20 @@ export default function ContactosPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onCancel={() => { setDeleteTarget(null); setDeleteReason('') }}
+        onConfirm={ejecutarDelete}
+        title={`¿Eliminar contacto ${deleteTarget?.nombre ?? ''}?`}
+        description="El contacto pasa a la papelera. Su expediente queda guardado y se puede restaurar."
+        confirmLabel="Sí, eliminar"
+        variant="destructive"
+        loading={deleting}
+        askReason
+        reason={deleteReason}
+        onReasonChange={setDeleteReason}
+      />
     </div>
   )
 }
