@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import type { Rol } from '@/lib/config-store'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import * as XLSX from 'xlsx'
 
 interface ProyectoRow {
@@ -62,6 +63,9 @@ export default function ProyectosPage() {
   const [search, setSearch] = useState('')
   const [estado, setEstado] = useState<'todos' | 'activo' | 'pausado' | 'completado'>('todos')
   const [vendedorFiltro, setVendedorFiltro] = useState('Todos')
+  const [deleteTarget, setDeleteTarget] = useState<ProyectoRow | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   const searchDeferred = useDeferredValue(search)
   const isSuperAdmin = role === 'superadmin'
@@ -77,17 +81,27 @@ export default function ProyectosPage() {
     setLoading(false)
   }
 
-  async function handleDelete(r: ProyectoRow) {
-    const msg = r.entradas.length > 0
-      ? `¿Eliminar el proyecto "${r.nombre}"?\n\nSe borrarán también las ${r.entradas.length} entrada(s) de bitácora. Esta acción no se puede deshacer.`
-      : `¿Eliminar el proyecto "${r.nombre}"?\n\nEsta acción no se puede deshacer.`
-    if (!confirm(msg)) return
-    const res = await fetch(`/api/proyectos/${r.id}`, { method: 'DELETE' })
-    if (!res.ok) {
-      alert('No se pudo eliminar el proyecto.')
-      return
+  function handleDelete(r: ProyectoRow) {
+    setDeleteTarget(r)
+    setDeleteReason('')
+  }
+
+  async function ejecutarDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const url = `/api/proyectos/${deleteTarget.id}${deleteReason ? `?motivo=${encodeURIComponent(deleteReason)}` : ''}`
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'No se pudo eliminar el proyecto.')
+        return
+      }
+      await loadData()
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
     }
-    await loadData()
   }
 
   // Lee cookies solo en el cliente (después de hidratación) y carga datos
@@ -364,6 +378,24 @@ export default function ProyectosPage() {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onCancel={() => { setDeleteTarget(null); setDeleteReason('') }}
+        onConfirm={ejecutarDelete}
+        title={`¿Eliminar proyecto ${deleteTarget?.correlativo ?? ''}?`}
+        description={
+          deleteTarget && deleteTarget.entradas.length > 0
+            ? `Tiene ${deleteTarget.entradas.length} entrada(s) de bitácora. El proyecto pasa a la papelera. Podés restaurarlo.`
+            : 'El proyecto pasa a la papelera. Podés restaurarlo cuando quieras.'
+        }
+        confirmLabel="Sí, eliminar"
+        variant="destructive"
+        loading={deleting}
+        askReason
+        reason={deleteReason}
+        onReasonChange={setDeleteReason}
+      />
     </div>
   )
 }

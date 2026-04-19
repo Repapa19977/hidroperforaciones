@@ -28,11 +28,13 @@ type Item = Record<string, unknown> & {
 // NOTA: proxy.ts ya bloquea a non-superadmin con 302 al /dashboard.
 // No hace falta checkear rol en el cliente (evitamos hydration mismatch).
 
-const TABS: { id: Tab; label: string; icon: typeof FileText; endpoint: string; restaurar: (id: string) => string }[] = [
-  { id: 'cotizaciones',  label: 'Cotizaciones',  icon: FileText,   endpoint: '/api/cotizaciones?papelera=1',  restaurar: (id) => `/api/cotizaciones/${id}/restaurar` },
-  { id: 'contactos',     label: 'Contactos',     icon: Users,      endpoint: '/api/contactos?papelera=1',     restaurar: (id) => `/api/contactos/${id}/restaurar` },
-  { id: 'proyectos',     label: 'Proyectos',     icon: Briefcase,  endpoint: '/api/proyectos?papelera=1',     restaurar: (id) => `/api/proyectos/${id}/restaurar` },
-  { id: 'oportunidades', label: 'Oportunidades', icon: TrendingUp, endpoint: '/api/oportunidades?papelera=1', restaurar: (id) => `/api/oportunidades/${id}/restaurar` },
+// urlKey define qué campo del item se pasa como [id] en la URL de restaurar.
+// Cotización usa correlativo (P0023); las demás usan el cuid interno (id).
+const TABS: { id: Tab; label: string; icon: typeof FileText; endpoint: string; urlKey: 'id' | 'correlativo'; restaurarBase: string }[] = [
+  { id: 'cotizaciones',  label: 'Cotizaciones',  icon: FileText,   endpoint: '/api/cotizaciones?papelera=1',  urlKey: 'correlativo', restaurarBase: '/api/cotizaciones' },
+  { id: 'contactos',     label: 'Contactos',     icon: Users,      endpoint: '/api/contactos?papelera=1',     urlKey: 'id',          restaurarBase: '/api/contactos' },
+  { id: 'proyectos',     label: 'Proyectos',     icon: Briefcase,  endpoint: '/api/proyectos?papelera=1',     urlKey: 'id',          restaurarBase: '/api/proyectos' },
+  { id: 'oportunidades', label: 'Oportunidades', icon: TrendingUp, endpoint: '/api/oportunidades?papelera=1', urlKey: 'id',          restaurarBase: '/api/oportunidades' },
 ]
 
 export default function PapeleraPage() {
@@ -57,12 +59,16 @@ export default function PapeleraPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function ejecutarRestaurar(id: string) {
-    setRestoring(id)
+  async function ejecutarRestaurar(internalId: string) {
+    const item = items.find(x => x.id === internalId)
+    if (!item) return
+    // Para cotizaciones la URL usa correlativo (P0023); para el resto, el id interno.
+    const urlParam = activeTab.urlKey === 'correlativo' ? item.correlativo : item.id
+    setRestoring(internalId)
     try {
-      const r = await fetch(activeTab.restaurar(id), { method: 'POST' })
+      const r = await fetch(`${activeTab.restaurarBase}/${encodeURIComponent(String(urlParam))}/restaurar`, { method: 'POST' })
       if (r.ok) {
-        setItems(prev => prev.filter(x => x.id !== id))
+        setItems(prev => prev.filter(x => x.id !== internalId))
       } else {
         const err = await r.json().catch(() => ({}))
         alert(err.error || 'No se pudo restaurar')

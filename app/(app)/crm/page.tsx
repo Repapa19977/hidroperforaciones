@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { VENDEDORES } from '@/lib/quotation-store'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -88,6 +89,10 @@ export default function CrmPage() {
   const [editing, setEditing]       = useState<Oportunidad | null>(null)
   const [form, setForm]             = useState<Partial<Oportunidad>>(blankForm())
   const [saving, setSaving]         = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Oportunidad | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleting, setDeleting]     = useState(false)
+  const [lostTarget, setLostTarget] = useState<Oportunidad | null>(null)
 
   const isSuperAdmin = role === 'superadmin'
 
@@ -147,15 +152,28 @@ export default function CrmPage() {
     if (idx > 0) setEtapa(o, ETAPA_ORDER[idx - 1])
   }
 
-  async function marcarPerdido(o: Oportunidad) {
-    if (!confirm(`¿Marcar "${o.cliente}" como perdido?`)) return
-    setEtapa(o, 'lost')
+  function marcarPerdido(o: Oportunidad) { setLostTarget(o) }
+  function eliminar(o: Oportunidad) {
+    setDeleteTarget(o)
+    setDeleteReason('')
   }
 
-  async function eliminar(o: Oportunidad) {
-    if (!confirm(`¿Eliminar oportunidad de "${o.cliente}"?`)) return
-    await fetch(`/api/oportunidades/${o.id}`, { method: 'DELETE' })
-    setRows(prev => prev.filter(r => r.id !== o.id))
+  async function ejecutarEliminar() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const url = `/api/oportunidades/${deleteTarget.id}${deleteReason ? `?motivo=${encodeURIComponent(deleteReason)}` : ''}`
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'No se pudo eliminar')
+        return
+      }
+      setRows(prev => prev.filter(r => r.id !== deleteTarget.id))
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   // ── Modal ────────────────────────────────────────────────────────────────────
@@ -459,6 +477,30 @@ export default function CrmPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onCancel={() => { setDeleteTarget(null); setDeleteReason('') }}
+        onConfirm={ejecutarEliminar}
+        title={`¿Eliminar oportunidad de "${deleteTarget?.cliente ?? ''}"?`}
+        description="La oportunidad pasa a la papelera. Podés restaurarla cuando quieras."
+        confirmLabel="Sí, eliminar"
+        variant="destructive"
+        loading={deleting}
+        askReason
+        reason={deleteReason}
+        onReasonChange={setDeleteReason}
+      />
+
+      <ConfirmDialog
+        open={lostTarget !== null}
+        onCancel={() => setLostTarget(null)}
+        onConfirm={() => { if (lostTarget) { setEtapa(lostTarget, 'lost'); setLostTarget(null) } }}
+        title={`¿Marcar "${lostTarget?.cliente ?? ''}" como perdido?`}
+        description="La oportunidad queda en la columna 'Perdido'. Sigue visible, solo cambia de etapa."
+        confirmLabel="Sí, marcar perdido"
+        variant="info"
+      />
     </div>
   )
 }
