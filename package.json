@@ -9,6 +9,7 @@
     "lint": "eslint",
     "check:hygiene": "node scripts/checks/repo-hygiene.mjs",
     "smoke:local": "node scripts/checks/smoke-local.mjs",
+    "qa:local": "node scripts/checks/qa-local.mjs",
     "verify": "npm run lint && npm run predeploy",
     "predeploy": "node scripts/predeploy-check.mjs"
   },

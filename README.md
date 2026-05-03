@@ -26,6 +26,7 @@ npm run lint
 npm run build
 npm run predeploy
 npm run verify
+npm run qa:local
 ```
 
 Antes de cualquier despliegue se debe ejecutar:
@@ -43,6 +44,7 @@ npm run smoke:local
 ```
 
 Guia operativa: `docs/OPERACION_ADMIN.md`.
+Checklist funcional: `docs/QA_FUNCIONAL.md`.
 
 ## Variables De Entorno
 
