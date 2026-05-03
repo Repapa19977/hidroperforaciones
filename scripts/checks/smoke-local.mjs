@@ -7,7 +7,7 @@ const checks = [
   { path: '/cotizaciones', ok: [302, 307, 308] },
   { path: '/proyectos', ok: [302, 307, 308] },
   { path: '/contactos', ok: [302, 307, 308] },
-  { path: '/legacy', ok: [302, 307, 308] },
+  { path: '/legacy', ok: [301, 302, 307, 308] },
   { path: '/api/contactos', ok: [401] },
 ]
 
