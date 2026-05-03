@@ -2,7 +2,8 @@
 //  - generarPDFEntrada(proyecto, entrada)  → reporte diario para el cliente
 //  - generarPDFExpediente(proyecto)         → expediente completo del proyecto
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import autoTable, { type Styles } from 'jspdf-autotable'
+import { formatFechaDDMMYYYY } from './date-format'
 
 // ── Colores ──────────────────────────────────────────────────────────────────
 const NAVY   = '#1a3a6e'
@@ -12,10 +13,8 @@ const GRAY100= '#f3f4f6'
 const GRAY300= '#d1d5db'
 const GRAY500= '#6b7280'
 const GRAY700= '#374151'
-const GRAY800= '#1f2937'
 const GREEN  = '#059669'
 const AMBER  = '#d97706'
-const RED    = '#dc2626'
 
 function hex(h: string): [number, number, number] {
   return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]
@@ -110,7 +109,7 @@ function drawHeader(
   doc.setFont('helvetica','normal')
   doc.setFontSize(8)
   doc.setTextColor(...hex(GRAY500))
-  doc.text('Guatemala · info@hidroperforaciones.com', mg + 19, y + 11)
+  doc.text('Guatemala · ventas@hidroperforaciones.com', mg + 19, y + 11)
 
   // subtítulo a la derecha
   doc.setFont('helvetica','bold')
@@ -125,13 +124,32 @@ function drawHeader(
   return lineY + 5
 }
 
+function wrapText(doc: jsPDF, text: string, maxWidth: number): string[] {
+  const clean = (text || '').replace(/\s+/g, ' ').trim()
+  if (!clean) return ['']
+  return doc.splitTextToSize(clean, maxWidth) as string[]
+}
+
+function lastAutoTableY(doc: jsPDF, fallback: number): number {
+  const table = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable
+  return table?.finalY ?? fallback
+}
+
+function ensureSpace(doc: jsPDF, y: number, needed: number, topMargin: number, bottomMargin = 16): number {
+  const H = doc.internal.pageSize.getHeight()
+  if (y + needed <= H - bottomMargin) return y
+  doc.addPage()
+  return topMargin
+}
+
 // ── Barra de progreso ─────────────────────────────────────────────────────────
 function drawProgressBar(
   doc: jsPDF,
   x: number, y: number, w: number, h: number,
   pct: number,
-  label: string
-) {
+  label: string,
+  labelMaxWidth = w
+): number {
   // fondo
   doc.setFillColor(...hex(GRAY100))
   doc.roundedRect(x, y, w, h, h/2, h/2, 'F')
@@ -142,11 +160,13 @@ function drawProgressBar(
     doc.setFillColor(...hex(color))
     doc.roundedRect(x, y, fillW, h, h/2, h/2, 'F')
   }
-  // texto
+  // texto debajo de la barra para evitar que se salga de la hoja
   doc.setFont('helvetica','bold')
   doc.setFontSize(7)
   doc.setTextColor(...hex(GRAY700))
-  doc.text(label, x + w + 3, y + h - 1)
+  const lines = wrapText(doc, label, labelMaxWidth)
+  doc.text(lines, x, y + h + 4)
+  return h + (lines.length * 3.8) + 3
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -162,34 +182,47 @@ export async function generarPDFEntrada(
   const doc  = new jsPDF({ format: 'letter', unit: 'mm', orientation: 'portrait' })
   const W = doc.internal.pageSize.getWidth()
   const mg = 14
+  const fechaEntrada = formatFechaDDMMYYYY(entrada.fecha)
   let y = mg
 
   // Encabezado
   y = drawHeader(doc, logo, W, mg, y, 'BITÁCORA DIARIA')
 
   // Datos del proyecto
+  const valueX = mg + 28
+  const dateBlockW = 48
+  const valueMaxW = W - mg - dateBlockW - valueX - 5
+  doc.setFont('helvetica','normal')
+  doc.setFontSize(9)
+  const proyectoLines = wrapText(doc, proyecto.nombre, valueMaxW)
+  const clienteLines = wrapText(doc, proyecto.cliente + (proyecto.empresa ? ` — ${proyecto.empresa}` : ''), valueMaxW)
+  const lineH = 4.1
+  const proyectoH = Math.max(5.5, proyectoLines.length * lineH)
+  const clienteH = Math.max(5.5, clienteLines.length * lineH)
+  const boxH = Math.max(24, 7 + proyectoH + clienteH + 7)
+
   doc.setFillColor(...hex(GRAY50))
-  doc.roundedRect(mg, y, W - mg*2, 22, 2, 2, 'F')
+  doc.roundedRect(mg, y, W - mg*2, boxH, 2, 2, 'F')
 
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
   doc.text('PROYECTO', mg + 4, y + 7)
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...hex(GRAY700))
-  doc.text(proyecto.nombre, mg + 28, y + 7)
+  doc.text(proyectoLines, valueX, y + 7)
 
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
-  doc.text('CLIENTE', mg + 4, y + 13)
+  doc.text('CLIENTE', mg + 4, y + 7 + proyectoH + 1.5)
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...hex(GRAY700))
-  doc.text(proyecto.cliente + (proyecto.empresa ? ` — ${proyecto.empresa}` : ''), mg + 28, y + 13)
+  doc.text(clienteLines, valueX, y + 7 + proyectoH + 1.5)
 
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
-  doc.text('CORRELATIVO', mg + 4, y + 19)
+  doc.text('COTIZACION', mg + 4, y + 7 + proyectoH + clienteH + 3)
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...hex(GRAY700))
-  doc.text(proyecto.correlativo, mg + 28, y + 19)
+  doc.text(proyecto.correlativo, valueX, y + 7 + proyectoH + clienteH + 3)
 
   // Fecha + turno en la derecha
   const turnoLabel = entrada.turno === 'dia' ? 'TURNO DIURNO' : 'TURNO NOCTURNO'
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...hex(NAVY))
-  doc.text(entrada.fecha, W - mg - 4, y + 8, { align: 'right' })
+  doc.text(fechaEntrada, W - mg - 4, y + 8, { align: 'right' })
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...hex(GRAY500))
   doc.text(turnoLabel, W - mg - 4, y + 14, { align: 'right' })
   if (entrada.diaAdverso) {
@@ -197,7 +230,7 @@ export async function generarPDFEntrada(
     doc.text('⚠ DÍA ADVERSO', W - mg - 4, y + 19, { align: 'right' })
   }
 
-  y += 27
+  y += boxH + 5
 
   // ── Tabla de actividades del día ──────────────────────────────────────────
   const esPerf = proyecto.tipo === 'perforacion'
@@ -233,13 +266,13 @@ export async function generarPDFEntrada(
       margin: { left: mg, right: mg },
       head: [['Actividad', 'Día', 'Acumulado']],
       body: bodyRows,
-      styles: { fontSize: 9, cellPadding: 3 },
-      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', fontSize: 9 },
+      styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak', valign: 'middle', halign: 'center' },
+      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', fontSize: 9, halign: 'center' },
       alternateRowStyles: { fillColor: hex(GRAY50) },
       columnStyles: {
-        0: { cellWidth: 70 },
-        1: { halign: 'center', cellWidth: 50 },
-        2: { halign: 'center' },
+        0: { halign: 'center', cellWidth: 58 },
+        1: { halign: 'center', cellWidth: 62 },
+        2: { halign: 'center', cellWidth: 67 },
       },
     })
   } else {
@@ -258,14 +291,15 @@ export async function generarPDFEntrada(
         margin: { left: mg, right: mg },
         head: [['Actividad', 'Cantidad']],
         body: bodyL,
-        styles: { fontSize: 9, cellPadding: 3 },
-        headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold' },
+        styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak', valign: 'middle', halign: 'center' },
+        headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', halign: 'center' },
         alternateRowStyles: { fillColor: hex(GRAY50) },
+        columnStyles: { 0: { halign: 'center', cellWidth: 58 }, 1: { halign: 'center', cellWidth: 129 } },
       })
     }
   }
 
-  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
+  y = lastAutoTableY(doc, y) + 8
 
   // ── Barra de progreso (solo perforación) ──────────────────────────────────
   if (esPerf) {
@@ -283,8 +317,8 @@ export async function generarPDFEntrada(
       const label = profundidad > 0
         ? `${entrada.perforacionTotal.toFixed(0)} / ${profundidad} pies (${(pct * 100).toFixed(0)}%) · faltan ${piesRest.toFixed(0)} pies`
         : `${entrada.perforacionTotal.toFixed(0)} pies`
-      drawProgressBar(doc, mg, y + 8, W - mg*2, 6, pct, label)
-      y += 20
+      const progressH = drawProgressBar(doc, mg, y + 8, W - mg*2, 6, pct, label)
+      y += 8 + progressH + 5
 
       // Día X de Y — contar los días distintos registrados en bitácora que ≤ esta fecha
       const fechasAntes = new Set(proyecto.entradas.filter(e => e.fecha <= entrada.fecha).map(e => e.fecha))
@@ -298,25 +332,28 @@ export async function generarPDFEntrada(
       // Fallback sin datos de cotización
       doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
       doc.text('Avance de perforación', mg, y + 5)
-      drawProgressBar(doc, mg, y + 8, W - mg*2 - 40, 6, 1, `${entrada.perforacionTotal.toFixed(1)} pies acumulados`)
-      y += 20
+      const progressH = drawProgressBar(doc, mg, y + 8, W - mg*2, 6, 1, `${entrada.perforacionTotal.toFixed(1)} pies acumulados`)
+      y += 8 + progressH + 5
     }
   }
 
   // ── Estado del día ────────────────────────────────────────────────────────
   if (entrada.estado) {
+    const estadoLines = wrapText(doc, entrada.estado, W - mg*2 - 32)
+    y = ensureSpace(doc, y, Math.max(10, estadoLines.length * 4.2 + 4), mg)
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...hex(NAVY))
     doc.text('Estado del día:', mg, y + 5)
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...hex(GRAY700))
-    doc.text(entrada.estado, mg + 28, y + 5)
-    y += 10
+    doc.text(estadoLines, mg + 32, y + 5)
+    y += Math.max(10, estadoLines.length * 4.2 + 4)
   }
 
   // ── Nota para el cliente ──────────────────────────────────────────────────
   if (entrada.notaCliente) {
-    doc.setFillColor(...hex('#eff6ff'))
     const lines = doc.splitTextToSize(entrada.notaCliente, W - mg*2 - 8) as string[]
     const boxH = lines.length * 5 + 10
+    y = ensureSpace(doc, y, boxH + 12, mg)
+    doc.setFillColor(...hex('#eff6ff'))
     doc.roundedRect(mg, y, W - mg*2, boxH, 2, 2, 'F')
     doc.setDrawColor(...hex('#bfdbfe'))
     doc.setLineWidth(0.3)
@@ -329,7 +366,12 @@ export async function generarPDFEntrada(
   }
 
   // ── Firma ─────────────────────────────────────────────────────────────────
-  const sigY = Math.max(y + 15, 240)
+  const pH = doc.internal.pageSize.getHeight()
+  if (y + 34 > pH - 12) {
+    doc.addPage()
+    y = mg
+  }
+  const sigY = y < 220 ? 240 : y + 15
   doc.setDrawColor(...hex(GRAY300)); doc.setLineWidth(0.3)
   doc.line(mg, sigY, mg + 60, sigY)
   doc.line(W - mg - 60, sigY, W - mg, sigY)
@@ -338,9 +380,8 @@ export async function generarPDFEntrada(
   doc.text('Representante del cliente', W - mg - 60, sigY + 5)
 
   // ── Pie de página ─────────────────────────────────────────────────────────
-  const pH = doc.internal.pageSize.getHeight()
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...hex(GRAY500))
-  doc.text(`Bitácora generada por HidroCRM · ${new Date().toLocaleDateString('es-GT')}`, W/2, pH - 8, { align: 'center' })
+  doc.text(`Bitácora generada por HidroCRM · ${formatFechaDDMMYYYY(new Date())}`, W/2, pH - 8, { align: 'center' })
 
   return doc.output('arraybuffer')
 }
@@ -380,12 +421,12 @@ export async function generarPDFExpediente(
 
   // Info del proyecto
   const infoRows = [
-    ['Correlativo',    proyecto.correlativo],
+    ['Cotizacion',     proyecto.correlativo],
     ['Proyecto',       proyecto.nombre],
     ['Cliente',        proyecto.cliente + (proyecto.empresa ? ` — ${proyecto.empresa}` : '')],
     ['Tipo',           esPerf ? 'Perforación de pozo' : 'Limpieza mecánica'],
     ['Responsable',    proyecto.vendedor],
-    ['Fecha de inicio',proyecto.fechaInicio],
+    ['Fecha de inicio',formatFechaDDMMYYYY(proyecto.fechaInicio)],
     ['Estado',         proyecto.estado.toUpperCase()],
     ['Total entradas', String(entradas.length)],
   ]
@@ -395,23 +436,18 @@ export async function generarPDFExpediente(
     margin: { left: mg, right: mg },
     head: [['Campo', 'Valor']],
     body: infoRows,
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold' },
+    styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak', valign: 'middle', halign: 'center' },
+    headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', halign: 'center' },
     alternateRowStyles: { fillColor: hex(GRAY50) },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } },
+    columnStyles: { 0: { fontStyle: 'bold', halign: 'center', cellWidth: 50 }, 1: { halign: 'center' } },
   })
 
-  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12
+  y = lastAutoTableY(doc, y) + 12
 
   // ── RESUMEN DE TOTALES ────────────────────────────────────────────────────
   const totalPerfDia    = entradas.reduce((s, e) => s + e.perforacionDia, 0)
-  const totalAmp1       = entradas.reduce((s, e) => s + e.ampliacion1Dia, 0)
-  const totalAmp2       = entradas.reduce((s, e) => s + e.ampliacion2Dia, 0)
-  const totalRehab      = entradas.reduce((s, e) => s + e.rehabilitacionDia, 0)
   const totalBentonita  = entradas.reduce((s, e) => s + e.bentonitaSacos, 0)
   const totalPipas      = entradas.reduce((s, e) => s + e.pipas, 0)
-  const totalHorasLimp  = entradas.reduce((s, e) => s + e.horasLimpieza, 0)
-  const totalHorasAforo = entradas.reduce((s, e) => s + e.horasAforo, 0)
   const diasAdversos    = entradas.filter(e => e.diaAdverso).length
   const diasPerf        = entradas.filter(e => e.perforacionDia > 0).length
   const promPerf        = diasPerf > 0 ? totalPerfDia / diasPerf : 0
@@ -437,10 +473,10 @@ export async function generarPDFExpediente(
       ['Días activos (con perforación)', `${diasPerf}`],
       ['Días adversos', `${diasAdversos}`],
     ],
-    styles: { fontSize: 9, cellPadding: 2.5 },
-    headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold' },
+    styles: { fontSize: 9, cellPadding: 2.5, overflow: 'linebreak', valign: 'middle', halign: 'center' },
+    headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', halign: 'center' },
     alternateRowStyles: { fillColor: hex(GRAY50) },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 80 }, 1: { halign: 'right' } },
+    columnStyles: { 0: { fontStyle: 'bold', halign: 'center', cellWidth: 80 }, 1: { halign: 'center' } },
   })
 
   // ── BITÁCORA COMPLETA (tabla) ─────────────────────────────────────────────
@@ -450,20 +486,47 @@ export async function generarPDFExpediente(
   y2 = drawHeader(doc, logo, W, mg, y2, 'BITÁCORA COMPLETA')
 
   doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...hex(NAVY))
-  doc.text(`Proyecto: ${proyecto.correlativo} — ${proyecto.nombre}`, mg, y2 + 3)
-  y2 += 10
+  const proyectoTitulo = wrapText(doc, `Proyecto: ${proyecto.correlativo} — ${proyecto.nombre}`, W - mg*2)
+  doc.text(proyectoTitulo, mg, y2 + 3)
+  y2 += Math.max(10, proyectoTitulo.length * 4.5 + 6)
 
   if (esPerf) {
     const headPerf = incluirConsumos
       ? ['Fecha','Turno','Perf.\ndía','Acum.','Amp1','Amp2','Rehab','H.Perf','Bentonita','Pipas','Adv.','Nota cliente']
       : ['Fecha','Turno','Perf.\ndía','Acum.','Amp1','Amp2','Rehab','H.Perf','Adv.','Nota cliente']
+    const advCol = incluirConsumos ? 10 : 8
+    const perfColumnStyles: Record<number, Partial<Styles>> = incluirConsumos
+      ? {
+          0: { cellWidth: 19 },
+          1: { halign: 'center' as const, cellWidth: 9 },
+          2: { halign: 'center' as const, cellWidth: 13 },
+          3: { halign: 'center' as const, cellWidth: 13 },
+          4: { halign: 'center' as const, cellWidth: 11 },
+          5: { halign: 'center' as const, cellWidth: 11 },
+          6: { halign: 'center' as const, cellWidth: 11 },
+          7: { halign: 'center' as const, cellWidth: 12 },
+          8: { halign: 'center' as const, cellWidth: 14 },
+          9: { halign: 'center' as const, cellWidth: 11 },
+          10: { halign: 'center' as const, cellWidth: 8 },
+        }
+      : {
+          0: { cellWidth: 20 },
+          1: { halign: 'center' as const, cellWidth: 10 },
+          2: { halign: 'center' as const, cellWidth: 14 },
+          3: { halign: 'center' as const, cellWidth: 14 },
+          4: { halign: 'center' as const, cellWidth: 12 },
+          5: { halign: 'center' as const, cellWidth: 12 },
+          6: { halign: 'center' as const, cellWidth: 12 },
+          7: { halign: 'center' as const, cellWidth: 12 },
+          8: { halign: 'center' as const, cellWidth: 8 },
+        }
     autoTable(doc, {
       startY: y2,
       margin: { left: mg, right: mg },
       head: [headPerf],
       body: entradas.map(e => {
         const base = [
-          e.fecha,
+          formatFechaDDMMYYYY(e.fecha),
           e.turno === 'dia' ? 'D' : 'N',
           e.perforacionDia.toFixed(1),
           e.perforacionTotal.toFixed(1),
@@ -475,24 +538,12 @@ export async function generarPDFExpediente(
         const consumos = incluirConsumos ? [`${e.bentonitaSacos.toFixed(0)} s.`, String(e.pipas)] : []
         return [...base, ...consumos, e.diaAdverso ? '⚠' : '', e.notaCliente || '']
       }),
-      styles: { fontSize: 7, cellPadding: 2 },
-      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', fontSize: 7 },
+      styles: { fontSize: 7, cellPadding: 1.6, overflow: 'linebreak', valign: 'middle' },
+      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', fontSize: 7, halign: 'center' },
       alternateRowStyles: { fillColor: hex(GRAY50) },
-      columnStyles: {
-        0: { cellWidth: 20 },
-        1: { halign: 'center', cellWidth: 10 },
-        2: { halign: 'center', cellWidth: 14 },
-        3: { halign: 'center', cellWidth: 14 },
-        4: { halign: 'center', cellWidth: 12 },
-        5: { halign: 'center', cellWidth: 12 },
-        6: { halign: 'center', cellWidth: 12 },
-        7: { halign: 'center', cellWidth: 12 },
-        8: { halign: 'center', cellWidth: 14 },
-        9: { halign: 'center', cellWidth: 12 },
-        10: { halign: 'center', cellWidth: 10 },
-      },
+      columnStyles: perfColumnStyles,
       didParseCell: (data) => {
-        if (data.column.index === 10 && data.cell.raw === '⚠') {
+        if (data.column.index === advCol && data.cell.raw === '⚠') {
           data.cell.styles.textColor = hex(AMBER)
           data.cell.styles.fontStyle = 'bold'
         }
@@ -504,7 +555,7 @@ export async function generarPDFExpediente(
       margin: { left: mg, right: mg },
       head: [['Fecha','Turno','H.Limpieza','H.Aforo','Pipas','Adverso','Nota cliente']],
       body: entradas.map(e => [
-        e.fecha,
+        formatFechaDDMMYYYY(e.fecha),
         e.turno === 'dia' ? 'Diurno' : 'Nocturno',
         e.horasLimpieza.toFixed(1),
         e.horasAforo.toFixed(1),
@@ -512,9 +563,17 @@ export async function generarPDFExpediente(
         e.diaAdverso ? 'Sí' : 'No',
         e.notaCliente || '',
       ]),
-      styles: { fontSize: 8, cellPadding: 2.5 },
-      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold' },
+      styles: { fontSize: 8, cellPadding: 2.2, overflow: 'linebreak', valign: 'middle' },
+      headStyles: { fillColor: hex(NAVY), textColor: hex(WHITE), fontStyle: 'bold', halign: 'center' },
       alternateRowStyles: { fillColor: hex(GRAY50) },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 24 },
+        2: { halign: 'center', cellWidth: 20 },
+        3: { halign: 'center', cellWidth: 20 },
+        4: { halign: 'center', cellWidth: 15 },
+        5: { halign: 'center', cellWidth: 16 },
+      },
     })
   }
 
@@ -534,7 +593,7 @@ export async function generarPDFExpediente(
       doc.roundedRect(mg, y3, W - mg*2, boxH, 2, 2, 'F')
 
       doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...hex(NAVY))
-      doc.text(e.fecha, mg + 4, y3 + 7)
+      doc.text(formatFechaDDMMYYYY(e.fecha), mg + 4, y3 + 7)
       doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...hex(GRAY500))
       doc.text(e.turno === 'dia' ? 'Turno diurno' : 'Turno nocturno', mg + 4 + 22, y3 + 7)
 
@@ -550,7 +609,7 @@ export async function generarPDFExpediente(
     doc.setPage(i)
     doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...hex(GRAY500))
     doc.text(
-      `Expediente: ${proyecto.correlativo} · Página ${i} de ${numPages} · Generado ${new Date().toLocaleDateString('es-GT')}`,
+      `Expediente: ${proyecto.correlativo} · Página ${i} de ${numPages} · Generado ${formatFechaDDMMYYYY(new Date())}`,
       W/2, H - 8, { align: 'center' }
     )
   }

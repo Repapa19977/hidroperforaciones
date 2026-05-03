@@ -6,7 +6,10 @@ import { auditLog } from '@/lib/audit'
 
 // GET — obtener proyecto con todas sus entradas + totales de la cotización
 // (profundidadTotal, diasHabilesTotal) para la barra de avance del PDF
-export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const row = await prisma.proyecto.findUnique({
     where: { id },
@@ -57,6 +60,9 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 // PATCH — actualizar estado del proyecto
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const body = await request.json()
 

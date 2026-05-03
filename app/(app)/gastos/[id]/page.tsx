@@ -1,13 +1,17 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useCallback, useEffect, useState, use, Fragment } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, Plus, Trash2, AlertCircle, RefreshCw, ClipboardList, TrendingUp,
   Wallet, CheckCircle, AlertTriangle, X, Save, Loader2, Package, ShoppingCart,
-  CalendarPlus,
+  ChevronDown,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Dot,
+} from 'recharts'
+import { cn, formatQ } from '@/lib/utils'
+import { PagosPanel } from '@/components/pagos-panel'
 
 interface PresupuestoRubro {
   key: string
@@ -130,7 +134,21 @@ interface Cronograma {
   diaActualDelProyecto: number
   diasRestantes: number
   diasHabilesTotal: number
+  diasRegistradosBitacora?: number
   triggerActivado: boolean
+}
+
+interface EstadoRubro {
+  key: string
+  nombre: string
+  unidad: string
+  cantidadPresupuestada: number
+  montoPresupuestado: number
+  cantidadComprada: number
+  montoComprado: number
+  comprasCount: number
+  faltante: number
+  estado: 'verde' | 'amarillo' | 'rojo'
 }
 
 interface Data {
@@ -140,17 +158,18 @@ interface Data {
   gastosExtras: GastoExtra[]
   totalExtras: number
   totalEjecutadoMasExtras: number
+  consumoValorizadoBitacora?: number
   desviacionQ: number
   avancePct: number
+  estadoPorRubro: EstadoRubro[]
   reservas: Reserva[]
   movimientos: Movimiento[]
   valorReservado: number
   ventasExternas: number
   entradasBitacora: EntradaBitacora[]
+  paramsAdversas?: { horasTurno: number; piesMinimoTurno: number; valorHoraAdversa: number }
   cronograma: Cronograma
 }
-
-const formatQ = (n: number) => `Q ${Math.round(n).toLocaleString('es-GT')}`
 
 const RUBRO_OPTIONS = [
   { value: 'combustible', label: 'Combustible' },
@@ -164,6 +183,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [rubroExpandido, setRubroExpandido] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     fecha: new Date().toISOString().slice(0, 10),
@@ -179,20 +199,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
     pagado: false,
     nota: '',
   })
-  // Modal registrar avance (crea entrada de bitácora)
-  const [showAvance, setShowAvance] = useState(false)
-  const [avanceForm, setAvanceForm] = useState({
-    fecha: new Date().toISOString().slice(0, 10),
-    turno: 'dia',
-    estado: 'activo',
-    perforacionDia: 0,
-    bentonitaSacos: 0,
-    pipas: 0,
-    formacionGeologica: '',
-    circulacionPct: 0,
-    diaAdverso: false,
-    notaCliente: '',
-  })
+  // (Bitácora removida de Control de Gastos — vive en /proyectos/[id])
   // Modal venta externa (del 30% reservado)
   const [showVenta, setShowVenta] = useState<string | null>(null)  // reservaId
   const [ventaForm, setVentaForm] = useState({
@@ -202,7 +209,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
     nota: '',
   })
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/proyectos/${id}/control-gastos`)
@@ -210,9 +217,9 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
     } finally {
       setLoading(false)
     }
-  }
+  }, [id])
 
-  useEffect(() => { void load() }, [id])
+  useEffect(() => { void load() }, [load])
 
   async function handleGuardar() {
     if (!form.producto.trim()) return
@@ -221,7 +228,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
       await fetch(`/api/proyectos/${id}/control-gastos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, pagado: form.diasCredito === 0 ? true : form.pagado }),
       })
       setShowForm(false)
       setForm({
@@ -239,30 +246,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
     await load()
   }
 
-  async function handleGuardarAvance() {
-    if (avanceForm.perforacionDia <= 0 && avanceForm.estado === 'activo') return
-    setSaving(true)
-    try {
-      // Auto-marcar adverso si < 20 pies en día activo
-      const diaAdverso = avanceForm.estado === 'activo' && avanceForm.perforacionDia < 20 && avanceForm.perforacionDia > 0
-      await fetch(`/api/proyectos/${id}/bitacora`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...avanceForm,
-          diaAdverso: avanceForm.diaAdverso || diaAdverso,
-        }),
-      })
-      setShowAvance(false)
-      setAvanceForm({
-        fecha: new Date().toISOString().slice(0, 10), turno: 'dia', estado: 'activo',
-        perforacionDia: 0, bentonitaSacos: 0, pipas: 0,
-        formacionGeologica: '', circulacionPct: 0,
-        diaAdverso: false, notaCliente: '',
-      })
-      await load()
-    } finally { setSaving(false) }
-  }
+  // handleGuardarAvance eliminado — Registrar Avance ahora vive en /proyectos/[id]
 
   async function handleVentaExterna() {
     if (!showVenta || ventaForm.cantidad <= 0) return
@@ -299,17 +283,15 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
     </div>
   }
 
-  const { proyecto, presupuesto, ejecutado, gastosExtras, totalExtras, totalEjecutadoMasExtras, desviacionQ, avancePct, reservas, movimientos, valorReservado, ventasExternas, entradasBitacora, cronograma } = data
-  const pctEjecutado = presupuesto && presupuesto.total > 0 ? (totalEjecutadoMasExtras / presupuesto.total) * 100 : 0
+  const { proyecto, presupuesto, ejecutado, gastosExtras, totalExtras, totalEjecutadoMasExtras, desviacionQ, avancePct, estadoPorRubro, reservas, movimientos, valorReservado, ventasExternas, cronograma, paramsAdversas } = data
+  const pctComprado = presupuesto && presupuesto.total > 0 ? (totalEjecutadoMasExtras / presupuesto.total) * 100 : 0
+  const horasTurno = paramsAdversas?.horasTurno ?? 10
+  const piesMinimoTurno = paramsAdversas?.piesMinimoTurno ?? 20
+  const valorHoraAdversa = paramsAdversas?.valorHoraAdversa ?? 500
+  const rendimientoMinimo = horasTurno > 0 ? piesMinimoTurno / horasTurno : 0
 
-  // Join rubros presupuesto+ejecutado por key
-  const rubrosJoinedMap = new Map<string, { p: PresupuestoRubro; e: EjecutadoRubro | null }>()
-  presupuesto?.rubros.forEach(p => { rubrosJoinedMap.set(p.key, { p, e: null }) })
-  ejecutado?.rubros.forEach(e => {
-    const entry = rubrosJoinedMap.get(e.key)
-    if (entry) entry.e = e
-  })
-  const rubrosJoined = Array.from(rubrosJoinedMap.values())
+  // Presupuesto vs comprado viene directo del endpoint como estadoPorRubro.
+  // La bitacora queda para avance fisico y consumos, no para inflar el financiero.
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-[1200px]">
@@ -323,13 +305,9 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
             className="flex items-center gap-2 border border-white/10 hover:border-white/20 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors">
             <ClipboardList className="w-3.5 h-3.5" /> Ver Bitácora
           </Link>
-          <button onClick={() => setShowAvance(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-medium shadow-lg shadow-emerald-500/20">
-            <CalendarPlus className="w-3.5 h-3.5" /> Registrar Avance
-          </button>
-          <button onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-xs font-medium shadow-lg shadow-blue-500/20">
-            <Plus className="w-3.5 h-3.5" /> Gasto Extra
+          <button onClick={() => { setForm(f => ({ ...f, rubro: 'otro', producto: '' })); setShowForm(true) }}
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-lg text-xs font-medium shadow-lg shadow-amber-500/20">
+            <AlertTriangle className="w-3.5 h-3.5" /> Gasto imprevisto
           </button>
         </div>
       </div>
@@ -353,17 +331,20 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
         </div>
       </div>
 
+      {/* ── CONTROL DE PAGOS (movido desde Bitácora 2026-04-22) ────────────── */}
+      <PagosPanel proyectoId={proyecto.id} isSuperAdmin={true} />
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI icon={<TrendingUp className="w-4 h-4 text-blue-400" />}
           label="Avance físico" value={`${avancePct.toFixed(1)}%`}
           sub={`${ejecutado?.piesPerforadosTotal ?? 0} / ${presupuesto?.profundidad ?? 0} pies`} color="blue" />
         <KPI icon={<Wallet className="w-4 h-4 text-violet-400" />}
-          label="Ejecutado" value={formatQ(totalEjecutadoMasExtras)}
-          sub={presupuesto ? `${pctEjecutado.toFixed(0)}% del presupuesto` : '—'} color="violet" />
+          label="Comprado real" value={formatQ(totalEjecutadoMasExtras)}
+          sub={presupuesto ? `${pctComprado.toFixed(0)}% del presupuesto` : '—'} color="violet" />
         <KPI icon={<ClipboardList className="w-4 h-4 text-amber-400" />}
-          label="Gastos extras" value={formatQ(totalExtras)}
-          sub={`${gastosExtras.length} registrado(s)`} color="amber" />
+          label="Compras" value={String(gastosExtras.length)}
+          sub={`${formatQ(totalExtras)} registrado`} color="amber" />
         <KPI
           icon={desviacionQ > 0
             ? <AlertTriangle className="w-4 h-4 text-red-400" />
@@ -391,6 +372,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               <div>
                 <p className="text-[10px] text-slate-500 uppercase">Día del proyecto</p>
                 <p className="text-sm font-bold text-blue-400 tabular-nums">{cronograma.diaActualDelProyecto} / {cronograma.diasHabilesTotal}</p>
+                <p className="text-[10px] text-slate-600">incluye adversos registrados</p>
               </div>
               <div>
                 <p className="text-[10px] text-slate-500 uppercase">Días restantes</p>
@@ -431,7 +413,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
         </div>
       )}
 
-      {/* Horas adversas cobrables — se activan solo cuando perforación < 20 pies/día */}
+      {/* Horas adversas cobrables — se activan cuando el avance queda bajo el minimo configurado */}
       {ejecutado && ejecutado.horasAdversasTotal > 0 && (
         <div className="bg-amber-500/5 border border-amber-500/25 rounded-xl p-4">
           <div className="flex items-start gap-3 mb-3">
@@ -439,13 +421,13 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-amber-300 mb-0.5">Horas adversas cobrables al cliente</p>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Días con menos de 20 pies. Según la cotización, estas horas son cobrables a Q 500/hora (rendimiento mínimo 2.5 pies/h en turno de 8h).
+                Días con menos de {piesMinimoTurno} pies. Según la configuración, estas horas son cobrables a Q {valorHoraAdversa.toLocaleString('es-GT')}/hora (rendimiento mínimo {rendimientoMinimo.toFixed(2)} pies/h en turno de {horasTurno}h).
               </p>
             </div>
           </div>
 
           {/* Totales */}
-          <div className="grid grid-cols-3 gap-3 mb-3 pb-3 border-b border-amber-500/20">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-3 pb-3 border-b border-amber-500/20">
             <div>
               <p className="text-[10px] text-slate-500 uppercase tracking-wider">Días adversos</p>
               <p className="text-lg font-bold text-amber-300 tabular-nums">{ejecutado.diasAdversosDetalle.length}</p>
@@ -495,50 +477,121 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
         </div>
       )}
 
-      {/* Tabla: Presupuesto vs Ejecutado por rubro */}
+      {/* Tabla: Presupuesto vs Comprado por rubro — interactiva.
+          Semáforo en cantidades (instrucción Rodrigo 2026-04-22):
+            🟢 verde:   faltante > 10 unidades (hay margen)
+            🟡 amarillo: 0 ≤ faltante ≤ 10 (ojo, cerca del límite)
+            🔴 rojo:    faltante < 0 (sobre-comprado) */}
       {presupuesto && (
         <div className="bg-[#0d1526] rounded-2xl border border-white/5 overflow-hidden">
           <div className="px-5 py-3.5 border-b border-white/5 flex items-center gap-2">
             <Wallet className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-semibold text-white">Presupuesto vs Ejecutado</h2>
+            <h2 className="text-sm font-semibold text-white">Presupuesto vs Comprado</h2>
+            <span className="ml-auto text-[10px] text-slate-500">🟢 falta &gt;10 · 🟡 ≤10 · 🔴 sobre-comprado</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-[#0a1020] text-[10px] text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Rubro</th>
-                  <th className="text-right px-3 py-2 font-medium">Presup.</th>
-                  <th className="text-right px-3 py-2 font-medium">Ejec.</th>
+                  <th className="text-right px-3 py-2 font-medium">Cot.</th>
+                  <th className="text-right px-3 py-2 font-medium">Comprado</th>
+                  <th className="text-right px-3 py-2 font-medium">Falta</th>
                   <th className="text-right px-3 py-2 font-medium">Q Presup.</th>
-                  <th className="text-right px-3 py-2 font-medium">Q Ejec.</th>
-                  <th className="text-right px-3 py-2 font-medium">%</th>
+                  <th className="text-right px-3 py-2 font-medium">Q Comprado</th>
+                  <th className="text-center px-3 py-2 font-medium">Estado</th>
+                  <th className="text-center px-3 py-2 font-medium">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {rubrosJoined.map(({ p, e }) => {
-                  const pct = p.montoPresupuestado > 0 ? ((e?.montoGastado ?? 0) / p.montoPresupuestado) * 100 : 0
-                  const color = pct >= 100 ? 'text-red-400' : pct >= 90 ? 'text-amber-400' : pct > 0 ? 'text-emerald-400' : 'text-slate-500'
+                {estadoPorRubro.map(r => {
+                  const semaforo =
+                    r.estado === 'rojo'     ? { dot: 'bg-red-500',    bg: 'bg-red-500/5',    textFaltante: 'text-red-400',    label: `+${Math.abs(r.faltante).toLocaleString('es-GT')}`, title: 'Sobre-comprado' } :
+                    r.estado === 'amarillo' ? { dot: 'bg-amber-500',  bg: 'bg-amber-500/5',  textFaltante: 'text-amber-400',  label: `${r.faltante.toLocaleString('es-GT')}`,             title: 'Cerca del límite' } :
+                                              { dot: 'bg-emerald-500',bg: '',                textFaltante: 'text-slate-400',  label: `${r.faltante.toLocaleString('es-GT')}`,             title: 'Con margen' }
+                  const expandido = rubroExpandido === r.key
+                  const comprasDeRubro = gastosExtras.filter(g => g.rubro === r.key)
+                  const precioCotUnit = r.cantidadPresupuestada > 0 ? r.montoPresupuestado / r.cantidadPresupuestada : 0
                   return (
-                    <tr key={p.key} className="hover:bg-white/2">
-                      <td className="px-4 py-2.5 text-slate-300">{p.nombre}</td>
-                      <td className="px-3 py-2.5 text-right text-slate-500 tabular-nums">{p.cantidadPresupuestada.toLocaleString('es-GT')} {p.unidad}</td>
-                      <td className="px-3 py-2.5 text-right text-slate-300 tabular-nums">{(e?.cantidadConsumida ?? 0).toLocaleString('es-GT')}</td>
-                      <td className="px-3 py-2.5 text-right text-slate-500 tabular-nums">{formatQ(p.montoPresupuestado)}</td>
-                      <td className="px-3 py-2.5 text-right text-white font-medium tabular-nums">{formatQ(e?.montoGastado ?? 0)}</td>
-                      <td className={cn('px-3 py-2.5 text-right font-bold tabular-nums', color)}>{pct.toFixed(0)}%</td>
-                    </tr>
+                    <Fragment key={r.key}>
+                      <tr className={cn('hover:bg-white/2 cursor-pointer transition-colors',
+                        r.estado !== 'verde' && semaforo.bg,
+                        expandido && 'bg-white/5')}
+                        onClick={() => setRubroExpandido(expandido ? null : r.key)}
+                      >
+                        <td className="px-4 py-2.5 text-slate-300">
+                          <span className="flex items-center gap-1.5">
+                            <ChevronDown className={cn('w-3.5 h-3.5 text-slate-600 transition-transform', expandido && 'rotate-180')} />
+                            {r.nombre}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-slate-500 tabular-nums">
+                          {r.cantidadPresupuestada.toLocaleString('es-GT')} <span className="text-slate-600 text-[10px]">{r.unidad}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-slate-300 tabular-nums">{r.cantidadComprada.toLocaleString('es-GT')}</td>
+                        <td className={cn('px-3 py-2.5 text-right tabular-nums font-medium', semaforo.textFaltante)}>{semaforo.label}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-500 tabular-nums">{formatQ(r.montoPresupuestado)}</td>
+                        <td className="px-3 py-2.5 text-right text-white font-medium tabular-nums">{formatQ(r.montoComprado)}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={cn('inline-block w-2.5 h-2.5 rounded-full', semaforo.dot)} title={semaforo.title} />
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <button
+                            onClick={(ev) => {
+                              ev.stopPropagation()
+                              setForm(f => ({
+                                ...f,
+                                rubro: r.key,
+                                producto: r.nombre,
+                                unidad: r.unidad,
+                                costoUnitario: precioCotUnit ? Math.round(precioCotUnit * 100) / 100 : 0,
+                                cantidad: 1,
+                              }))
+                              setShowForm(true)
+                            }}
+                            title={`Agregar compra de ${r.nombre}`}
+                            className="text-emerald-400 hover:text-emerald-300 p-1"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      {expandido && (
+                        <tr>
+                          <td colSpan={8} className="p-0 bg-[#0a1020] border-y border-white/10">
+                            <RubroExpand
+                              rubro={r}
+                              compras={comprasDeRubro}
+                              precioCotUnit={precioCotUnit}
+                              onAgregar={() => {
+                                setForm(f => ({
+                                  ...f,
+                                  rubro: r.key,
+                                  producto: r.nombre,
+                                  unidad: r.unidad,
+                                  costoUnitario: precioCotUnit ? Math.round(precioCotUnit * 100) / 100 : 0,
+                                  cantidad: 1,
+                                }))
+                                setShowForm(true)
+                              }}
+                              onEliminar={handleEliminar}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-white/10 bg-white/3">
                   <td className="px-4 py-2.5 text-white font-bold">TOTAL</td>
-                  <td colSpan={2} />
+                  <td colSpan={3} />
                   <td className="px-3 py-2.5 text-right text-white font-bold tabular-nums">{formatQ(presupuesto.total)}</td>
-                  <td className="px-3 py-2.5 text-right text-white font-bold tabular-nums">{formatQ((ejecutado?.total ?? 0))}</td>
-                  <td className="px-3 py-2.5 text-right text-blue-400 font-bold tabular-nums">
-                    {presupuesto.total > 0 ? (((ejecutado?.total ?? 0) / presupuesto.total) * 100).toFixed(0) : 0}%
+                  <td className="px-3 py-2.5 text-right text-white font-bold tabular-nums">
+                    {formatQ(estadoPorRubro.reduce((a, r) => a + r.montoComprado, 0))}
                   </td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>
@@ -550,9 +603,10 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
       {(() => {
         const hoy = new Date().toISOString().slice(0, 10)
         const enTresDias = (() => { const d = new Date(); d.setDate(d.getDate() + 3); return d.toISOString().slice(0, 10) })()
-        const vencidos = gastosExtras.filter(g => !g.pagado && g.fechaVencimiento && g.fechaVencimiento < hoy)
-        const porVencer = gastosExtras.filter(g => !g.pagado && g.fechaVencimiento >= hoy && g.fechaVencimiento <= enTresDias)
-        const pendientesPago = gastosExtras.filter(g => !g.pagado && g.diasCredito > 0)
+        const estaPagado = (g: GastoExtra) => g.pagado || g.diasCredito === 0
+        const vencidos = gastosExtras.filter(g => !estaPagado(g) && g.fechaVencimiento && g.fechaVencimiento < hoy)
+        const porVencer = gastosExtras.filter(g => !estaPagado(g) && g.fechaVencimiento >= hoy && g.fechaVencimiento <= enTresDias)
+        const pendientesPago = gastosExtras.filter(g => !estaPagado(g) && g.diasCredito > 0)
         const totalPorPagar = pendientesPago.reduce((a, g) => a + g.monto, 0)
         return (
           <>
@@ -619,8 +673,9 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               </thead>
               <tbody className="divide-y divide-white/5">
                 {gastosExtras.map(g => {
-                  const esVencido = !g.pagado && g.fechaVencimiento && g.fechaVencimiento < hoy
-                  const esPorVencer = !g.pagado && g.fechaVencimiento >= hoy && g.fechaVencimiento <= enTresDias
+                  const pagadoVisual = estaPagado(g)
+                  const esVencido = !pagadoVisual && g.fechaVencimiento && g.fechaVencimiento < hoy
+                  const esPorVencer = !pagadoVisual && g.fechaVencimiento >= hoy && g.fechaVencimiento <= enTresDias
                   const producto = g.producto || g.concepto || ''
                   const costoU = g.costoUnitario || g.montoUnit || 0
                   return (
@@ -644,7 +699,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                         {g.fechaVencimiento || '—'}
                       </td>
                       <td className="px-2 py-2 text-center">
-                        {g.pagado
+                        {pagadoVisual
                           ? <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded">Pagado</span>
                           : esVencido
                             ? <span className="text-[10px] bg-red-500/15 text-red-400 px-1.5 py-0.5 rounded">Vencido</span>
@@ -675,6 +730,9 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
           </>
         )
       })()}
+
+      {/* Split 70/30 — desglose claro de bentonita: comprado / cliente / mi reserva / consumido / disponible */}
+      <SplitBentonitaWidget proyectoId={data.proyecto.id} />
 
       {/* Inventario del proyecto (reservas + movimientos) */}
       {reservas.length > 0 && (
@@ -713,19 +771,23 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                 </div>
                 {movimientos.filter(m => m.reservaId === r.id).length > 0 && (
                   <div className="mt-2 pl-2 border-l-2 border-white/5 space-y-1">
-                    {movimientos.filter(m => m.reservaId === r.id).slice(0, 5).map(m => (
+                    {movimientos.filter(m => m.reservaId === r.id).slice(0, 5).map(m => {
+                      const esSalida = ['venta_externa', 'consumo_bitacora', 'liberacion_proyecto'].includes(m.tipo)
+                      const cantidadAbs = Math.abs(m.cantidad)
+                      return (
                       <div key={m.id} className="text-[11px] text-slate-500 flex items-center gap-2">
                         <span className={cn('text-[9px] uppercase px-1 rounded',
                           m.tipo === 'venta_externa' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-500/10 text-slate-400')}>
                           {m.tipo.replace('_', ' ')}
                         </span>
-                        <span>−{m.cantidad} {r.unidad}</span>
+                        <span>{esSalida ? '-' : '+'}{cantidadAbs} {r.unidad}</span>
                         <span className="text-slate-600">·</span>
-                        <span className="text-emerald-400 tabular-nums">{formatQ(m.monto)}</span>
+                        <span className="text-emerald-400 tabular-nums">{formatQ(Math.abs(m.monto))}</span>
                         {m.cliente && <span className="text-slate-600">· {m.cliente}</span>}
                         <span className="ml-auto text-slate-700">{new Date(m.createdAt).toLocaleDateString('es-GT')}</span>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -734,202 +796,8 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
         </div>
       )}
 
-      {/* Registro de avances (entradas de bitácora) */}
-      {entradasBitacora.length > 0 && (
-        <div className="bg-[#0d1526] rounded-2xl border border-white/5 overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-white/5 flex items-center gap-2">
-            <CalendarPlus className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-semibold text-white">Registro de avances ({entradasBitacora.length})</h2>
-            <Link href={`/proyectos/${proyecto.id}`} className="ml-auto text-xs text-blue-400 hover:text-blue-300">Ver bitácora completa →</Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#0a1020] text-[10px] text-slate-500 uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium">Fecha</th>
-                  <th className="text-right px-3 py-2 font-medium">Pies día</th>
-                  <th className="text-right px-3 py-2 font-medium">Bentonita</th>
-                  <th className="text-right px-3 py-2 font-medium">Pipas</th>
-                  <th className="text-left px-3 py-2 font-medium">Formación</th>
-                  <th className="text-right px-3 py-2 font-medium">Circ. %</th>
-                  <th className="text-left px-3 py-2 font-medium">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {entradasBitacora.slice(0, 10).map(e => (
-                  <tr key={e.id} className="hover:bg-white/2">
-                    <td className="px-4 py-2 text-slate-400 text-xs">{e.fecha}</td>
-                    <td className={cn('px-3 py-2 text-right font-semibold tabular-nums',
-                      e.perforacionDia === 0 ? 'text-slate-600'
-                        : e.perforacionDia < 20 ? 'text-red-400'
-                        : e.perforacionDia === 20 ? 'text-amber-400'
-                        : 'text-emerald-400')}>
-                      {e.perforacionDia > 0 ? e.perforacionDia.toFixed(1) : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-right text-slate-300 tabular-nums">{e.bentonitaSacos > 0 ? e.bentonitaSacos : '—'}</td>
-                    <td className="px-3 py-2 text-right text-slate-300 tabular-nums">{e.pipas > 0 ? e.pipas : '—'}</td>
-                    <td className="px-3 py-2 text-xs text-slate-500 max-w-[220px] truncate" title={e.formacionGeologica}>
-                      {e.formacionGeologica || '—'}
-                    </td>
-                    <td className={cn('px-3 py-2 text-right font-semibold tabular-nums text-xs',
-                      e.circulacionPct >= 70 ? 'text-emerald-400'
-                        : e.circulacionPct >= 40 ? 'text-amber-400'
-                        : e.circulacionPct > 0 ? 'text-red-400'
-                        : 'text-slate-600')}>
-                      {e.circulacionPct > 0 ? `${e.circulacionPct}%` : '—'}
-                    </td>
-                    <td className="px-3 py-2">
-                      {e.diaAdverso
-                        ? <span className="text-[10px] bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded">adverso</span>
-                        : <span className="text-[10px] text-slate-500">activo</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: registrar avance (crea entrada de bitácora) */}
-      {showAvance && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0d1526] rounded-2xl border border-white/10 w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <CalendarPlus className="w-4 h-4 text-emerald-400" /> Registrar Avance del Día
-              </h3>
-              <button onClick={() => setShowAvance(false)} className="text-slate-500 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-slate-500 uppercase mb-1 block">Fecha</label>
-                  <input type="date" value={avanceForm.fecha} onChange={e => setAvanceForm({ ...avanceForm, fecha: e.target.value })}
-                    style={{ colorScheme: 'dark' }}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-500 uppercase mb-1 block">Turno</label>
-                  <select value={avanceForm.turno} onChange={e => setAvanceForm({ ...avanceForm, turno: e.target.value })}
-                    style={{ colorScheme: 'dark' }}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white appearance-none">
-                    <option value="dia" className="bg-[#0d1526]">Diurno</option>
-                    <option value="noche" className="bg-[#0d1526]">Nocturno</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setAvanceForm({ ...avanceForm, estado: 'activo', diaAdverso: false })}
-                  className={cn('px-3 py-2 rounded-lg text-xs font-medium border transition-colors',
-                    avanceForm.estado === 'activo'
-                      ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-                      : 'border-white/10 text-slate-400')}>
-                  Día Activo
-                </button>
-                <button
-                  onClick={() => setAvanceForm({ ...avanceForm, estado: 'inactivo', diaAdverso: false, perforacionDia: 0 })}
-                  className={cn('px-3 py-2 rounded-lg text-xs font-medium border transition-colors',
-                    avanceForm.estado === 'inactivo'
-                      ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
-                      : 'border-white/10 text-slate-400')}>
-                  Día Inactivo
-                </button>
-              </div>
-              {avanceForm.estado === 'activo' && (
-                <>
-                  {/* 1. Pies perforados del día (semáforo: <20 rojo, =20 amarillo, >20 verde) */}
-                  <div>
-                    {(() => {
-                      const p = avanceForm.perforacionDia
-                      const color = p === 0 ? { border: 'border-blue-500/30', bg: 'bg-white/5', text: 'text-white', chip: '', label: '' }
-                        : p < 20 ? { border: 'border-red-500/60', bg: 'bg-red-500/10', text: 'text-red-300', chip: 'bg-red-500/20 text-red-300', label: '🔴 Adverso' }
-                        : p === 20 ? { border: 'border-amber-500/60', bg: 'bg-amber-500/10', text: 'text-amber-200', chip: 'bg-amber-500/20 text-amber-300', label: '🟡 Mínimo exacto' }
-                        : { border: 'border-emerald-500/60', bg: 'bg-emerald-500/10', text: 'text-emerald-200', chip: 'bg-emerald-500/20 text-emerald-300', label: '🟢 Día normal' }
-                      return <>
-                        <label className="text-[10px] text-slate-500 uppercase mb-1 flex items-center justify-between">
-                          <span>1. Pies perforados hoy</span>
-                          {color.label && <span className={cn('text-[9px] px-1.5 py-0.5 rounded-full font-medium normal-case', color.chip)}>{color.label}</span>}
-                        </label>
-                        <input type="number" step="1" min={0} value={avanceForm.perforacionDia}
-                          onChange={e => setAvanceForm({ ...avanceForm, perforacionDia: parseFloat(e.target.value) || 0 })}
-                          className={cn('w-full rounded-lg px-3 py-2 text-base font-semibold tabular-nums border transition-colors',
-                            color.bg, color.border, color.text)} />
-                      </>
-                    })()}
-                  </div>
-
-                  {/* 2 y 3. Consumos del día */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] text-slate-500 uppercase mb-1 block">2. Bolsas bentonita</label>
-                      <input type="number" step="1" min={0} value={avanceForm.bentonitaSacos}
-                        onChange={e => setAvanceForm({ ...avanceForm, bentonitaSacos: parseFloat(e.target.value) || 0 })}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white tabular-nums" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-500 uppercase mb-1 block">3. Pipas de agua</label>
-                      <input type="number" step="1" min={0} value={avanceForm.pipas}
-                        onChange={e => setAvanceForm({ ...avanceForm, pipas: parseFloat(e.target.value) || 0 })}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white tabular-nums" />
-                    </div>
-                  </div>
-
-                  {/* 4. Formación geológica */}
-                  <div>
-                    <label className="text-[10px] text-slate-500 uppercase mb-1 block">4. Formación geológica</label>
-                    <textarea value={avanceForm.formacionGeologica}
-                      onChange={e => setAvanceForm({ ...avanceForm, formacionGeologica: e.target.value })}
-                      rows={2}
-                      placeholder="Ej: arcilla reactiva 30-45 m, roca caliza 45-60 m"
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 resize-none" />
-                  </div>
-
-                  {/* 5. % Circulación */}
-                  <div>
-                    <label className="text-[10px] text-slate-500 uppercase mb-1 block">5. % Circulación</label>
-                    <div className="flex items-center gap-2">
-                      <select value={avanceForm.circulacionPct}
-                        onChange={e => setAvanceForm({ ...avanceForm, circulacionPct: parseInt(e.target.value) || 0 })}
-                        style={{ colorScheme: 'dark' }}
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white appearance-none cursor-pointer">
-                        {[0,10,20,30,40,50,60,70,80,90,100].map(v => (
-                          <option key={v} value={v} className="bg-[#0d1526]">{v}%</option>
-                        ))}
-                      </select>
-                      <span className={cn('text-sm font-bold tabular-nums min-w-[50px] text-right',
-                        avanceForm.circulacionPct >= 70 ? 'text-emerald-400'
-                          : avanceForm.circulacionPct >= 40 ? 'text-amber-400'
-                          : 'text-red-400')}>
-                        {avanceForm.circulacionPct}%
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-              <div>
-                <label className="text-[10px] text-slate-500 uppercase mb-1 block">Nota para el cliente (opcional)</label>
-                <textarea value={avanceForm.notaCliente} onChange={e => setAvanceForm({ ...avanceForm, notaCliente: e.target.value })} rows={2}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 resize-none" />
-              </div>
-            </div>
-            <div className="px-5 py-3 border-t border-white/5 flex items-center justify-end gap-2">
-              <button onClick={() => setShowAvance(false)}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white border border-white/10 rounded-lg">
-                Cancelar
-              </button>
-              <button onClick={handleGuardarAvance} disabled={saving}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg">
-                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Guardar avance
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Sección "Registro de avances" removida: la bitácora tiene su propio módulo
+          en /proyectos/[id]. Control de Gastos es independiente (solo finanzas). */}
 
       {/* Modal: venta externa del inventario */}
       {showVenta && (
@@ -1027,11 +895,26 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Rubro</label>
-                <select value={form.rubro} onChange={e => setForm({ ...form, rubro: e.target.value })}
-                  style={{ colorScheme: 'dark' }}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white appearance-none">
-                  {RUBRO_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[#0d1526]">{o.label}</option>)}
-                </select>
+                {(() => {
+                  // Si el rubro corresponde a un rubro del presupuesto → mostrar read-only
+                  const rubroPresup = presupuesto?.rubros.find(rr => rr.key === form.rubro)
+                  if (rubroPresup) {
+                    return (
+                      <div className="w-full bg-emerald-500/5 border border-emerald-500/30 rounded-lg px-3 py-2 text-sm text-emerald-300 flex items-center justify-between">
+                        <span>{rubroPresup.nombre}</span>
+                        <span className="text-[10px] text-slate-500">vinculado a cotización</span>
+                      </div>
+                    )
+                  }
+                  // Si no, es un gasto imprevisto — permitir elegir entre categorías libres
+                  return (
+                    <select value={form.rubro} onChange={e => setForm({ ...form, rubro: e.target.value })}
+                      style={{ colorScheme: 'dark' }}
+                      className="w-full bg-amber-500/5 border border-amber-500/30 rounded-lg px-3 py-2 text-sm text-amber-300 appearance-none">
+                      {RUBRO_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-[#0d1526]">{o.label}</option>)}
+                    </select>
+                  )
+                })()}
               </div>
 
               <div>
@@ -1098,9 +981,13 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               </div>
 
               <label className="sm:col-span-2 flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.pagado} onChange={e => setForm({ ...form, pagado: e.target.checked })}
-                  className="w-4 h-4 accent-emerald-500" />
-                <span className="text-xs text-slate-300">Ya pagado al proveedor</span>
+                <input type="checkbox" checked={form.diasCredito === 0 ? true : form.pagado}
+                  disabled={form.diasCredito === 0}
+                  onChange={e => setForm({ ...form, pagado: e.target.checked })}
+                  className="w-4 h-4 accent-emerald-500 disabled:opacity-60" />
+                <span className="text-xs text-slate-300">
+                  {form.diasCredito === 0 ? 'Contado: se guarda como pagado' : 'Ya pagado al proveedor'}
+                </span>
               </label>
             </div>
             <div className="px-5 py-3 border-t border-white/5 flex items-center justify-end gap-2 sticky bottom-0 bg-[#0d1526]">
@@ -1139,6 +1026,321 @@ function KPI({ icon, label, value, sub, color }: {
         <p className="text-base font-black text-white leading-none truncate">{value}</p>
         <p className="text-[10px] text-slate-500 mt-0.5 truncate">{label}</p>
         <p className="text-[10px] text-slate-600 truncate">{sub}</p>
+      </div>
+    </div>
+  )
+}
+
+// ── Widget Split 70/30 — desglose visual claro de bentonita ─────────────────
+// Muestra: comprado total / cliente / mi reserva / consumido / disponible
+// Llama al endpoint /api/proyectos/[id]/inventario-status
+interface InvStatus {
+  bentonita: {
+    comprado_total: number
+    entregado_cliente: number
+    mi_reserva_inicial: number
+    consumido_obra: number
+    ventas_externas: number
+    disponible: number
+    costo_unitario: number
+    valor_disponible: number
+    valor_reserva_inicial: number
+    consumos_internos_registrados: number
+  } | null
+  pipas: {
+    presupuestado: number
+    comprado_total: number
+    valor_comprado: number
+    costo_promedio: number
+    consumido_obra: number
+    disponible: number
+    valor_disponible: number
+    compras_count: number
+  }
+}
+
+function SplitBentonitaWidget({ proyectoId }: { proyectoId: string }) {
+  const [data, setData] = useState<InvStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch(`/api/proyectos/${proyectoId}/inventario-status`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setData(d))
+      .finally(() => setLoading(false))
+  }, [proyectoId])
+
+  if (loading) return null
+  if (!data) return null
+
+  return (
+    <div className="space-y-4">
+      {data.bentonita && <BentonitaCard b={data.bentonita} />}
+      {data.pipas && data.pipas.presupuestado > 0 && <PipasCard p={data.pipas} />}
+    </div>
+  )
+}
+
+function BentonitaCard({ b }: { b: NonNullable<InvStatus['bentonita']> }) {
+  const pctUsado = b.comprado_total > 0
+    ? Math.min(100, Math.round((b.consumido_obra / b.comprado_total) * 100))
+    : 0
+  return (
+    <div className="bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/20 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-amber-500/15 flex items-center gap-2 flex-wrap">
+        <span className="text-lg">🧪</span>
+        <h2 className="text-sm font-semibold text-white">Bentonita · Compradas vs Usadas</h2>
+        <span className="text-[10px] text-slate-500 ml-auto">Split 70/30 · cliente ve 70%, 30% tu reserva</span>
+      </div>
+      <div className="p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4">
+          <SplitChip label="Plan total" value={b.comprado_total}    unit="sacos" color="slate"   />
+          <SplitChip label="Cliente paga (70%)" value={b.entregado_cliente} unit="sacos" color="blue"    />
+          <SplitChip label="Usadas en obra"     value={b.consumido_obra}    unit={`sacos · ${pctUsado}%`} color="orange"  />
+          <SplitChip label="Reserva disponible"   value={b.disponible}        unit="sacos" color="emerald" accent />
+        </div>
+        <div className="border-t border-amber-500/10 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Mi reserva (30%)</p>
+            <p className="text-sm font-bold text-amber-300 tabular-nums">{b.mi_reserva_inicial} sacos</p>
+            <p className="text-[10px] text-slate-600">valor Q{Math.round(b.valor_reserva_inicial).toLocaleString('es-GT')} · costo Q{Math.round(b.costo_unitario)}/saco</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Valor disponible</p>
+            <p className="text-sm font-bold text-emerald-300 tabular-nums">{`Q ${Math.round(b.valor_disponible).toLocaleString('es-GT')}`}</p>
+            <p className="text-[10px] text-slate-600">{b.disponible} sacos × Q{Math.round(b.costo_unitario)}/saco</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Ventas externas</p>
+            <p className="text-sm font-bold text-violet-300 tabular-nums">{b.ventas_externas} sacos</p>
+            <p className="text-[10px] text-slate-600">del 30% reservado vendido a externos</p>
+          </div>
+        </div>
+        <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+          💡 Al cliente se le cobra el 70% (Q535.71/saco) pero compras el 100%. La reserva solo baja cuando la bitácora supera los sacos cubiertos por el cliente; si no, sigue disponible para venta externa o para otro proyecto.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function PipasCard({ p }: { p: InvStatus['pipas'] }) {
+  const pctUsado = p.comprado_total > 0
+    ? Math.min(100, Math.round((p.consumido_obra / p.comprado_total) * 100))
+    : 0
+  const faltanteVsPresup = p.presupuestado - p.comprado_total
+  const alertaCompra = p.comprado_total > p.presupuestado   // compré de más que lo presupuestado
+  return (
+    <div className="bg-gradient-to-br from-cyan-500/5 to-blue-500/5 border border-cyan-500/20 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-cyan-500/15 flex items-center gap-2 flex-wrap">
+        <span className="text-lg">💧</span>
+        <h2 className="text-sm font-semibold text-white">Pipas de agua · Compradas vs Usadas</h2>
+        <span className="text-[10px] text-slate-500 ml-auto">Tracking físico de pipas del proyecto</span>
+      </div>
+      <div className="p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4">
+          <SplitChip label="Presup. cotización" value={p.presupuestado}  unit="pipas" color="slate"   />
+          <SplitChip label={alertaCompra ? '⚠ Comprado total' : 'Comprado total'}
+                     value={p.comprado_total}   unit={p.compras_count > 0 ? `en ${p.compras_count} compra(s)` : 'pipas'}
+                     color={alertaCompra ? 'orange' : 'blue'}    accent={alertaCompra} />
+          <SplitChip label="Usadas en obra"     value={p.consumido_obra} unit={`pipas · ${pctUsado}%`} color="orange"  />
+          <SplitChip label="Disponible ahora"   value={p.disponible}     unit="pipas" color="emerald" accent />
+        </div>
+        <div className="border-t border-cyan-500/10 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Total gastado en pipas</p>
+            <p className="text-sm font-bold text-cyan-300 tabular-nums">{`Q ${p.valor_comprado.toLocaleString('es-GT')}`}</p>
+            <p className="text-[10px] text-slate-600">costo promedio Q{p.costo_promedio.toFixed(2)}/pipa</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Valor disponible</p>
+            <p className="text-sm font-bold text-emerald-300 tabular-nums">{`Q ${p.valor_disponible.toLocaleString('es-GT')}`}</p>
+            <p className="text-[10px] text-slate-600">{p.disponible} pipas × Q{p.costo_promedio.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Vs cotización</p>
+            <p className={cn('text-sm font-bold tabular-nums',
+              faltanteVsPresup > 0  ? 'text-blue-300' :
+              faltanteVsPresup === 0 ? 'text-emerald-300' :
+                                       'text-amber-300')}>
+              {faltanteVsPresup > 0 ? `faltan ${faltanteVsPresup}` :
+               faltanteVsPresup === 0 ? '✓ justo' :
+               `+${Math.abs(faltanteVsPresup)} de más`}
+            </p>
+            <p className="text-[10px] text-slate-600">presup {p.presupuestado} · comprado {p.comprado_total}</p>
+          </div>
+        </div>
+        <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+          💡 Registra compras de pipas con el botón [+] del rubro &quot;Pipas de agua&quot; en la tabla Presupuesto vs Comprado.
+          El consumo real lo descuenta la bitácora automáticamente.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function SplitChip({
+  label, value, unit, color, accent,
+}: {
+  label: string
+  value: number
+  unit: string
+  color: 'slate' | 'blue' | 'amber' | 'orange' | 'emerald'
+  accent?: boolean
+}) {
+  const cls = {
+    slate:   'border-slate-500/30  bg-slate-500/5  text-slate-300',
+    blue:    'border-blue-500/30   bg-blue-500/5   text-blue-300',
+    amber:   'border-amber-500/40  bg-amber-500/10 text-amber-300',
+    orange:  'border-orange-500/40 bg-orange-500/10 text-orange-300',
+    emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+  }[color]
+  return (
+    <div className={cn('rounded-xl border p-2.5 flex flex-col items-center justify-center text-center', cls, accent && 'ring-1 ring-current/30')}>
+      <p className="text-[9px] uppercase tracking-wider opacity-70 mb-0.5 leading-tight">{label}</p>
+      <p className="text-lg font-black tabular-nums leading-none">{value.toLocaleString('es-GT')}</p>
+      <p className="text-[9px] opacity-60 mt-0.5">{unit}</p>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// RubroExpand — panel desplegable por rubro con:
+// · Resumen comparativo (precio cot · promedio comprado · total gastado)
+// · Gráfica de línea (precios de compras vs referencia cotización)
+// · Tabla de compras con variación % vs cotización
+// · Botón para agregar nueva compra
+// ══════════════════════════════════════════════════════════════════════════
+function RubroExpand({ rubro, compras, precioCotUnit, onAgregar, onEliminar }: {
+  rubro: EstadoRubro
+  compras: GastoExtra[]
+  precioCotUnit: number
+  onAgregar: () => void
+  onEliminar: (id: string) => void
+}) {
+  const comprasOrdenadas = [...compras].sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const cantTotal  = comprasOrdenadas.reduce((a, c) => a + c.cantidad, 0)
+  const montoTotal = comprasOrdenadas.reduce((a, c) => a + c.cantidad * c.costoUnitario, 0)
+  const promedio   = cantTotal > 0 ? montoTotal / cantTotal : 0
+  const deltaPromedioQ   = promedio - precioCotUnit
+  const deltaPromedioPct = precioCotUnit > 0 ? (deltaPromedioQ / precioCotUnit) * 100 : 0
+
+  const chartData = comprasOrdenadas.map(c => ({
+    fecha: c.fecha.slice(5),  // MM-DD
+    precio: Math.round(c.costoUnitario * 100) / 100,
+  }))
+
+  const colorDelta = deltaPromedioQ > 0 ? 'text-amber-400' : deltaPromedioQ < 0 ? 'text-emerald-400' : 'text-slate-400'
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Resumen arriba */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2.5">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Costo cotización</p>
+          <p className="text-lg font-bold text-blue-300 tabular-nums">Q {precioCotUnit.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-600">por {rubro.unidad} (referencia)</p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/3 px-3 py-2.5">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Promedio comprado</p>
+          <p className="text-lg font-bold text-white tabular-nums">Q {promedio.toFixed(2)}</p>
+          <p className={cn('text-[10px] font-medium', colorDelta)}>
+            {deltaPromedioQ === 0 ? '— igual a cot.' :
+              (deltaPromedioQ > 0 ? '⚠ +' : '✓ ') + `Q ${deltaPromedioQ.toFixed(2)} (${deltaPromedioQ > 0 ? '+' : ''}${deltaPromedioPct.toFixed(1)}%)`}
+          </p>
+        </div>
+        <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2.5">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Total gastado</p>
+          <p className="text-lg font-bold text-violet-300 tabular-nums">Q {Math.round(montoTotal).toLocaleString('es-GT')}</p>
+          <p className="text-[10px] text-slate-600">{cantTotal.toLocaleString('es-GT')} {rubro.unidad} · {comprasOrdenadas.length} compra(s)</p>
+        </div>
+      </div>
+
+      {/* Gráfica comparativa */}
+      {chartData.length > 0 && (
+        <div className="rounded-lg border border-white/10 bg-white/2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-slate-300">Variación de precio por compra</p>
+            <span className="text-[10px] text-slate-500">línea azul = costo cotización Q{precioCotUnit.toFixed(2)}</span>
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <XAxis dataKey="fecha" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: '#0f1829', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, fontSize: 12, color: '#e2e8f0' }}
+                formatter={(v) => [`Q ${Number(v ?? 0).toFixed(2)}`, 'precio']}
+              />
+              <ReferenceLine y={precioCotUnit} stroke="#3b82f6" strokeDasharray="4 4" label={{ value: `Cot Q${precioCotUnit.toFixed(0)}`, fill: '#60a5fa', fontSize: 10, position: 'right' }} />
+              <Line
+                type="monotone"
+                dataKey="precio"
+                stroke="#a78bfa"
+                strokeWidth={2}
+                dot={(props: { cx?: number; cy?: number; payload?: { precio: number } }) => {
+                  const { cx, cy, payload } = props
+                  const p = payload?.precio ?? 0
+                  const fill = p > precioCotUnit ? '#f59e0b' : p < precioCotUnit ? '#10b981' : '#a78bfa'
+                  return <Dot key={`${cx}-${cy}`} cx={cx} cy={cy} r={4} fill={fill} stroke={fill} />
+                }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Tabla historial */}
+      <div className="rounded-lg border border-white/10 overflow-hidden">
+        <div className="px-3 py-2 border-b border-white/5 bg-white/3 flex items-center justify-between">
+          <p className="text-xs font-semibold text-slate-300">Historial de compras</p>
+          <button onClick={onAgregar}
+            className="flex items-center gap-1 text-[11px] bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 px-2 py-1 rounded-md transition-colors">
+            <Plus className="w-3 h-3" /> Agregar compra
+          </button>
+        </div>
+        {comprasOrdenadas.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-slate-500 text-center">Sin compras registradas para este rubro</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="bg-[#0a1020] text-[10px] text-slate-500 uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-3 py-1.5 font-medium">Fecha</th>
+                <th className="text-right px-2 py-1.5 font-medium">Cant</th>
+                <th className="text-right px-2 py-1.5 font-medium">Precio/u</th>
+                <th className="text-right px-2 py-1.5 font-medium">Total</th>
+                <th className="text-right px-2 py-1.5 font-medium">Δ vs cot.</th>
+                <th className="text-left px-3 py-1.5 font-medium">Proveedor</th>
+                <th className="text-center px-2 py-1.5" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {comprasOrdenadas.map(c => {
+                const variacionQ = c.costoUnitario - precioCotUnit
+                const variacionPct = precioCotUnit > 0 ? (variacionQ / precioCotUnit) * 100 : 0
+                const cls = Math.abs(variacionPct) < 1 ? 'text-slate-400' : variacionQ > 0 ? 'text-amber-400' : 'text-emerald-400'
+                const icon = Math.abs(variacionPct) < 1 ? '—' : variacionQ > 0 ? '⚠' : '✓'
+                return (
+                  <tr key={c.id} className="hover:bg-white/2">
+                    <td className="px-3 py-1.5 text-slate-400">{c.fecha}</td>
+                    <td className="px-2 py-1.5 text-right text-slate-300 tabular-nums">{c.cantidad}</td>
+                    <td className="px-2 py-1.5 text-right text-white tabular-nums font-medium">Q {c.costoUnitario.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right text-slate-300 tabular-nums">Q {Math.round(c.cantidad * c.costoUnitario).toLocaleString('es-GT')}</td>
+                    <td className={cn('px-2 py-1.5 text-right tabular-nums', cls)}>
+                      {icon} {variacionQ === 0 ? 'igual' : `${variacionQ > 0 ? '+' : ''}${variacionPct.toFixed(1)}%`}
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400 text-[11px] truncate max-w-[120px]">{c.proveedor || '—'}</td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button onClick={() => onEliminar(c.id)} title="Eliminar compra"
+                        className="text-slate-600 hover:text-red-400 transition-colors">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

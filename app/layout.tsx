@@ -1,9 +1,17 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Geist } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" })
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#070d1a",
+}
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://hidrocrm.com'),

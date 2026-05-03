@@ -1,41 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { jwtVerify } from 'jose'
-import { createHash } from 'crypto'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { auditLog } from '@/lib/audit'
+import { getRequestInfo, hashPassword, requireSuperAdmin, validarPassword } from '@/lib/auth'
 
-function sha256(s: string) {
-  return createHash('sha256').update(s).digest('hex')
-}
+export const dynamic = 'force-dynamic'
 
-async function getSuperAdminRole(request: NextRequest) {
-  const token = request.cookies.get('auth_token')?.value
-  if (!token) return null
-  try {
-    const { payload } = await jwtVerify(
-      token,
-      new TextEncoder().encode(process.env.JWT_SECRET!)
-    )
-    return payload.role === 'superadmin' ? payload : null
-  } catch {
-    return null
-  }
-}
-
-// GET — listar todos los usuarios de la DB
+// GET - listar todos los usuarios de la DB
 export async function GET(request: NextRequest) {
-  if (!await getSuperAdminRole(request)) {
-    return NextResponse.json({ error: 'Sin autorización' }, { status: 403 })
-  }
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
 
   const usuarios = await prisma.usuario.findMany({
     orderBy: { createdAt: 'asc' },
     select: {
       id: true, username: true, nombre: true, rol: true, activo: true,
       email: true, contactoId: true, ultimoAcceso: true, createdAt: true,
+      twoFactorEnabled: true, twoFactorConfirmedAt: true,
     },
   })
 
-  // Para cliente_final, traer empresa del contacto asociado (más info útil)
   const contactoIds = usuarios.filter(u => u.contactoId).map(u => u.contactoId as string)
   const contactos = contactoIds.length > 0
     ? await prisma.contacto.findMany({
@@ -53,11 +36,10 @@ export async function GET(request: NextRequest) {
   )
 }
 
-// POST — crear nuevo usuario
+// POST - crear nuevo usuario
 export async function POST(request: NextRequest) {
-  if (!await getSuperAdminRole(request)) {
-    return NextResponse.json({ error: 'Sin autorización' }, { status: 403 })
-  }
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
 
   const { username, nombre, password, rol } = await request.json()
 
@@ -65,19 +47,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Usuario, nombre y contraseña son requeridos' }, { status: 400 })
   }
 
-  const existe = await prisma.usuario.findFirst({ where: { username } })
+  const errPw = validarPassword(password)
+  if (errPw) return NextResponse.json({ error: errPw }, { status: 400 })
+
+  const usernameNormalizado = username.trim().toLowerCase()
+  const existe = await prisma.usuario.findFirst({ where: { username: usernameNormalizado } })
   if (existe) {
     return NextResponse.json({ error: 'Ese nombre de usuario ya está en uso' }, { status: 409 })
   }
 
   const usuario = await prisma.usuario.create({
     data: {
-      username:     username.trim().toLowerCase(),
-      nombre:       nombre.trim(),
-      rol:          rol === 'superadmin' ? 'superadmin' : 'admin',
-      passwordHash: sha256(password),
+      username: usernameNormalizado,
+      nombre: nombre.trim(),
+      rol: rol === 'superadmin' ? 'superadmin' : 'admin',
+      passwordHash: hashPassword(password),
     },
-    select: { id: true, username: true, nombre: true, rol: true, activo: true, createdAt: true },
+    select: {
+      id: true, username: true, nombre: true, rol: true, activo: true,
+      createdAt: true, twoFactorEnabled: true, twoFactorConfirmedAt: true,
+    },
+  })
+
+  await auditLog({
+    user: auth.user,
+    accion: 'create',
+    entidad: 'usuario',
+    entidadId: usuario.id,
+    despues: usuario,
+    ...getRequestInfo(request),
   })
 
   return NextResponse.json(usuario, { status: 201 })

@@ -74,7 +74,7 @@ JWT_SECRET="<generar con: openssl rand -hex 64>"
 
 # ── Email (opcional — si usás Resend para bitácora al cliente) ──
 RESEND_API_KEY="re_xxx"
-RESEND_FROM="no-reply@hidroperforaciones.com"
+RESEND_FROM="ventas@hidroperforaciones.com"
 
 # ── Entorno ──
 NODE_ENV="production"

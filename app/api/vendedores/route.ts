@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
 // GET /api/vendedores — lista de nombres de vendedores activos (admin + superadmin)
 // Usado por filtros y selectores en la UI. No devuelve contraseñas ni info sensible.
-export async function GET(_req: NextRequest) {
+export async function GET() {
   const usuarios = await prisma.usuario.findMany({
     where: { activo: true },
     orderBy: { nombre: 'asc' },

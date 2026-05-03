@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Search, Plus, Building2, Phone, Mail, MapPin, Loader2,
-  X, Save, Trash2, ShieldCheck, Edit3, ChevronRight
+  X, Save, Trash2, ShieldCheck, Edit3, ChevronRight, Calendar
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -14,12 +14,14 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
 }
 
 interface Contacto {
   id: string
   nombre: string
+  alias: string
   empresa: string
   telefono: string
   email: string
@@ -27,8 +29,10 @@ interface Contacto {
   pais: string
   departamento: string
   municipio: string
+  proyectoNombre: string
   notas: string
   vendedor: string
+  createdAt?: string
 }
 
 const TIPO_COLORS: Record<string, string> = {
@@ -45,9 +49,9 @@ const AVATAR_COLORS: Record<string, string> = {
 }
 
 const EMPTY: Omit<Contacto, 'id'> = {
-  nombre: '', empresa: '', telefono: '', email: '',
+  nombre: '', alias: '', empresa: '', telefono: '', email: '',
   tipo: 'cliente', pais: 'Guatemala', departamento: '', municipio: '',
-  notas: '', vendedor: '',
+  proyectoNombre: '', notas: '', vendedor: '',
 }
 
 export default function ContactosPage() {
@@ -62,10 +66,17 @@ export default function ContactosPage() {
   const [editing, setEditing]         = useState<Contacto | null>(null)
   const [form, setForm]               = useState(EMPTY)
   const [saving, setSaving]           = useState(false)
+  const savingRef = useRef(false)
+  const [saveError, setSaveError]     = useState('')
   const [vendedoresDB, setVendedoresDB] = useState<string[]>([])  // nombres reales desde /api/vendedores
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; nombre: string } | null>(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleting, setDeleting]         = useState(false)
+  const [dupCheck, setDupCheck]         = useState<{
+    status: 'empty' | 'available' | 'similar' | 'exists'
+    match?:   { id: string; nombre: string; empresa: string; vendedor: string; createdAt: string }
+    matches?: { id: string; nombre: string; empresa: string; vendedor: string; createdAt: string }[]
+  }>({ status: 'empty' })
 
   const fetchContacts = useCallback(async (v: string, r: Rol) => {
     const url = r === 'superadmin'
@@ -104,6 +115,26 @@ export default function ContactosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contacts.length])
 
+  // Chequeo de duplicados mientras se escribe (debounce 300ms) — semáforo rojo/amarillo/verde
+  useEffect(() => {
+    if (!showForm) return
+    const nombre = form.nombre.trim()
+    if (nombre.length < 2) {
+      setDupCheck({ status: 'empty' })
+      return
+    }
+    const ctrl = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({ nombre, empresa: form.empresa.trim() })
+        if (editing) q.set('excludeId', editing.id)
+        const res = await fetch(`/api/contactos/check?${q}`, { signal: ctrl.signal })
+        if (res.ok) setDupCheck(await res.json())
+      } catch { /* abort */ }
+    }, 300)
+    return () => { ctrl.abort(); clearTimeout(timer) }
+  }, [form.nombre, form.empresa, showForm, editing])
+
   const isSuperAdmin = role === 'superadmin'
 
   const vendedores = ['Todos', ...vendedoresDB]
@@ -118,35 +149,57 @@ export default function ContactosPage() {
 
   function openNew() {
     setEditing(null)
+    setSaveError('')
     setForm({ ...EMPTY, vendedor: isSuperAdmin ? (vendedoresDB[0] ?? VENDEDORES[0]) : myVendedor })
     setShowForm(true)
   }
 
   function openEdit(c: Contacto) {
     setEditing(c)
-    setForm({ nombre: c.nombre, empresa: c.empresa, telefono: c.telefono, email: c.email,
+    setSaveError('')
+    setForm({ nombre: c.nombre, alias: c.alias ?? '', empresa: c.empresa, telefono: c.telefono, email: c.email,
               tipo: c.tipo, pais: c.pais, departamento: c.departamento ?? '', municipio: c.municipio ?? '',
+              proyectoNombre: c.proyectoNombre ?? '',
               notas: c.notas, vendedor: c.vendedor })
     setShowForm(true)
   }
 
   async function handleSave() {
+    if (savingRef.current) return
     if (!form.nombre.trim()) return
-    setSaving(true)
-    if (editing) {
-      await fetch(`/api/contactos/${editing.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-    } else {
-      await fetch('/api/contactos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
+    if (dupCheck.status === 'exists') {
+      setSaveError('Ya existe un contacto con ese nombre. Edita el contacto existente en vez de crear otro.')
+      return
     }
+    savingRef.current = true
+    setSaving(true)
+    setSaveError('')
+    let res: Response
+    try {
+      res = editing
+      ? await fetch(`/api/contactos/${editing.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        })
+      : await fetch('/api/contactos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        })
+    } catch {
+      savingRef.current = false
+      setSaving(false)
+      setSaveError('No se pudo guardar. Revisa tu conexion e intenta de nuevo.')
+      return
+    }
+    savingRef.current = false
     setSaving(false)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setSaveError(body.error || 'No se pudo guardar. Intentá de nuevo.')
+      return
+    }
     setShowForm(false)
     fetchContacts(myVendedor, role)
   }
@@ -333,10 +386,23 @@ export default function ContactosPage() {
                         </div>
                       )}
                     </div>
-                    {isSuperAdmin && (
-                      <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/5">
-                        <ShieldCheck className="w-3 h-3 text-slate-700" />
-                        <span className="text-[10px] text-slate-600">{c.vendedor}</span>
+                    {(c.createdAt || isSuperAdmin) && (
+                      <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-2 pt-2 border-t border-white/5 text-[10px] text-slate-600">
+                        {c.createdAt && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-700" />
+                            Creado {new Date(c.createdAt).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                        {isSuperAdmin && (
+                          <>
+                            {c.createdAt && <span className="text-slate-700">·</span>}
+                            <span className="flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3 text-slate-700" />
+                              {c.vendedor}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -368,9 +434,31 @@ export default function ContactosPage() {
             <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-1 sm:col-span-2">
-                  <FormInput label="Nombre *" value={form.nombre} onChange={v => p('nombre', v)} placeholder="Juan García" />
+                  <FormInput
+                    label="Nombre *"
+                    value={form.nombre}
+                    onChange={v => p('nombre', v)}
+                    placeholder="Juan García"
+                    status={dupCheck.status === 'empty' ? undefined : dupCheck.status}
+                    hint={
+                      dupCheck.status === 'exists'
+                        ? `Ya existe "${dupCheck.match?.nombre}"${dupCheck.match?.empresa ? ' de ' + dupCheck.match.empresa : ''} — creado por ${dupCheck.match?.vendedor}`
+                      : dupCheck.status === 'similar'
+                        ? `Parecido a: ${dupCheck.matches?.map(m => m.nombre + (m.empresa ? ' (' + m.empresa + ')' : '')).slice(0,3).join(' · ')}`
+                      : dupCheck.status === 'available'
+                        ? '✓ Disponible'
+                      : undefined
+                    }
+                  />
                 </div>
-                <FormInput label="Empresa" value={form.empresa} onChange={v => p('empresa', v)} placeholder="Empresa S.A." />
+                <FormInput label="Alias (opcional)" value={form.alias} onChange={v => p('alias', v)} placeholder="Don Luis, Doña Mari…" />
+                <FormInput
+                  label="Empresa"
+                  value={form.empresa}
+                  onChange={v => p('empresa', v)}
+                  placeholder="Empresa S.A."
+                  status={dupCheck.status === 'empty' ? undefined : dupCheck.status}
+                />
                 <FormInput label="Teléfono" value={form.telefono} onChange={v => p('telefono', v)} placeholder="+502 5555-5555" />
                 <FormInput label="Correo" value={form.email} onChange={v => p('email', v)} placeholder="juan@empresa.com" type="email" />
                 <div>
@@ -434,6 +522,18 @@ export default function ContactosPage() {
                   </>
                 )}
 
+                <div className="col-span-2">
+                  <label className="text-xs text-slate-500 mb-1.5 block">
+                    Nombre del proyecto <span className="text-slate-600 text-[10px]">(opcional)</span>
+                  </label>
+                  <input value={form.proyectoNombre} onChange={e => p('proyectoNombre', e.target.value)}
+                    placeholder="Ej. Pozo Finca El Paraíso"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
+                  <p className="text-[10px] text-slate-600 mt-1">
+                    Se rellena automáticamente cuando creás una cotización con este contacto.
+                  </p>
+                </div>
+
                 {isSuperAdmin && (
                   <div>
                     <label className="text-xs text-slate-500 mb-1.5 block">Asignado a</label>
@@ -453,13 +553,20 @@ export default function ContactosPage() {
               </div>
             </div>
 
+            {/* Banner de error (duplicado o validación) */}
+            {saveError && (
+              <div className="mx-4 sm:mx-6 mb-3 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs leading-relaxed">
+                {saveError}
+              </div>
+            )}
+
             {/* Footer modal (sticky, siempre visible) */}
             <div className="flex items-center justify-end gap-2 sm:gap-3 px-5 sm:px-6 py-3 sm:py-4 border-t border-white/5 shrink-0 bg-[#0d1526] rounded-b-2xl">
               <button onClick={() => setShowForm(false)}
                 className="px-3 sm:px-4 py-2 text-sm text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all">
                 Cancelar
               </button>
-              <button onClick={handleSave} disabled={!form.nombre.trim() || saving}
+              <button onClick={handleSave} disabled={!form.nombre.trim() || saving || dupCheck.status === 'exists'}
                 className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors">
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 {editing ? 'Guardar' : 'Crear'}
@@ -486,14 +593,27 @@ export default function ContactosPage() {
   )
 }
 
-function FormInput({ label, value, onChange, placeholder, type = 'text' }: {
+function FormInput({ label, value, onChange, placeholder, type = 'text', status, hint }: {
   label: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string
+  status?: 'available' | 'similar' | 'exists'
+  hint?: string
 }) {
+  const borderCls =
+    status === 'exists'    ? 'border-red-500/60 focus:border-red-400'       :
+    status === 'similar'   ? 'border-amber-500/60 focus:border-amber-400'   :
+    status === 'available' ? 'border-emerald-500/50 focus:border-emerald-400' :
+                             'border-white/10 focus:border-blue-500/50'
+  const hintCls =
+    status === 'exists'    ? 'text-red-400'     :
+    status === 'similar'   ? 'text-amber-400'   :
+    status === 'available' ? 'text-emerald-400' :
+                             'text-slate-500'
   return (
     <div>
       <label className="text-xs text-slate-500 mb-1.5 block">{label}</label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
+        className={cn('w-full bg-white/5 border rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition-colors', borderCls)} />
+      {hint && <p className={cn('text-[10px] mt-1 leading-snug', hintCls)}>{hint}</p>}
     </div>
   )
 }

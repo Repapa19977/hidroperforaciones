@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import {
-  Droplet, LogOut, Loader2, Briefcase, Calendar, CheckCircle2, Clock,
+  Droplet, LogOut, Loader2, Briefcase, Calendar, Clock,
   ArrowRight, Building2, MapPin, Phone, Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -87,7 +87,7 @@ export default function ClienteDashboardPage() {
             Hola, {data.contacto.nombre.split(' ')[0]} 👋
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Acá podés ver el estado de tu{data.totales.proyectos > 1 ? 's' : ''} proyecto{data.totales.proyectos > 1 ? 's' : ''} con Hidroperforaciones.
+            Acá puedes ver el estado de tu{data.totales.proyectos > 1 ? 's' : ''} proyecto{data.totales.proyectos > 1 ? 's' : ''} con Hidroperforaciones.
           </p>
           {data.contacto.empresa && (
             <div className="flex items-center gap-2 mt-3 text-xs text-slate-400">
@@ -97,7 +97,7 @@ export default function ClienteDashboardPage() {
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <KPI label="Proyectos" value={String(data.totales.proyectos)} color="blue" />
           <KPI label="Activos" value={String(data.totales.activos)} color="emerald" />
           <KPI label="Completados" value={String(data.totales.completados)} color="slate" />
@@ -109,7 +109,7 @@ export default function ClienteDashboardPage() {
           {data.proyectos.length === 0 ? (
             <div className="bg-[#0d1526] rounded-2xl border border-white/5 py-12 flex flex-col items-center text-slate-500">
               <Briefcase className="w-10 h-10 mb-3 opacity-30" />
-              <p className="text-sm">Aún no tenés proyectos en ejecución</p>
+              <p className="text-sm">Aún no tienes proyectos en ejecución</p>
               <p className="text-[11px] text-slate-600 mt-1">Cuando tu asesor apruebe una cotización aparecerá aquí</p>
             </div>
           ) : (
@@ -175,8 +175,8 @@ export default function ClienteDashboardPage() {
             <a href="tel:50225992626" className="flex items-center gap-2 text-slate-300 hover:text-blue-400 transition-colors">
               <Phone className="w-4 h-4 text-slate-500" /> (502) 2259-2626
             </a>
-            <a href="mailto:info@hidroperforaciones.com" className="flex items-center gap-2 text-slate-300 hover:text-blue-400 transition-colors">
-              <Mail className="w-4 h-4 text-slate-500" /> info@hidroperforaciones.com
+            <a href="mailto:ventas@hidroperforaciones.com" className="flex items-center gap-2 text-slate-300 hover:text-blue-400 transition-colors">
+              <Mail className="w-4 h-4 text-slate-500" /> ventas@hidroperforaciones.com
             </a>
             <div className="flex items-center gap-2 text-slate-400">
               <MapPin className="w-4 h-4 text-slate-500" /> Guatemala, C.A.

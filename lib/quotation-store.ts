@@ -29,6 +29,7 @@ export interface QuotationData {
   fecha: string
   validezDias: number
   cliente: string
+  contactoId?: string | null  // FK al Contacto seleccionado — necesario para que el portal del cliente vea sus cotizaciones/proyectos
   empresa: string
   nit: string
   telefono: string
@@ -54,10 +55,14 @@ export interface QuotationData {
   lineasExtras?: LineaExtra[]  // ítems libres agregados por el usuario (título+desc+costo+venta+cant)
   aplicarIva?: boolean     // aplicar IVA 12% al subtotal (default true)
   aplicarIsr?: boolean     // aplicar ISR 7% al subtotal (default false)
+  aplicarDescuento?: boolean  // aplicar descuento especial (resta al subtotal antes de IVA/ISR)
+  descuentoMonto?: number     // Q descontado (sólo si aplicarDescuento)
   mostrarDesgloseImpuestos?: boolean  // mostrar desglose Subtotal/IVA/ISR/Total en el PDF (default false)
+  mostrarNotaCheque?: boolean  // mostrar nota "emitir cheque no negociable a nombre de Hidroperforaciones S.A." bajo el valor por pie (default false)
   valorPorPieManual?: number          // override manual del "VALOR POR PIE" del pie del PDF (si 0 o undef, usa auto-calc total/profundidad)
   mostrarEspesor?: boolean
   descripcionSimple?: boolean
+  montoGuardado?: number              // snapshot del monto en DB al reimprimir cotizaciones legacy/guardadas
   // Precios snapshot al momento de cotizar (reunión 2026-04-18):
   //   se congelan al guardar la cotización para que al re-imprimir salga con los mismos números
   //   aunque el superadmin cambie la config después.
@@ -158,6 +163,7 @@ export async function addCotizacion(
     body: JSON.stringify({
       correlativo: data.correlativo,
       cliente:     data.cliente,
+      contactoId:  data.contactoId ?? null,  // FK para portal cliente (vincula proyecto al contacto)
       empresa:     data.empresa,
       proyecto:    data.proyecto,
       tipo:        data.tipo,
@@ -200,17 +206,25 @@ export async function deleteCotizacion(correlativo: string) {
 
 // ── Correlativo ───────────────────────────────────────────────────────────────
 // Perforación: P#### (ej. P0001)
-// Limpieza: L#### (ej. L0001)
+// Limpieza/servicios: S#### (ej. S0001)
 // Fallback: HP-COT-#### (backward compat para cotizaciones viejas)
+// Piso mínimo del fallback local — debe coincidir con CORRELATIVO_PISO del endpoint
+// /api/cotizaciones/siguiente (instrucción Rodrigo 2026-04-23, producción desde 5330).
+// Formato: P####-YYYY (ej. P5330-2026). El año es el del calendario al crear.
+const CORRELATIVO_PISO_LOCAL = 5330
+
 export function getNextCorrelativo(tipo: 'perforacion' | 'limpieza' = 'perforacion'): string {
-  const prefijo = tipo === 'perforacion' ? 'P' : 'L'
-  if (typeof window === 'undefined') return `${prefijo}0001`
+  const prefijo = tipo === 'perforacion' ? 'P' : 'S'
+  const anio = new Date().getFullYear()
+  if (typeof window === 'undefined') {
+    return `${prefijo}${String(CORRELATIVO_PISO_LOCAL).padStart(4, '0')}-${anio}`
+  }
   const storageKey = `hidrocrm_last_num_${prefijo}`
   const stored = localStorage.getItem(storageKey)
   const last = stored ? parseInt(stored) : 0
-  const next = last + 1
+  const next = Math.max(last + 1, CORRELATIVO_PISO_LOCAL)
   localStorage.setItem(storageKey, String(next))
-  return `${prefijo}${String(next).padStart(4, '0')}`
+  return `${prefijo}${String(next).padStart(4, '0')}-${anio}`
 }
 
 // ── Vendedores ────────────────────────────────────────────────────────────────
@@ -275,10 +289,34 @@ export const defaultCondicionesPerf = `1. La presente cotización se encuentra r
 
 22. El CONTRATANTE deberá designar y contar con un profesional calificado que supervise de manera continua los avances diarios del proyecto. Dicho profesional tendrá la responsabilidad de verificar y avalar los siguientes aspectos: pies perforados en cada jornada; consumos de bentonita, agua y demás insumos; registro y control de pipas de agua utilizadas; demás renglones de trabajo estipulados en la presente cotización. En caso de que el CONTRATANTE no cuente con dicho supervisor, se entenderá que acepta como válidos los avances y consumos descritos en la bitácora diaria elaborada por HIDROPERFORACIONES, S.A.`
 
-export const defaultCondicionesLimp = `1. Los precios indicados están en Quetzales (GTQ) e incluyen IVA del 12%.
-2. Validez de la cotización: 15 días calendario a partir de la fecha de emisión.
-3. Forma de pago: según plan de pagos adjunto acordado con el cliente.
-4. El cliente deberá proporcionar acceso libre al pozo y energía eléctrica disponible en el sitio.
-5. El precio incluye los químicos y aditivos de limpieza especificados en esta cotización.
-6. El tiempo de ejecución puede variar según el estado y condiciones del pozo.
-7. El presente presupuesto no incluye reparaciones estructurales del pozo.`
+export const defaultCondicionesLimp = `1. La presente cotización se identifica con un número de referencia antecedido por la letra "S", el cual deberá utilizarse para cualquier comunicación, gestión administrativa o facturación relacionada con el proyecto.
+
+2. Condiciones de Pago y Movilización: El anticipo establecido deberá liquidarse previo al ingreso del equipo y una vez que el área de trabajo cuente con las adecuaciones de acceso necesarias; de lo contrario, Hidroperforaciones, Sociedad Anónima no estará obligada a iniciar los trabajos. Asimismo, los pagos por avance físico (etapas o porcentajes) son de cumplimiento obligatorio para el Contratante. Ante el incumplimiento de estos, la empresa podrá suspender la ejecución y retirar su equipo tras cinco (5) días hábiles de atraso, sin responsabilidad legal ni perjuicio alguno. Si transcurrido este plazo el equipo permaneciera en el sitio, se generará un cargo de Q3,000.00 diarios por concepto de maquinaria parada, los cuales serán facturados de inmediato. Hidroperforaciones se reserva el derecho de determinar el momento del retiro del equipo derivado de la falta de pago.
+
+3. Ampliación del Plazo Contractual: HIDROPERFORACIONES, S.A. se reserva el derecho de ampliar el plazo de ejecución estipulado en caso de surgir situaciones ajenas a su control. Estas incluyen, de manera enunciativa más no limitativa: complejidad técnica imprevista en los trabajos, averías mecánicas que requieran reparaciones prolongadas o importación de repuestos, restricciones administrativas o comunitarias que limiten la jornada laboral (incluyendo horarios inhábiles y festivos), así como eventos de caso fortuito o fuerza mayor. En tales circunstancias, HIDROPERFORACIONES, S.A. notificará al CONTRATANTE por escrito, detallando el motivo y la estimación del tiempo adicional, sin que ello genere penalizaciones o responsabilidad alguna para la empresa.
+
+4. Autorización de Trabajos y Equipos: Una vez que HIDROPERFORACIONES, S.A. notifique al CONTRATANTE sobre el equipo a instalar o los trabajos a ejecutar, este dispondrá de 48 horas para emitir su autorización. De lo contrario, se aplicará una tarifa por inactividad de Q2,000.00 diarios. Si transcurridos cinco (5) días calendario persiste la falta de aprobación, la empresa podrá retirar el equipo sin responsabilidad alguna; el CONTRATANTE deberá cubrir los costos incurridos hasta el momento, incluyendo los cargos por demora acumulados.
+
+5. Insumos y Servicios: La presente cotización contempla una cantidad base de insumos. Si por condiciones de la tubería a limpiarse fuera necesario exceder dichas cantidades, Hidroperforaciones notificará al Contratante y procederá al cobro de los excedentes según los precios unitarios pactados. Para garantizar la continuidad de los trabajos, estos montos deberán ser liquidados de inmediato tras la presentación de la factura. De no autorizarse o pagarse estos insumos y trabajos extraordinarios, la empresa queda facultada para suspender las labores sin que esto represente responsabilidad, penalidad o perjuicio alguno, dado que dichos suministros son técnicamente indispensables para la finalización exitosa del proyecto.
+
+6. Supervisor Designado del Proyecto: Por transparencia en la ejecución de la obra, es indispensable que el Contratante designe a un supervisor encargado de validar los consumos y las cantidades ejecutadas. En ausencia de dicha supervisión en el sitio, el Contratante aceptará como válidos y definitivos los consumos y trabajos extraordinarios reportados por Hidroperforaciones en la bitácora del proyecto.
+
+7. Responsabilidades, Permisos e Infraestructura: Hidroperforaciones no asume responsabilidad por la gestión de permisos, licencias o multas derivadas de la ejecución del proyecto ante terceros o instituciones gubernamentales. Asimismo, la empresa se exonera de cualquier responsabilidad por daños ocasionados a la infraestructura (pavimento, banquetas, redes aéreas o subterráneas) derivados del acceso, movilización y operación de nuestra maquinaria y equipo.
+
+8. Trabajos y Repuestos no Incluidos en la Oferta: Cualquier labor, suministro o servicio que no se encuentre explícitamente detallado en la presente cotización será considerado como un trabajo extra. En tal caso, Hidroperforaciones procederá a cotizar dicha actividad para la previa revisión y aprobación por parte del Contratante antes de su ejecución.
+
+9. Resguardo y Seguridad del Equipo: Una vez instalado el equipo de perforación, herramientas e insumos en el área de trabajo, la custodia y seguridad de estos quedan bajo la responsabilidad directa del Contratante. El cliente deberá proveer las medidas de vigilancia y seguridad necesarias para proteger el equipo contra daños, robos o actos vandálicos mientras permanezca en el sitio. En caso de que el Contratante no pueda o no desee brindar dicha seguridad, Hidroperforaciones gestionará un servicio de vigilancia externo. Dado que este servicio es ajeno a la operatividad técnica inicial, la seguridad gestionada por nuestra empresa se considerará un trabajo adicional y será facturada íntegramente al finalizar el proyecto o según se acuerde.
+
+10. Reserva de Dominio y Derecho de Retiro: Todos los equipos instalados bajo la presente oferta permanecerán bajo la propiedad exclusiva de HIDROPERFORACIONES, S.A. hasta que el CONTRATANTE haya liquidado el pago total de los mismos. En caso de que el pago total no se efectúe dentro de un plazo de quince (15) días calendario contados a partir de la fecha de instalación, HIDROPERFORACIONES, S.A. queda facultada para desinstalar y retirar los equipos de la propiedad del CONTRATANTE. Dicho retiro se realizará sin responsabilidad alguna por la interrupción de suministros, servicios o cualquier otro perjuicio derivado de la desinstalación. El CONTRATANTE asumirá los gastos operativos de desmontaje y transporte generados por el incumplimiento de pago.
+
+11. Propiedad y Retención del Equipo: Toda la maquinaria, herramientas y equipo utilizados en el proyecto son propiedad exclusiva de Hidroperforaciones. Bajo ninguna circunstancia el Contratante podrá retener el equipo en el sitio de trabajo. Hidroperforaciones responde únicamente ante la persona o entidad que aprobó la cotización original y no asumirá responsabilidad por conflictos, deudas o compromisos adquiridos por el Contratante con terceros. Cualquier situación ajena a Hidroperforaciones que impida el retiro físico del equipo será responsabilidad absoluta del Contratante. Por cada día que el equipo permanezca retenido o imposibilitado de retiro por causas imputables al Contratante, se establece una multa de Q5,000.00 diarios.
+
+12. Condiciones para la Instalación de Equipos en Pozos Preexistentes: En proyectos donde se contrate la instalación de equipos sumergibles (motor o bomba) en pozos perforados o intervenidos previamente por terceros, HIDROPERFORACIONES, S.A. recomienda realizar una nueva limpieza mecánica bajo la supervisión de nuestra empresa antes de la instalación. De no ejecutarse la limpieza recomendada, HIDROPERFORACIONES, S.A. no otorgará garantía sobre el equipo instalado. El CONTRATANTE asume total responsabilidad por cualquier avería derivada de la presencia de materiales extraños o condiciones mecánicas deficientes del pozo que afecten el desempeño o la vida útil del equipo sumergible.
+
+13. Autorización de Trabajos y Cargos por Inactividad: Una vez que HIDROPERFORACIONES, S.A. presente al CONTRATANTE la propuesta del equipo a instalar o el plan de trabajo a ejecutar, el CONTRATANTE dispondrá de un plazo máximo de 48 horas para otorgar su autorización. De no recibirse una respuesta dentro del plazo estipulado, se generará un cargo diario de Q2,000.00 en concepto de equipo inactivo, facturado por cada día de retraso. Si transcurridos cinco (5) días calendario desde la notificación inicial la autorización aún no ha sido emitida, HIDROPERFORACIONES, S.A. estará facultada para retirar su maquinaria y personal del proyecto sin responsabilidad alguna por incumplimiento. En caso de retiro, el CONTRATANTE deberá liquidar de inmediato todos los costos devengados hasta la fecha, incluyendo cargos por inactividad y gastos de movilización/desmovilización.
+
+14. Extracción de Equipo Sumergible y Límite de Responsabilidad: En caso de que, durante las maniobras de extracción o instalación de cualquier equipo sumergible, ocurra el degollamiento de las roscas de la tubería debido al deterioro o fatiga del material, HIDROPERFORACIONES, S.A. quedará eximida de toda responsabilidad. La empresa no estará obligada a realizar maniobras de pesca para la recuperación del equipo afectado. Si HIDROPERFORACIONES, S.A. decide emprender el rescate técnico, el inicio de los trabajos no garantiza el éxito del rescate dada la naturaleza incierta de estas contingencias; se establecerá un periodo máximo para los intentos de recuperación y los montos devengados por maniobras de rescate no serán reembolsables ni estarán sujetos a devolución, independientemente del resultado de la operación.
+
+15. Garantía de Equipos y Servicios de Instalación: Los equipos suministrados e instalados por HIDROPERFORACIONES, S.A. cuentan con una garantía limitada por un periodo determinado, la cual cubre exclusivamente defectos de fabricación o errores en la ejecución de la instalación, conforme a los términos del certificado de garantía correspondiente. La validez de dicha garantía quedará sin efecto si los equipos son manipulados, modificados, desinstalados o reparados por personal ajeno a HIDROPERFORACIONES, S.A.; por cualquier alteración técnica o física realizada por terceros; o por uso indebido fuera de las especificaciones técnicas del equipo o negligencia en su mantenimiento.
+
+16. La aceptación de las presentes condiciones se perfeccionará por la manifestación del consentimiento a través de: firma autógrafa, aceptación vía correo electrónico, emisión de orden de compra o el pago de cualquier suma o por cualquier medio escrito. Las condiciones de pago aquí pactadas prevalecerán sobre cualesquiera otras que el contratante consigne en instrumentos contractuales posteriores. Las partes reconocen expresamente la calidad de título ejecutivo del presente documento.`

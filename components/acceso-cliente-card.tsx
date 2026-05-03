@@ -5,8 +5,7 @@
 // - Si YA existe: muestra username, email, último acceso, botón regenerar password
 
 import { useState, useEffect, useCallback } from 'react'
-import { Key, Loader2, RefreshCw, Copy, CheckCircle2, User, Mail, Clock, X, Trash2, Power } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Key, Loader2, RefreshCw, Copy, CheckCircle2, User, Mail, Clock, X, Power } from 'lucide-react'
 import { ConfirmDialog } from './confirm-dialog'
 
 interface UsuarioCliente {
@@ -82,7 +81,7 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
 
   function compartirWhatsApp() {
     if (!revealedPass) return
-    const text = `Hola ${contactoNombre}, ya podés acceder al portal de Hidroperforaciones para ver tu proyecto:\n\n🔗 ${window.location.origin}/cliente/login\n📧 ${revealedPass.email}\n🔑 ${revealedPass.password}\n\nGuardá estos datos en un lugar seguro.`
+    const text = `Hola ${contactoNombre}, ya puedes acceder al portal de Hidroperforaciones para ver tu proyecto:\n\n🔗 ${window.location.origin}/cliente/login\n📧 ${revealedPass.email}\n🔑 ${revealedPass.password}\n\nGuarda estos datos en un lugar seguro.`
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
 
@@ -136,7 +135,7 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
             </p>
             {!contactoEmail && (
               <p className="text-xs text-amber-400 mb-3">
-                ⚠ Este contacto no tiene email. Editá el contacto y agregá uno antes de crear el acceso.
+                ⚠ Este contacto no tiene email. Edita el contacto y agrega uno antes de crear el acceso.
               </p>
             )}
             <button onClick={() => crear(false)} disabled={creating || !contactoEmail}
@@ -197,7 +196,7 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-amber-400 mb-4">⚠ Copiá los datos ahora — la contraseña no se puede recuperar después.</p>
+            <p className="text-xs text-amber-400 mb-4">⚠ Copia los datos ahora — la contraseña no se puede recuperar después.</p>
 
             <div className="space-y-2 bg-black/40 border border-white/10 rounded-lg p-4 mb-4">
               <div>
@@ -249,7 +248,7 @@ export function AccesoClienteCard({ contactoId, contactoNombre, contactoEmail }:
         onCancel={() => setConfirmDesactivar(false)}
         onConfirm={desactivarAcceso}
         title="¿Desactivar acceso del cliente?"
-        description="El cliente no podrá entrar al portal. Podés reactivarlo después (te va a pedir generar una nueva contraseña)."
+        description="El cliente no podrá entrar al portal. Puedes reactivarlo después (te va a pedir generar una nueva contraseña)."
         variant="destructive"
         confirmLabel="Sí, desactivar"
         loading={desactivando}

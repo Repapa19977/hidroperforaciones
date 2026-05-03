@@ -127,10 +127,10 @@ export const COSTOS_BASE: Record<string, CostoRubro> = {
   },
   analisisFQBact: {
     key: 'analisisFQBact',
-    nombre: 'Análisis FQ + Bacteriológico',
+    nombre: 'Análisis físico-químico',
     unidad: 'unidad',
-    costoUnitario: 0,             // sin costo base registrado
-    precioVentaUnitario: 800,     // Hoja1 Odoo (línea 20)
+    costoUnitario: 1000,          // Instrucción jefe 2026-04-20: los 2 análisis unificados
+    precioVentaUnitario: 1500,    // costo Q1000 / venta Q1500
     editable: true,
   },
 
@@ -172,6 +172,26 @@ export const COSTOS_BASE: Record<string, CostoRubro> = {
   },
 }
 
+// Mapa de rubro de configuración → key real de línea en cotización/PDF.
+// Algunos rubros del catálogo son administrativos y no tienen línea activa.
+export const RUBRO_TO_LINEA_KEY: Record<string, string> = {
+  bentonita: 'bentonita',
+  grava: 'grava-material',
+  pipasAgua: 'pipas-agua',
+  transporteGrava: 'transporte-grava',
+  instalacionGrava: 'instalacion-grava',
+  colocacionAdeme: 'colocacion-ademe',
+  brocal: 'brocal',
+  sopleteado: 'sopleteado',
+  trasladoGenerador: 'traslado-generador',
+  registroElectrico: 'registro-electrico',
+  selloSanitario: 'sello-sanitario',
+  analisisFQBact: 'analisis-combinado',
+  instalacionEquipo: 'instalacion-equipo',
+  pruebaBombeo: 'prueba-bombeo',
+  limpiezaMecanica: 'limpieza-mecanica',
+}
+
 // ── HELPERS ────────────────────────────────────────────────────
 
 /** Markup % sobre el costo: ((venta - costo) / costo) × 100. Si costo = 0, devuelve 0. */
@@ -206,16 +226,30 @@ export function listCostosBase(): CostoRubro[] {
  * El precio de venta se mantiene del default (el override de venta es por cotización, no global).
  */
 export function getCostosBaseConOverrides(
-  overrides: Record<string, number> = {}
+  overrides: Record<string, number> = {},
+  ventaOverrides: Record<string, number> = {},
 ): Record<string, CostoRubro> {
   const result: Record<string, CostoRubro> = {}
   for (const key of Object.keys(COSTOS_BASE)) {
     const base = COSTOS_BASE[key]
     const costoOverride = overrides[key]
+    const ventaOverride = ventaOverrides[key]
     result[key] = {
       ...base,
       costoUnitario: typeof costoOverride === 'number' ? costoOverride : base.costoUnitario,
+      precioVentaUnitario: typeof ventaOverride === 'number' ? ventaOverride : base.precioVentaUnitario,
     }
+  }
+  return result
+}
+
+export function preciosVentaOverrideDesdeRubros(
+  ventaOverrides: Record<string, number> = {},
+): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const [rubroKey, venta] of Object.entries(ventaOverrides)) {
+    const lineaKey = RUBRO_TO_LINEA_KEY[rubroKey]
+    if (lineaKey && typeof venta === 'number') result[lineaKey] = venta
   }
   return result
 }

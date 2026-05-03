@@ -6,35 +6,25 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { QuotationData, HitoPago } from './quotation-store'
 import { getLineaConfig } from './quotation-store'
-import { calcularPerforacion, calcularLimpieza, formatQ, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
+import { calcularPerforacion, calcularLimpieza, defaultInputsPerforacion, defaultInputsLimpieza, formatQ, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type CuentaBancaria } from './config-store'
 import { COSTOS_BASE } from './costos-base'
 import { numeroAQuetzalesEnLetras } from './numero-a-letras'
 import { resolverCondiciones } from './condiciones-perf'
+import { formatFechaDDMMYYYY } from './date-format'
 
-// ── Colores ──────────────────────────────────────────────────────────────────
-const NAVY   = '#1a3a6e'
-const GRAY50 = '#f9fafb'
-const GRAY100= '#f3f4f6'
-const GRAY200= '#e5e7eb'
-const GRAY300= '#d1d5db'
-const GRAY500= '#6b7280'
-const GRAY600= '#4b5563'
-const GRAY700= '#374151'
-const GRAY800= '#1f2937'
+// â”€â”€ Colores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const WHITE  = '#ffffff'
 
-// ── Constructores de líneas — formato idéntico a Odoo ────────────────────────
-function buildLineasPerf(
+// â”€â”€ Constructores de líneas â€” formato idéntico a Odoo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export function buildLineasPerf(
   ip: InputsPerforacion,
   res: ReturnType<typeof calcularPerforacion>,
   pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS,
   mostrarEspesor = false,
   descripcionSimple = false,
   preciosVentaOverride: Record<string, number> = {},
-  aplicarIva = true,
-  aplicarIsr = false,
   opcionesVenta: Partial<Pick<AppConfig, 'pipaPrecioVentaUnitario' | 'camionadaGravaPrecioVentaUnitario' | 'capacidadCamionM3'>> = {},
 ) {
   const pipaPrecioVenta     = opcionesVenta.pipaPrecioVentaUnitario ?? DEFAULT_CONFIG.pipaPrecioVentaUnitario
@@ -44,8 +34,10 @@ function buildLineasPerf(
   const camionadasAlCliente = camionadasGrava(res.m3Grava, capacidadCamion)
   const piesLisa       = ip.tubosLisos     * 20
   const piesRan        = ip.tubosRanurados * 20
-  const precioLisaPie  = piesLisa > 0 ? Math.round(res.precioTubLisa     / 20) : 0
-  const precioRanPie   = piesRan  > 0 ? Math.round(res.precioTubRanurada / 20) : 0
+  // Venta al cliente = costo Ã— 1.30 (markup 30% sobre costo nuestro) â€” instrucción René 2026-04-20
+  const MARKUP_TUBERIA = 1.30
+  const precioLisaPie  = piesLisa > 0 ? Math.round((res.precioTubLisa     * MARKUP_TUBERIA) / 20) : 0
+  const precioRanPie   = piesRan  > 0 ? Math.round((res.precioTubRanurada * MARKUP_TUBERIA) / 20) : 0
   const precioSacoBent = preciosVentaOverride['bentonita'] ?? COSTOS_BASE.bentonita.precioVentaUnitario
   const precioGravam3  = preciosVentaOverride['grava']     ?? COSTOS_BASE.grava.precioVentaUnitario
 
@@ -73,7 +65,7 @@ function buildLineasPerf(
       unidad: 'Global', cant: 1, precio: pl.instalacionEquipo },
 
     // Rubro 3: se ajusta al final como RESIDUAL para que
-    // subtotal + IVA + ISR = profundidad × ip.precioPorPieVenta
+    // subtotal + IVA + ISR = profundidad Ã— ip.precioPorPieVenta
     { key: 'perforacion',
       nombre: `Perforación de pozo mecánico en ${formatBroca(ip.diametro)} de diámetro.`,
       unidad: 'Pie', cant: ip.profundidad, precio: 0 },
@@ -118,7 +110,9 @@ function buildLineasPerf(
 
     ...(ip.incluirSelloSanitario ? [{ key: 'sello-sanitario',
       nombre: 'Instalación de sello sanitario de concreto.',
-      unidad: 'Und', cant: 1, precio: pl.selloSanitario }] : []),
+      // Precio por pie Ã— pies de sello (NO es la profundidad total del pozo).
+      // Regla de 3 del jefe 2026-04-20: 20 pies = Q1,500 â†’ Q75/pie. Rango típico 10-40 pies.
+      unidad: 'Und', cant: 1, precio: Math.round(pl.selloSanitario * (ip.piesSelloSanitario ?? 20)) }] : []),
 
     { key: 'sopleteado',
       nombre: 'Sopleteado con compresor para acomodamiento de la grava y agitación del acuífero.',
@@ -151,13 +145,25 @@ function buildLineasPerf(
       nombre: 'Análisis Físico - Químico y Bacteriológico del Agua.',
       unidad: 'Und', cant: 1, precio: pl.analisisCombinado },
   ]
+
+  // Aplicar preciosVentaOverride a CUALQUIER rubro (menos rubro 3 que es residual).
+  // Así cualquier cambio hecho desde el modal de comparativa se refleja en la cotización
+  // y en el PDF automáticamente. Los rubros que ya tenían override inline (bentonita,
+  // grava-material, pipas-agua, transporte-grava) siguen funcionando porque el override
+  // ya se aplicó arriba â€” aquí solo cubrimos los que faltaban.
+  const rowsConOverride = rows.map(r => {
+    if (r.key === 'perforacion') return r  // el rubro 3 lo calcula el residual, no override
+    const nuevoPrecio = preciosVentaOverride[r.key]
+    return typeof nuevoPrecio === 'number' ? { ...r, precio: nuevoPrecio } : r
+  })
+
   // Construir totales iniciales
-  const built = rows.map(r => ({ ...r, total: r.cant * r.precio }))
+  const built = rowsConOverride.map(r => ({ ...r, total: r.cant * r.precio }))
 
   // Rubro 3 residual: precio/pie = "con IVA e ISR incluidos". Divisor fijo 1.17.
   // Subtotal queda estable y los toggles IVA/ISR suman/restan al total final.
   const totalClienteObjetivo = ip.profundidad * ip.precioPorPieVenta
-  const FACTOR_IMPUESTOS_COMPLETO = 1 + IVA + ISR  // 1.17 — fijo, no depende de toggles
+  const FACTOR_IMPUESTOS_COMPLETO = 1 + IVA + ISR  // 1.17 â€” fijo, no depende de toggles
   const subtotalObjetivo = totalClienteObjetivo / FACTOR_IMPUESTOS_COMPLETO
   const perfIdx = built.findIndex(l => l.key === 'perforacion')
   if (perfIdx >= 0 && ip.profundidad > 0) {
@@ -178,6 +184,118 @@ function buildLineasLimp(
   res: ReturnType<typeof calcularLimpieza>,
   pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS
 ) {
+  const subtipo = il.servicioSubtipo ?? 'basico'
+  const rows: Array<{ key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }> = []
+
+  if (res.costoTraslado > 0) {
+    rows.push({
+      key: 'traslado-limp',
+      nombre: `Traslado de equipo de servicio (${res.kmIdaVuelta.toFixed(1)} km / 7 km gal)`,
+      unidad: 'Global',
+      cant: 1,
+      precio: Math.round(res.costoTraslado),
+      total: 0,
+    })
+  }
+
+  const diametroServicio = il.diametroTuberiaServicio && il.diametroTuberiaServicio !== 'Ninguna'
+    ? `, diametro ${il.diametroTuberiaServicio}`
+    : ''
+
+  if ((il.tubosExtraccion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+    rows.push({
+      key: 'extraccion-tuberia-servicio',
+      nombre: `Extraccion de tuberia de descarga y equipo sumergible${diametroServicio}`,
+      unidad: 'Unidad',
+      cant: il.tubosExtraccion ?? 0,
+      precio: res.precioVentaTuboServicioUnitario,
+      total: 0,
+    })
+  }
+
+  if ((il.tubosInstalacion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+    rows.push({
+      key: 'instalacion-tuberia-servicio',
+      nombre: `Instalacion de tuberia de descarga y equipo sumergible${diametroServicio}`,
+      unidad: 'Unidad',
+      cant: il.tubosInstalacion ?? 0,
+      precio: res.precioVentaTuboServicioUnitario,
+      total: 0,
+    })
+  }
+
+  if ((subtipo === 'basico' || subtipo === 'completo') && il.horasLimpieza > 0) {
+    rows.push({
+      key: 'limpieza-horas',
+      nombre: `Limpieza mecanica de pozo (${il.horasLimpieza} horas)`,
+      unidad: 'Hora',
+      cant: il.horasLimpieza,
+      precio: il.precioVentaHora,
+      total: 0,
+    })
+  }
+
+  if ((subtipo === 'basico' || subtipo === 'completo') && il.canecasQuimicos > 0) {
+    rows.push({
+      key: 'quimicos-limp',
+      nombre: 'Canecas de aditivo para limpieza',
+      unidad: 'Caneca',
+      cant: il.canecasQuimicos,
+      precio: Math.round(il.precioQuimicoCaneca * (il.markupQuimicos ?? 1.5)),
+      total: 0,
+    })
+  }
+
+  if (subtipo !== 'item' && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
+    rows.push({
+      key: 'material-instalacion-servicio',
+      nombre: 'Material de instalacion y mano de obra',
+      unidad: 'Global',
+      cant: 1,
+      precio: il.precioMaterialInstalacionServicio ?? 0,
+      total: 0,
+    })
+  }
+
+  if (subtipo !== 'item' && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
+    rows.push({
+      key: 'tecnico-chequeo-servicio',
+      nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
+      unidad: 'Global',
+      cant: 1,
+      precio: il.precioTecnicoChequeoServicio ?? 0,
+      total: 0,
+    })
+  }
+
+  if ((subtipo === 'aforo' || subtipo === 'completo') && (il.horasAforo ?? 0) > 0) {
+    const horas = il.horasAforo ?? 0
+    const totalAforo = il.precioVentaAforoTotal ?? 23000
+    rows.push({
+      key: 'aforo-servicio',
+      nombre: `Aforo (${horas} horas)`,
+      unidad: 'Hora',
+      cant: horas,
+      precio: Math.round((totalAforo / Math.max(1, horas)) * 100) / 100,
+      total: 0,
+    })
+  }
+
+  if (subtipo === 'completo' && il.inspeccionCamara && (il.precioInspeccionCamara ?? 0) > 0) {
+    rows.push({
+      key: 'inspeccion-camara',
+      nombre: 'Inspeccion con camara',
+      unidad: 'Global',
+      cant: 1,
+      precio: il.precioInspeccionCamara ?? 0,
+      total: 0,
+    })
+  }
+
+  return rows
+    .map(r => ({ ...r, total: r.cant * r.precio }))
+    .filter(r => r.total > 0)
+
   return [
     { key: 'traslado-limp',    nombre: 'Traslado de equipo de limpieza',               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 1.2) },
     { key: 'instalacion-limp', nombre: 'Instalación de equipo de limpieza',            unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
@@ -189,7 +307,46 @@ function buildLineasLimp(
   ].map(r => ({ ...r, total: r.cant * r.precio }))
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+type LegacyInputsPerforacion = Partial<InputsPerforacion> & {
+  numeroDeTubos?: number
+  numeroDeFilteros?: number
+  costoGravaTotalQ?: number
+}
+
+function num(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
+function normalizarPerforacion(ip: InputsPerforacion): InputsPerforacion {
+  const legacy = ip as LegacyInputsPerforacion
+  const esLegacy =
+    typeof legacy.numeroDeTubos === 'number' ||
+    typeof legacy.numeroDeFilteros === 'number' ||
+    typeof legacy.tubosLisos !== 'number' ||
+    typeof legacy.tubosRanurados !== 'number'
+
+  const normalizada: InputsPerforacion = { ...defaultInputsPerforacion, ...ip }
+
+  if (esLegacy) {
+    normalizada.tubosLisos = num(legacy.tubosLisos, num(legacy.numeroDeTubos, defaultInputsPerforacion.tubosLisos))
+    normalizada.tubosRanurados = num(legacy.tubosRanurados, num(legacy.numeroDeFilteros, defaultInputsPerforacion.tubosRanurados))
+    normalizada.costoGravaMaterial = num(legacy.costoGravaMaterial, num(legacy.costoGravaTotalQ, defaultInputsPerforacion.costoGravaMaterial))
+    normalizada.incluirRegistroElectrico = typeof legacy.incluirRegistroElectrico === 'boolean' ? legacy.incluirRegistroElectrico : false
+    normalizada.incluirSelloSanitario = typeof legacy.incluirSelloSanitario === 'boolean' ? legacy.incluirSelloSanitario : false
+    normalizada.incluirExtraccionLodos = typeof legacy.incluirExtraccionLodos === 'boolean' ? legacy.incluirExtraccionLodos : false
+    normalizada.incluirSeguridad = typeof legacy.incluirSeguridad === 'boolean' ? legacy.incluirSeguridad : false
+    normalizada.incluirSanitario = typeof legacy.incluirSanitario === 'boolean' ? legacy.incluirSanitario : false
+    normalizada.aforoDetallado = legacy.aforoDetallado
+  }
+
+  return normalizada
+}
+
+function normalizarLimpieza(il: InputsLimpieza): InputsLimpieza {
+  return { ...defaultInputsLimpieza, ...il }
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
@@ -197,143 +354,83 @@ function hexToRgb(hex: string): [number, number, number] {
   return [r, g, b]
 }
 
-async function cargarLogoBase64(): Promise<string | null> {
+function repararMojibake(texto: string): string {
+  if (!/[ÃƒÃ‚]/.test(texto)) return texto
   try {
-    const res = await fetch('/logo.png')
-    if (!res.ok) return null
-    const blob = await res.blob()
-    return new Promise(resolve => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result as string)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
-  } catch { return null }
-}
-
-// ── Header profesional con banda navy + logo prominente + badge correlativo ──
-function dibujarHeader(
-  doc: jsPDF, W: number, mg: number, logoDataUrl: string | null,
-  correlativo: string, fecha: string, paginaActual: number, paginasTotal: number
-) {
-  // ── Banda navy superior de ancho total ──────────────────────────────────────
-  const bandaH = 5
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.rect(0, 0, W, bandaH, 'F')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(WHITE)
-  doc.text('HIDROPERFORACIONES, S.A.', mg, 3.5)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5)
-  doc.setTextColor('#bfd4ff')
-  doc.text('PERFORACIÓN DE POZOS MECÁNICOS', W - mg, 3.5, { align: 'right' })
-
-  // ── Sección principal del header ────────────────────────────────────────────
-  const headerY = bandaH + 3
-
-  // Logo grande a la izquierda
-  if (logoDataUrl) {
-    try {
-      doc.addImage(logoDataUrl, 'PNG', mg, headerY, 28, 22)
-    } catch {
-      // Fallback navy block
-      doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-      doc.roundedRect(mg, headerY, 28, 20, 2, 2, 'F')
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(WHITE)
-      doc.text('HIDRO', mg + 14, headerY + 10, { align: 'center' })
-      doc.setFontSize(6)
-      doc.text('PERFORACIONES', mg + 14, headerY + 15, { align: 'center' })
-    }
-  } else {
-    doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-    doc.roundedRect(mg, headerY, 28, 20, 2, 2, 'F')
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(WHITE)
-    doc.text('HIDRO', mg + 14, headerY + 10, { align: 'center' })
-    doc.setFontSize(6)
-    doc.text('PERFORACIONES', mg + 14, headerY + 15, { align: 'center' })
-  }
-
-  // Info empresa al centro-izquierda
-  const xInfo = mg + 32
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(NAVY)
-  doc.text('Oficinas Corporativas', xInfo, headerY + 3)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(GRAY600)
-  doc.text('5ta. Av. 15-45 zona 10  ·  Edif. Centro Empresarial T-II, Of. 708-709', xInfo, headerY + 6)
-  doc.text('Guatemala, C.A. 01010  ·  PBX: (502) 2259-2626', xInfo, headerY + 9)
-
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(NAVY)
-  doc.text('Oficinas Operativas', xInfo, headerY + 13)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(GRAY600)
-  doc.text('KM 22.5 Carretera a El Salvador, Guatemala', xInfo, headerY + 16)
-  doc.text('www.hidroperforaciones.com', xInfo, headerY + 19)
-
-  // Badge del correlativo a la derecha
-  const badgeW = 52, badgeH = 22
-  const badgeX = W - mg - badgeW, badgeY = headerY
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 2.5, 2.5, 'F')
-  // Accent bar amarilla sutil
-  doc.setFillColor(212, 160, 75)
-  doc.rect(badgeX, badgeY, badgeW, 1.5, 'F')
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor('#c8d2e6')
-  doc.text('PRESUPUESTO No.', badgeX + badgeW / 2, badgeY + 6, { align: 'center' })
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(WHITE)
-  doc.text(correlativo, badgeX + badgeW / 2, badgeY + 13, { align: 'center' })
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor('#c8d2e6')
-  doc.text(`FECHA:  ${fecha}`, badgeX + badgeW / 2, badgeY + 18.5, { align: 'center' })
-
-  // Línea separadora navy (más delgada, elegante)
-  doc.setDrawColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.setLineWidth(0.5)
-  doc.line(mg, headerY + 26, W - mg, headerY + 26)
-  // Indicador de página
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(GRAY500)
-  doc.text(`Página ${paginaActual} de ${paginasTotal}`, W - mg, headerY + 29, { align: 'right' })
-
-  return headerY + 32  // y siguiente
-}
-
-// ── Footer profesional con card del asesor + banda navy ──────────────────────
-function dibujarFooter(
-  doc: jsPDF, W: number, H: number, mg: number,
-  vendedor: string, emailVendedor: string, telVendedor: string, logoDataUrl: string | null
-) {
-  // Banda navy al pie (ancho completo)
-  const bandaH = 7
-  const bandaY = H - bandaH
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.rect(0, bandaY, W, bandaH, 'F')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(WHITE)
-  doc.text('HIDROPERFORACIONES, S.A.', mg, bandaY + 3.2)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor('#bfd4ff')
-  doc.text('Perforación de pozos · Pruebas de bombeo · Registro eléctrico · Estudios hidrogeológicos', W / 2, bandaY + 3.2, { align: 'center' })
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(WHITE)
-  doc.text('www.hidroperforaciones.com', W - mg, bandaY + 3.2, { align: 'right' })
-
-  // Zona de asesor sobre la banda navy (card blanca con borde)
-  const cardH = 15
-  const cardY = bandaY - cardH - 2
-  // Línea separadora sutil
-  doc.setDrawColor(hexToRgb(GRAY200)[0], hexToRgb(GRAY200)[1], hexToRgb(GRAY200)[2])
-  doc.setLineWidth(0.3)
-  doc.line(mg, cardY, W - mg, cardY)
-
-  // Izquierda: datos del asesor
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(NAVY)
-  doc.text('ASESOR DE VENTA', mg, cardY + 4)
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(GRAY800)
-  doc.text(vendedor, mg, cardY + 8)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor(GRAY600)
-  doc.text(emailVendedor, mg, cardY + 11.5)
-  doc.text(`TEL: ${telVendedor}`, mg, cardY + 14)
-
-  // Logo pequeño a la derecha (si existe)
-  if (logoDataUrl) {
-    try {
-      doc.addImage(logoDataUrl, 'PNG', W - mg - 16, cardY + 1, 16, 12)
-    } catch { /* fallback silencioso */ }
+    const bytes = new Uint8Array(Array.from(texto, ch => ch.charCodeAt(0) & 0xff))
+    const reparado = new TextDecoder('utf-8').decode(bytes)
+    return reparado.includes('\uFFFD') ? texto : reparado
+  } catch {
+    return texto
   }
 }
 
-// ── Generador principal ───────────────────────────────────────────────────────
+function textoSeguroPdf(texto: string): string {
+  return repararMojibake(texto)
+    .normalize('NFC')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\u00f7/g, '/')
+}
+
+async function cargarLogoBase64(): Promise<string | null> {
+  for (const ruta of ['/pdf-assets/logo.png', '/logo.png']) {
+    try {
+      const res = await fetch(ruta)
+      if (!res.ok) continue
+      const blob = await res.blob()
+      const dataUrl = await new Promise<string | null>(resolve => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.onerror = () => resolve(null)
+        reader.readAsDataURL(blob)
+      })
+      if (dataUrl) return dataUrl
+    } catch { /* fallback a la siguiente ruta */ }
+  }
+  return null
+}
+
+// Convierte "Banco Industrial" â†’ "banco-industrial", "BAC Credomatic" â†’ "bac-credomatic".
+// Solo letras ASCII, números y guiones.
+function slugifyBanco(nombre: string): string {
+  return nombre
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, 'y')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+// Carga el PNG de un logo de banco desde /public/banks/<slug>.png.
+// Devuelve { dataUrl, width, height } o null si no existe.
+async function cargarLogoBanco(banco: string): Promise<{ dataUrl: string; w: number; h: number } | null> {
+  const slug = slugifyBanco(banco)
+  for (const ruta of [`/pdf-assets/banks/${slug}.png`, `/banks/${slug}.png`]) {
+    try {
+      const res = await fetch(ruta)
+      if (!res.ok) continue
+      const blob = await res.blob()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.onerror = () => reject(new Error('read fail'))
+        reader.readAsDataURL(blob)
+      })
+      // Obtener dimensiones reales para mantener aspect ratio
+      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+        const img = new Image()
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = () => resolve({ w: 100, h: 60 })
+        img.src = dataUrl
+      })
+      return { dataUrl, w: dims.w, h: dims.h }
+    } catch { /* fallback a la siguiente ruta */ }
+  }
+  return null
+}
+
+// â”€â”€ Generador principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Estrategia: el contenido se dibuja primero (paginación dinámica, puede ser 2, 3 o más páginas).
 // Al final se recorre cada página y se estampa header + footer con el total de páginas correcto.
 export async function generarPDF(
@@ -345,23 +442,19 @@ export async function generarPDF(
   const doc = new jsPDF({ format: 'letter', unit: 'mm', orientation: 'portrait' })
   const W  = doc.internal.pageSize.getWidth()
   const H  = doc.internal.pageSize.getHeight()
-  const mg = 15
-  const CONTENT_TOP    = 43   // espacio reservado al header profesional (banda + logo + info + badge + línea)
-  const CONTENT_BOTTOM = H - 25    // espacio reservado al footer
+  const mg = 14
 
-  // ── Preparar líneas y totales ─────────────────────────────────────────────────
+  // â”€â”€ Preparar líneas y totales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const pl = { ...DEFAULT_PRECIOS_LINEAS, ...data.preciosLineas }
   const lineasActivas = data.lineasActivas ?? {}
   const lineasConfig  = data.lineasConfig  ?? {}
   const preciosVentaOverride = data.preciosVentaOverride ?? {}
   const mostrarEspesor = data.mostrarEspesor ?? false
   const descripcionSimple = data.descripcionSimple ?? false
-  const resPerf = data.ip ? calcularPerforacion(data.ip) : null
-  const resLimp = data.il ? calcularLimpieza(data.il) : null
-
-  // Impuestos aplicables (necesarios para el residual del rubro 3 en buildLineasPerf)
-  const aplicarIvaForBuild = data.aplicarIva ?? true
-  const aplicarIsrForBuild = data.aplicarIsr ?? false
+  const ip = data.ip ? normalizarPerforacion(data.ip) : null
+  const il = data.il ? normalizarLimpieza(data.il) : null
+  const resPerf = ip ? calcularPerforacion(ip) : null
+  const resLimp = il ? calcularLimpieza(il) : null
 
   type LineaBase = { key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }
   type LineaFinal = LineaBase & { esExtra?: boolean; extraMostrar?: boolean; extraCobrar?: boolean }
@@ -371,13 +464,13 @@ export async function generarPDF(
     camionadaGravaPrecioVentaUnitario: data.camionadaGravaPrecioVentaUnitario,
     capacidadCamionM3: data.capacidadCamionM3,
   }
-  const lineasBase: LineaBase[] = data.tipo === 'perforacion' && data.ip && resPerf
-    ? buildLineasPerf(data.ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, aplicarIvaForBuild, aplicarIsrForBuild, opcionesVenta)
-    : data.il && resLimp
-      ? buildLineasLimp(data.il, resLimp, pl)
+  const lineasBase: LineaBase[] = data.tipo === 'perforacion' && ip && resPerf
+    ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, opcionesVenta)
+    : il && resLimp
+      ? buildLineasLimp(il, resLimp, pl)
       : []
 
-  // Líneas extras (custom) agregadas por el usuario — se suman al final de la tabla
+  // Líneas extras (custom) agregadas por el usuario â€” se suman al final de la tabla
   // Se excluyen items vacíos (sin nombre, sin cantidad o sin precio) para no ensuciar el PDF
   const extras: LineaFinal[] = (data.lineasExtras ?? [])
     .filter(e =>
@@ -412,17 +505,26 @@ export async function generarPDF(
   const lineas = todasLineas.filter(esVisible)
   const subtotal = todasLineas.filter(esCobrada).reduce((a, b) => a + b.total, 0)
 
-  // Toggles de impuestos — controlados por el usuario en la cotización
+  // Toggles de impuestos â€” controlados por el usuario en la cotización
   const aplicarIva = data.aplicarIva ?? true   // default: incluye IVA 12%
   const aplicarIsr = data.aplicarIsr ?? false  // default: no suma ISR
   const mostrarDesgloseImpuestos = data.mostrarDesgloseImpuestos ?? false
-  const iva = aplicarIva ? Math.round(subtotal * IVA) : 0
-  const isr = aplicarIsr ? Math.round(subtotal * ISR) : 0
-  const total = subtotal + iva + isr
+  // Descuento especial â€” resta al subtotal antes de calcular impuestos
+  const aplicarDescuento = data.aplicarDescuento ?? false
+  const descuentoMonto   = Math.max(0, Number(data.descuentoMonto ?? 0))
+  const descuentoQ       = aplicarDescuento ? Math.min(subtotal, descuentoMonto) : 0
+  const baseGravable     = subtotal - descuentoQ
+  const iva = aplicarIva ? Math.round(baseGravable * IVA) : 0
+  const isr = aplicarIsr ? Math.round(baseGravable * ISR) : 0
+  const totalCalculado = baseGravable + iva + isr
+  const totalGuardado = typeof data.montoGuardado === 'number' && Number.isFinite(data.montoGuardado) && data.montoGuardado > 0
+    ? data.montoGuardado
+    : null
+  const total = totalGuardado ?? totalCalculado
 
   // Valor por pie del pie del PDF = total / profundidad (por construcción del residual
-  // total del PDF = profundidad × ip.precioPorPieVenta, entonces esto = precio/pie manual)
-  const valorPorPie = data.ip && data.ip.profundidad > 0 ? Math.round(total / data.ip.profundidad) : 0
+  // total del PDF = profundidad Ã— ip.precioPorPieVenta, entonces esto = precio/pie manual)
+  const valorPorPie = ip && ip.profundidad > 0 ? Math.round(total / ip.profundidad) : 0
   const totalEnLetras = numeroAQuetzalesEnLetras(total)
 
   // Condiciones legales de perforación: 18 del catálogo (con overrides) + extras del usuario.
@@ -435,430 +537,390 @@ export async function generarPDF(
     ? (data.condicionesLimp ?? data.condiciones ?? '')
     : ''
 
-  const emailVendedor = `rdominguez@hidroperforaciones.com`
+  const emailVendedor = `ventas@hidroperforaciones.com`
   const telVendedor   = `55999998`
+  const fechaCotizacion = formatFechaDDMMYYYY(data.fecha)
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PÁGINA 1: datos cliente, condiciones pago, tabla, totales
-  // (El header y footer se dibujan al final en todas las páginas)
-  // ═══════════════════════════════════════════════════════════════════════════
-  let y = CONTENT_TOP
-
-  // ── Datos cliente superiores (3 filas full-width) ───────────────────────────
-  //   SEÑORES / DIRECCIÓN / ATENCIÓN A + NIT + TELÉFONOS (layout PDF oficial)
-  const rowCliente = 5.2
-
-  // Fila 1: SEÑORES
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(GRAY800)
-  doc.text('SEÑORES:', mg, y + 3.7)
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(GRAY700)
-  doc.text((data.empresa || data.cliente || '').toUpperCase().slice(0, 95), mg + 22, y + 3.7)
-  y += rowCliente
-
-  // Fila 2: DIRECCIÓN
-  doc.setFont('helvetica', 'bold'); doc.setTextColor(GRAY800)
-  doc.text('DIRECCIÓN:', mg, y + 3.7)
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(GRAY700)
-  const dirLines = doc.splitTextToSize(data.direccion || 'Ciudad', W - 2 * mg - 22)
-  doc.text(dirLines[0] || '', mg + 22, y + 3.7)
-  y += rowCliente
-
-  // Fila 3: ATENCIÓN A | NIT | TELÉFONOS (3 campos en 3 columnas virtuales)
-  doc.setFont('helvetica', 'bold'); doc.setTextColor(GRAY800)
-  doc.text('ATENCIÓN A:', mg, y + 3.7)
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(GRAY700)
-  doc.text(String(data.cliente || '').slice(0, 28), mg + 26, y + 3.7)
-
-  const xNit = mg + 92
-  doc.setFont('helvetica', 'bold'); doc.setTextColor(GRAY800)
-  doc.text('NIT:', xNit, y + 3.7)
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(GRAY700)
-  doc.text(String(data.nit || '').slice(0, 16), xNit + 9, y + 3.7)
-
-  const xTel = mg + 132
-  doc.setFont('helvetica', 'bold'); doc.setTextColor(GRAY800)
-  doc.text('TELÉFONOS:', xTel, y + 3.7)
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(GRAY700)
-  doc.text(String(data.telefono || '').slice(0, 20), xTel + 19, y + 3.7)
-  y += rowCliente + 1.5
-
-  // ── 2 columnas: Proyecto izquierda + Condiciones de Pago derecha ────────────
-  const colAncho = (W - 2 * mg - 5) / 2
-  const xIzq = mg
-  const xDer = mg + colAncho + 5
-  const yDatosIni = y
-
-  // Izquierda: campos del proyecto (label + valor con wrap si es largo)
-  const camposProyecto: [string, string][] = [
-    ['Proyecto:',             data.proyecto || '—'],
-    ['Dirección:',            data.direccion || '—'],
-    ['Validez de la Oferta:', `${data.validezDias} días`],
-    ['Tiempo de Entrega:',    data.duracion || '—'],
-  ]
-  if (data.ip?.profundidad) camposProyecto.push(['Profundidad:', `${data.ip.profundidad} (PIES)`])
-
-  let yL = yDatosIni
-  for (const [k, v] of camposProyecto) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(GRAY800)
-    doc.text(k, xIzq, yL + 3.7)
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(GRAY700)
-    const valLines = doc.splitTextToSize(String(v), colAncho - 32)
-    doc.text(valLines.slice(0, 2), xIzq + 32, yL + 3.7)  // máximo 2 líneas
-    yL += Math.max(rowCliente, Math.min(valLines.length, 2) * 3.5 + 1.5)
-  }
-
-  // Derecha: tabla CONDICIONES DE PAGO (zebra + total destacado)
+  const mostrarNotaCheque = data.mostrarNotaCheque ?? false
+  const cuentas = cuentasBancarias ?? []
+  const logosBancos = await Promise.all(cuentas.map(c => cargarLogoBanco(c.banco)))
   const hitos: HitoPago[] = (data.planPagos && data.planPagos.length > 0)
     ? data.planPagos
     : [
-        { id: 'anticipo',   label: 'Anticipo',                   pct: 60, fijo: false },
-        { id: 'mitad-perf', label: 'Al 50% de perforación',      pct: 20, fijo: false },
-        { id: 'entubar',    label: 'Antes de entubar',           pct: 15, fijo: false },
-        { id: 'prueba',     label: 'Antes de prueba de bombeo',  pct: 5,  fijo: false },
+        { id: 'anticipo',   label: 'Anticipo',                  pct: 60, fijo: false },
+        { id: 'mitad-perf', label: 'Al 50% de perforacion',     pct: 20, fijo: false },
+        { id: 'entubar',    label: 'Antes de entubar',          pct: 15, fijo: false },
+        { id: 'prueba',     label: 'Antes de prueba de bombeo', pct: 5,  fijo: false },
       ]
   const hitosActivos = hitos.filter(h => h.pct > 0)
-  const rowH = 5.8
-  const headerH = 6.5
-  const chX = xDer
-  const chW = colAncho
-  const pctX   = chX + chW * 0.70
-  const montoX = chX + chW - 2.5
-  const yHdr = yDatosIni
 
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.rect(chX, yHdr, chW, headerH, 'F')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(WHITE)
-  doc.text('CONDICIONES DE PAGO', chX + chW / 2, yHdr + 4.5, { align: 'center' })
+  const rgb = (hex: string) => hexToRgb(hex)
+  const setFill = (hex: string) => doc.setFillColor(...rgb(hex))
+  const setDraw = (hex: string) => doc.setDrawColor(...rgb(hex))
+  const setText = (hex: string) => doc.setTextColor(hex)
+  const limpiar = (value: unknown) => textoSeguroPdf(String(value ?? ''))
+  const pageTop = 34
+  const footerBottom = 22
 
-  let yRow = yHdr + headerH
-  hitosActivos.forEach((h, i) => {
-    const monto = Math.round(total * h.pct / 100)
-    if (i % 2 === 0) {
-      doc.setFillColor(hexToRgb(GRAY50)[0], hexToRgb(GRAY50)[1], hexToRgb(GRAY50)[2])
-      doc.rect(chX, yRow, chW, rowH, 'F')
+  function headerV2(page: number, totalPages: number) {
+    setFill('#173765')
+    doc.rect(0, 0, W, 4, 'F')
+    const headerY = 7.5
+
+    if (logoDataUrl) {
+      try { drawImageContain(logoDataUrl, mg, headerY - 1, 21, 13, 1) } catch { /* noop */ }
     }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(GRAY700)
-    const labelMax = 28
-    const label = h.label.length > labelMax ? h.label.slice(0, labelMax - 1) + '…' : h.label
-    doc.text(label, chX + 2.5, yRow + 4)
-    doc.setFont('helvetica', 'bold'); doc.setTextColor(GRAY800)
-    const pctTxt = h.pct % 1 === 0 ? `${h.pct}%` : `${h.pct.toFixed(1)}%`
-    doc.text(pctTxt, pctX, yRow + 4, { align: 'right' })
-    doc.text(formatQ(monto), montoX, yRow + 4, { align: 'right' })
-    yRow += rowH
-  })
-  // TOTAL destacado en navy
-  const totalPct = hitosActivos.reduce((a, b) => a + b.pct, 0)
-  yRow += 0.5
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.rect(chX, yRow, chW, rowH, 'F')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(WHITE)
-  doc.text('TOTAL', chX + 2.5, yRow + 4)
-  doc.text(`${totalPct}%`, pctX, yRow + 4, { align: 'right' })
-  doc.text(formatQ(total), montoX, yRow + 4, { align: 'right' })
-  const yPagoFin = yRow + rowH
 
-  y = Math.max(yL, yPagoFin) + 5
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.6); setText('#173765')
+    doc.text('HIDROPERFORACIONES, S.A.', mg + 26, headerY + 2)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); setText('#64748b')
+    doc.text('Perforacion de pozos mecanicos | Guatemala, C.A. | PBX: (502) 2259-2626', mg + 26, headerY + 5.5)
+    doc.text('www.hidroperforaciones.com', mg + 26, headerY + 8.8)
 
-  // ── Título sección "Detalle de Presupuesto" con banda navy refinada ─────────
-  const tituloH = 6.5
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.rect(mg, y, W - 2 * mg, tituloH, 'F')
-  // Accent bar amarilla lateral izquierda
-  doc.setFillColor(212, 160, 75)
-  doc.rect(mg, y, 3, tituloH, 'F')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(WHITE)
-  doc.text('DETALLE DE PRESUPUESTO', mg + 8, y + 4.5)
-  y += tituloH + 0.5
+    const badgeW = 40
+    const badgeH = 14
+    const badgeX = W - mg - badgeW
+    const badgeY = headerY - 1
+    setFill(WHITE); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
+    doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.3, 1.3, 'FD')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); setText('#64748b')
+    doc.text('PRESUPUESTO', badgeX + 3, badgeY + 3.8)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.2); setText('#173765')
+    doc.text(data.correlativo, badgeX + 3, badgeY + 8.2)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); setText('#64748b')
+    doc.text(fechaCotizacion, badgeX + 3, badgeY + 11.8)
 
-  // ── Tabla de líneas con header navy y filas zebra ──────────────────────────
-  // IMPORTANTE: margin.top=CONTENT_TOP y margin.bottom garantizan que cuando la
-  // tabla cree una nueva página, respete el espacio del header y footer que se
-  // dibujan al final.
-  if (lineas.length > 0) {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: mg, right: mg, top: CONTENT_TOP, bottom: 27 },
-      head: [['#', 'DESCRIPCIÓN', 'UND', 'CANT.', 'P. UNITARIO', 'SUBTOTAL']],
-      body: lineas.map((l, i) => [
-        String(i + 1),
-        l.nombre,
-        l.unidad,
-        l.cant.toFixed(l.cant % 1 === 0 ? 0 : 1),
-        formatQ(l.precio),
-        formatQ(l.total),
-      ]),
-      headStyles: {
-        fillColor: hexToRgb(NAVY),
-        textColor: hexToRgb(WHITE),
-        fontSize: 7,
-        fontStyle: 'bold',
-        cellPadding: 2.2,
-        halign: 'center',
-        lineWidth: 0,
-      },
-      bodyStyles: {
-        fontSize: 7.2,
-        textColor: hexToRgb(GRAY800),
-        cellPadding: 2,
-        lineWidth: 0.1,
-        lineColor: hexToRgb(GRAY200),
-      },
-      alternateRowStyles: { fillColor: hexToRgb(GRAY50) },
-      columnStyles: {
-        0: { cellWidth: 8,  halign: 'center', textColor: hexToRgb(NAVY), fontStyle: 'bold' },
-        2: { cellWidth: 14, halign: 'center', textColor: hexToRgb(GRAY500), fontSize: 6.8 },
-        3: { cellWidth: 14, halign: 'right'  },
-        4: { cellWidth: 24, halign: 'right'  },
-        5: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: hexToRgb(NAVY) },
-      },
-      styles: { lineWidth: 0.1, lineColor: hexToRgb(GRAY200) },
-      theme: 'plain',
-    })
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2
+    setDraw('#d9e2ef')
+    doc.line(mg, 25.5, W - mg, 25.5)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); setText('#64748b')
+    doc.text(`Pagina ${page} de ${totalPages}`, W - mg, 28.7, { align: 'right' })
   }
 
-  // Helper inline: asegura que haya `alto` mm disponibles. Si no, salta a nueva página.
-  const necesitaEspacio = (alto: number) => {
-    if (y + alto > CONTENT_BOTTOM) {
+  function footerV2() {
+    const yFooter = H - 20
+    setDraw('#d9e2ef')
+    doc.line(mg, yFooter, W - mg, yFooter)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); setText('#173765')
+    doc.text('ASESOR DE VENTA', mg, yFooter + 3.8)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText('#1f2937')
+    doc.text(data.vendedor || 'Gerencia Hidroperforaciones', mg, yFooter + 7)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#64748b')
+    doc.text(`${emailVendedor} | Tel. ${telVendedor}`, mg, yFooter + 11)
+    setFill('#173765')
+    doc.rect(0, H - 4.5, W, 4.5, 'F')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.2); setText('#c8d9f3')
+    doc.text('Hidroperforaciones, S.A. | Perforacion de pozos | Pruebas de bombeo | Registro electrico', W / 2, H - 1.7, { align: 'center' })
+  }
+
+  function sectionTitle(txt: string, yPos: number) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.8); setText('#173765')
+    doc.text(txt, mg, yPos)
+    setFill('#d4a04b')
+    doc.rect(mg, yPos + 1.7, 15, 0.65, 'F')
+  }
+
+  function drawImageContain(dataUrl: string, boxX: number, boxY: number, boxW: number, boxH: number, ratio: number) {
+    const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 1
+    let imageW = boxW
+    let imageH = imageW / safeRatio
+    if (imageH > boxH) {
+      imageH = boxH
+      imageW = imageH * safeRatio
+    }
+    const imageX = boxX + (boxW - imageW) / 2
+    const imageY = boxY + (boxH - imageH) / 2
+    doc.addImage(dataUrl, 'PNG', imageX, imageY, imageW, imageH)
+  }
+
+  function drawQuoteInfo(yPos: number) {
+    sectionTitle('DATOS DE LA COTIZACION', yPos)
+    yPos += 3.5
+    const boxH = 31
+    setFill('#f7f9fc'); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
+    doc.roundedRect(mg, yPos, W - 2 * mg, boxH, 2, 2, 'FD')
+
+    const gap = 8
+    const colW = (W - 2 * mg - gap - 8) / 2
+    const x1 = mg + 4
+    const x2 = x1 + colW + gap
+    const left: Array<[string, string]> = [
+      ['SENORES', limpiar(data.empresa || data.cliente)],
+      ['ATENCION A', limpiar(data.cliente)],
+      ['NIT', limpiar(data.nit || '')],
+      ['TELEFONO', limpiar(data.telefono || '')],
+    ]
+    const right: Array<[string, string]> = [
+      ['PROYECTO', limpiar(data.proyecto || '')],
+      ['DIRECCION', limpiar(data.direccion || '')],
+      ['VALIDEZ', `${data.validezDias || 15} dias`],
+      ['TIEMPO', limpiar(data.duracion || '')],
+      ['PROFUNDIDAD', ip?.profundidad ? `${ip.profundidad} pies` : ''],
+    ]
+
+    let rowY = yPos + 5
+    for (const [label, value] of left) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
+      doc.text(label, x1, rowY)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); setText('#1f2937')
+      doc.text(value.slice(0, 42), x1 + 23, rowY)
+      rowY += 6
+    }
+
+    rowY = yPos + 5
+    for (const [label, value] of right) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
+      doc.text(label, x2, rowY)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#1f2937')
+      const lines = doc.splitTextToSize(value, colW - 27)
+      doc.text(lines.slice(0, label === 'PROYECTO' ? 2 : 1), x2 + 27, rowY)
+      rowY += label === 'PROYECTO' ? 9.5 : 5.2
+    }
+
+    return yPos + boxH + 5
+  }
+
+  function drawTotalCard(yPos: number) {
+    const cardH = 15
+    const cardW = W - 2 * mg
+    const textColW = cardW * 0.63
+    setFill('#173765')
+    doc.roundedRect(mg, yPos, cardW, cardH, 2, 2, 'F')
+    setFill('#d4a04b')
+    doc.rect(mg, yPos, textColW, 1, 'F')
+    doc.setDrawColor(45, 74, 122)
+    doc.setLineWidth(0.3)
+    doc.line(mg + textColW, yPos + 2, mg + textColW, yPos + cardH - 2)
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); setText('#bfd4ff')
+    doc.text('MONTO EN LETRAS', mg + 4, yPos + 4.7)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setText(WHITE)
+    doc.text(doc.splitTextToSize(limpiar(totalEnLetras), textColW - 8).slice(0, 2), mg + 4, yPos + 8.2)
+
+    const totalLabelX = mg + textColW + 4
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); setText('#bfd4ff')
+    doc.text('TOTAL A PAGAR', totalLabelX, yPos + 4.7)
+
+    // Depende del botón visual "mostrar/no mostrar" el desglose en el PDF.
+    const etiqueta = mostrarDesgloseImpuestos ? 'Precio con IVA' : 'Precio sin IVA'
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.2)
+    const etiquetaW = doc.getTextWidth(etiqueta) + 5
+    const etiquetaX = totalLabelX
+    doc.setFillColor(255, 251, 235)
+    doc.roundedRect(etiquetaX, yPos + 6.2, etiquetaW, 4.6, 1, 1, 'F')
+    doc.setTextColor(180, 83, 9)
+    doc.text(etiqueta, etiquetaX + 2.5, yPos + 9.5)
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); setText(WHITE)
+    doc.text(formatQ(total), W - mg - 4, yPos + 10.8, { align: 'right' })
+    return yPos + cardH
+  }
+
+  function drawMiniPago(yPos: number) {
+    if (data.tipo !== 'perforacion' || valorPorPie <= 0) return yPos
+    const boxH = mostrarNotaCheque ? 18 : 9.5
+    const boxW = 78
+    const boxX = mg
+    setFill('#eef5ff'); setDraw('#bfd4ff'); doc.setLineWidth(0.2)
+    doc.roundedRect(boxX, yPos, boxW, boxH, 1.5, 1.5, 'FD')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.3); setText('#64748b')
+    doc.text('INFORMACION DE PAGO', boxX + 4, yPos + 3.4)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.4); setText('#173765')
+    doc.text('Valor por pie perforado:', boxX + 4, yPos + 7.1)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); setText('#1f2937')
+    doc.text(formatQ(valorPorPie), boxX + boxW - 4, yPos + 7.1, { align: 'right' })
+
+    if (mostrarNotaCheque) {
+      const notaIva = aplicarIva ? 'El precio ya incluye IVA' : 'Precios sin IVA'
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); setText('#64748b')
+      const nota = `${notaIva}. Cheque No Negociable a nombre de Hidroperforaciones, S.A.`
+      doc.text(doc.splitTextToSize(nota, boxW - 8).slice(0, 2), boxX + 4, yPos + 11.1)
+    }
+
+    return yPos + boxH
+  }
+
+  function drawPage1() {
+    let yPos = pageTop
+    yPos = drawQuoteInfo(yPos)
+    sectionTitle('DETALLE DE PRESUPUESTO', yPos)
+    yPos += 4
+
+    if (lineas.length > 0) {
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: mg, right: mg, top: 32, bottom: footerBottom },
+        head: [['#', 'DESCRIPCION', 'UND', 'CANT.', 'P. UNITARIO', 'SUBTOTAL']],
+        body: lineas.map((l, i) => [
+          String(i + 1),
+          limpiar(l.nombre),
+          limpiar(l.unidad),
+          String(Number(l.cant).toFixed(Number(l.cant) % 1 === 0 ? 0 : 1)),
+          formatQ(l.precio),
+          formatQ(l.total),
+        ]),
+        theme: 'plain',
+        styles: { overflow: 'linebreak', lineColor: rgb('#d9e2ef'), lineWidth: 0.08 },
+        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: 7.5, fontStyle: 'bold', cellPadding: 1.75 },
+        bodyStyles: { fontSize: 7.1, textColor: rgb('#1f2937'), cellPadding: { top: 1.35, right: 1, bottom: 1.35, left: 1 } },
+        alternateRowStyles: { fillColor: rgb('#fbfcfe') },
+        columnStyles: {
+          0: { cellWidth: 7, halign: 'center', textColor: rgb('#173765'), fontStyle: 'bold' },
+          1: { cellWidth: 97 },
+          2: { cellWidth: 13, halign: 'center', textColor: rgb('#64748b'), fontSize: 6.2 },
+          3: { cellWidth: 13, halign: 'right' },
+          4: { cellWidth: 23, halign: 'right' },
+          5: { cellWidth: 25, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765') },
+        },
+        didParseCell: d => {
+          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = 6.65
+        },
+      })
+      yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 3
+    }
+
+    if (yPos + 29 > H - footerBottom) {
       doc.addPage()
-      y = CONTENT_TOP
+      yPos = pageTop
     }
+    const totalFin = drawTotalCard(yPos)
+    drawMiniPago(totalFin + 2.2)
   }
 
-  // ── Desglose opcional (Subtotal / IVA / ISR) + Fila "En letras: ... | TOTAL" ──
-  if (mostrarDesgloseImpuestos) {
-    const filasDesglose: Array<[string, number]> = [['Subtotal (sin impuestos)', subtotal]]
-    if (aplicarIva) filasDesglose.push([`IVA (${Math.round(IVA*100)}%)`, iva])
-    if (aplicarIsr) filasDesglose.push([`ISR (${Math.round(ISR*100)}%)`, isr])
-    const altoDesglose = filasDesglose.length * 5 + 2
-    necesitaEspacio(altoDesglose + 10)
-    const tW = 75, tX = W - mg - tW
-    filasDesglose.forEach(([label, valor], i) => {
-      doc.setFillColor(hexToRgb(i % 2 === 0 ? GRAY50 : GRAY100)[0], hexToRgb(i % 2 === 0 ? GRAY50 : GRAY100)[1], hexToRgb(i % 2 === 0 ? GRAY50 : GRAY100)[2])
-      doc.rect(tX, y, tW, 5, 'F')
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(GRAY700)
-      doc.text(label, tX + 2, y + 3.5)
-      doc.setFont('helvetica', 'bold'); doc.setTextColor(GRAY800)
-      doc.text(formatQ(valor), tX + tW - 2, y + 3.5, { align: 'right' })
-      y += 5
-    })
-    y += 1
-  } else {
-    necesitaEspacio(10)
-  }
+  function drawPage2() {
+    let yPos = 37
+    sectionTitle('CONDICIONES DE PAGO', yPos)
+    yPos += 4
 
-  // ── Card TOTAL elegante — navy gradient, dos columnas (letras | monto) ────
-  const totalBoxH = 14
-  necesitaEspacio(totalBoxH + 3)
-  const totalBoxW = W - 2 * mg
-  const colTxtW = totalBoxW * 0.63  // columna del texto "en letras"
-  // Fondo navy
-  doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-  doc.roundedRect(mg, y, totalBoxW, totalBoxH, 2, 2, 'F')
-  // Accent bar amarilla superior izquierda
-  doc.setFillColor(212, 160, 75)
-  doc.rect(mg, y, colTxtW, 1, 'F')
-  // Divider vertical sutil entre columnas
-  doc.setDrawColor(45, 74, 122)
-  doc.setLineWidth(0.3)
-  doc.line(mg + colTxtW, y + 2, mg + colTxtW, y + totalBoxH - 2)
-
-  // Columna izquierda: "en letras"
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); doc.setTextColor('#a3b8d9')
-  doc.text('MONTO EN LETRAS', mg + 4, y + 4.5)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor(WHITE)
-  const letrasEnvueltas = doc.splitTextToSize(totalEnLetras, colTxtW - 8)
-  doc.text(letrasEnvueltas.slice(0, 2), mg + 4, y + 8)
-
-  // Columna derecha: TOTAL grande
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); doc.setTextColor('#a3b8d9')
-  doc.text('TOTAL A PAGAR', mg + colTxtW + 4, y + 4.5)
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(WHITE)
-  doc.text(formatQ(total), W - mg - 4, y + 11, { align: 'right' })
-  y += totalBoxH + 3
-
-  // ── Valor por pie + nota de IVA — card sutil con accent navy ───────────────
-  if (data.tipo === 'perforacion' && valorPorPie > 0) {
-    const notaH = 14
-    necesitaEspacio(notaH + 2)
-    doc.setFillColor(hexToRgb(GRAY50)[0], hexToRgb(GRAY50)[1], hexToRgb(GRAY50)[2])
-    doc.roundedRect(mg, y, W - 2 * mg, notaH, 1.5, 1.5, 'F')
-    // Accent bar izquierdo navy
-    doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-    doc.rect(mg, y, 2.5, notaH, 'F')
-
-    const xCard = mg + 6
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(NAVY)
-    doc.text('VALOR POR PIE', xCard, y + 4.3)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(GRAY800)
-    doc.text(formatQ(valorPorPie), xCard + 28, y + 5.3)
-
-    // Nota: cambia según toggles de IVA
-    const notaIva = mostrarDesgloseImpuestos
-      ? (aplicarIva ? '"Precio con IVA desglosado"' : '"Precios sin IVA"')
-      : (aplicarIva ? '"El precio ya incluye IVA"' : '"Precios sin IVA"')
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(GRAY600)
-    const notaLarga = `${notaIva}  ·  Para cualquier pago, favor emitir cheque "No Negociable" a nombre de "Hidroperforaciones, S.A."`
-    const notaLineas = doc.splitTextToSize(notaLarga, W - 2 * mg - 12)
-    doc.text(notaLineas.slice(0, 2), xCard, y + 10)
-
-    y += notaH + 2
-  }
-
-  // ── Observaciones (card amber sutil con accent lateral) ────────────────────
-  if (data.notas && data.notas.trim()) {
-    const obsLineas = doc.splitTextToSize(data.notas, W - 2 * mg - 12)
-    const obsAlto = obsLineas.length * 3.5 + 9
-    necesitaEspacio(obsAlto + 2)
-    doc.setFillColor(255, 251, 235)  // amber50
-    doc.roundedRect(mg, y, W - 2 * mg, obsAlto, 1.5, 1.5, 'F')
-    doc.setFillColor(212, 160, 75)   // amber accent
-    doc.rect(mg, y, 2.5, obsAlto, 'F')
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(180, 83, 9)
-    doc.text('OBSERVACIONES', mg + 6, y + 4.5)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(GRAY700)
-    doc.text(obsLineas, mg + 6, y + 8)
-    y += obsAlto + 2
-  }
-
-  // ── Cuentas bancarias — tabla centrada con estilo ─────────────────────────
-  const cuentas = cuentasBancarias ?? []
-  if (cuentas.length > 0) {
-    const headerCtaH = 6.5
-    const filaCtaH = 5.5
-    const cuentasAlto = headerCtaH + cuentas.length * filaCtaH + 4
-    necesitaEspacio(cuentasAlto + 4)
-
-    // Ancho más compacto que la página, centrado
-    const ctaW = Math.min(W - 2 * mg, 165)
-    const ctaX = (W - ctaW) / 2
-
-    // Header navy con título
-    doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-    doc.rect(ctaX, y, ctaW, headerCtaH, 'F')
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(WHITE)
-    doc.text('CUENTAS BANCARIAS — HIDROPERFORACIONES, S.A.', ctaX + ctaW / 2, y + 4.3, { align: 'center' })
-    y += headerCtaH
-
-    // Columnas: Banco | Tipo | No. de cuenta
-    const bancoX = ctaX + 4
-    const tipoX  = ctaX + ctaW * 0.38
-    const numX   = ctaX + ctaW - 4
-
-    cuentas.forEach((c, i) => {
-      if (i % 2 === 0) {
-        doc.setFillColor(hexToRgb(GRAY50)[0], hexToRgb(GRAY50)[1], hexToRgb(GRAY50)[2])
-        doc.rect(ctaX, y, ctaW, filaCtaH, 'F')
-      } else {
-        doc.setFillColor(hexToRgb(GRAY100)[0], hexToRgb(GRAY100)[1], hexToRgb(GRAY100)[2])
-        doc.rect(ctaX, y, ctaW, filaCtaH, 'F')
-      }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2); doc.setTextColor(NAVY)
-      doc.text(c.banco, bancoX, y + 3.8)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor(GRAY600)
-      doc.text(c.tipo, tipoX, y + 3.8)
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.3); doc.setTextColor(GRAY800)
-      doc.text(`No. ${c.numero}`, numX, y + 3.8, { align: 'right' })
-      y += filaCtaH
+    autoTable(doc, {
+      startY: yPos,
+      margin: { left: mg, right: mg, top: 32, bottom: footerBottom },
+      head: [['HITO', '%', 'MONTO']],
+      body: [
+        ...hitosActivos.map(h => [limpiar(h.label), `${h.pct}%`, formatQ(Math.round(total * h.pct / 100))]),
+        ['TOTAL', `${hitosActivos.reduce((a, b) => a + b.pct, 0)}%`, formatQ(total)],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: 7, fontStyle: 'bold', cellPadding: 2 },
+      bodyStyles: { fontSize: 7.5, cellPadding: 2.2, lineColor: rgb('#d9e2ef'), lineWidth: 0.15 },
+      columnStyles: { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 42, fontStyle: 'bold' } },
+      didParseCell: d => {
+        if (d.section === 'body' && d.row.index === hitosActivos.length) {
+          d.cell.styles.fillColor = rgb('#173765')
+          d.cell.styles.textColor = rgb(WHITE)
+          d.cell.styles.fontStyle = 'bold'
+        }
+      },
     })
 
-    // Borde inferior de la tabla
-    doc.setDrawColor(hexToRgb(GRAY300)[0], hexToRgb(GRAY300)[1], hexToRgb(GRAY300)[2])
-    doc.setLineWidth(0.2)
-    doc.rect(ctaX, y - cuentas.length * filaCtaH, ctaW, cuentas.length * filaCtaH)
-    y += 3
-  }
+    yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 11
+    sectionTitle('CUENTAS BANCARIAS', yPos)
+    yPos += 5
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PÁGINA 2+: CONDICIONES IMPORTANTES (paginación dinámica — tantas como haga falta)
-  // En esta(s) página(s) NO se dibuja footer para liberar espacio vertical y meter los 18 puntos en 1 hoja.
-  // ═══════════════════════════════════════════════════════════════════════════
-  const paginaInicioCondiciones = doc.getNumberOfPages() + 1
-  doc.addPage()
-  let y2 = CONTENT_TOP
-  // Sin footer en condiciones → extendemos el área útil ~15mm hacia abajo
-  const CONDICIONES_BOTTOM = H - 10
+    const cardGap = 5
+    const cardW = (W - 2 * mg - cardGap) / 2
+    const cardH = 22
+    cuentas.slice(0, 4).forEach((c, i) => {
+      const col = i % 2
+      const row = Math.floor(i / 2)
+      const cardX = mg + col * (cardW + cardGap)
+      const cardY = yPos + row * (cardH + 5)
+      setFill(i % 2 === 0 ? '#fbfcfe' : '#f7f9fc')
+      setDraw('#d9e2ef')
+      doc.setLineWidth(0.25)
+      doc.roundedRect(cardX, cardY, cardW, cardH, 2, 2, 'FD')
+      setFill('#173765')
+      doc.rect(cardX, cardY, 2, cardH, 'F')
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(GRAY800)
-  doc.text('CONDICIONES IMPORTANTES', W / 2, y2 + 2, { align: 'center' })
-  y2 += 6.5
-
-  const lineHeight = 2.8
-
-  if (data.tipo === 'perforacion') {
-    // Una sola columna, sin títulos (el cuerpo legal ya incluye el encabezado).
-    // Fuente 6pt con gaps cómodos (sin footer en esta página hay espacio sobrado).
-    const badgeSize = 4.5
-    const fontBody = 6
-    const lineHeightCompact = 2.35  // más aire entre líneas para que no se monten
-    const gapEntreCondiciones = 1.8 // separación clara entre puntos
-
-    const xTexto = mg + badgeSize + 2
-    const anchoTexto = W - 2 * mg - badgeSize - 2
-
-    condicionesPerf.forEach((cond, idx) => {
-      const numeracion = `${idx + 1}`
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(fontBody)
-      const bodyLines = doc.splitTextToSize(cond.texto, anchoTexto)
-      const bloqueH = Math.max(badgeSize, bodyLines.length * lineHeightCompact) + gapEntreCondiciones
-
-      // Si no cabe, nueva página sin footer también
-      if (y2 + bloqueH > CONDICIONES_BOTTOM) {
-        doc.addPage()
-        y2 = CONTENT_TOP + 6.5
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(GRAY800)
-        doc.text('CONDICIONES IMPORTANTES (continuación)', W / 2, CONTENT_TOP + 2, { align: 'center' })
+      const logo = logosBancos[i]
+      const logoBoxX = cardX + 5
+      const logoBoxY = cardY + 5
+      const logoBoxW = 22
+      const logoBoxH = 12
+      if (logo) {
+        try { drawImageContain(logo.dataUrl, logoBoxX, logoBoxY, logoBoxW, logoBoxH, logo.w / logo.h) } catch { /* noop */ }
       }
 
-      // Badge navy con número
-      doc.setFillColor(hexToRgb(NAVY)[0], hexToRgb(NAVY)[1], hexToRgb(NAVY)[2])
-      doc.roundedRect(mg, y2, badgeSize, badgeSize, 0.8, 0.8, 'F')
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(numeracion.length > 1 ? 5.5 : 6.5); doc.setTextColor(WHITE)
-      doc.text(numeracion, mg + badgeSize / 2, y2 + badgeSize * 0.73, { align: 'center' })
-
-      // Cuerpo (el texto legal ya empieza con su encabezado natural)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(fontBody); doc.setTextColor(GRAY700)
-      doc.text(bodyLines, xTexto, y2 + 3)
-      y2 += Math.max(badgeSize, bodyLines.length * lineHeightCompact) + gapEntreCondiciones
+      const textX = cardX + 31
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.4); setText('#173765')
+      doc.text(limpiar(c.banco), textX, cardY + 7)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(5.9); setText('#64748b')
+      doc.text(limpiar(c.tipo), textX, cardY + 11)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2); setText('#1f2937')
+      doc.text(`No. ${limpiar(c.numero)}`, textX, cardY + 16.5)
     })
-  } else {
-    // LIMPIEZA: texto libre por párrafos (comportamiento anterior)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(GRAY700)
+  }
+
+  function drawConditionsPage() {
+    let yPos = 36
+    const condicionesCount = data.tipo === 'perforacion' ? condicionesPerf.length : 0
+    sectionTitle(condicionesCount > 0 ? `CONDICIONES IMPORTANTES (${condicionesCount})` : 'CONDICIONES IMPORTANTES', yPos)
+    yPos += 5
+
+    if (data.tipo === 'perforacion') {
+      const rows = condicionesPerf.map((c, i) => [String(i + 1), limpiar(c.texto)])
+      const tableBottom = 8
+      const numberW = 8
+      const textW = W - 2 * mg - numberW
+      const candidates = [4.65, 4.45, 4.25, 4.05, 3.85, 3.65]
+      let chosen = candidates[candidates.length - 1]
+      for (const fontSize of candidates) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(fontSize)
+        const estimated = rows.reduce((sum, row) => {
+          const linesCount = doc.splitTextToSize(row[1], textW - 2).length
+          return sum + Math.max(3, linesCount * fontSize * 0.38 + 1.1)
+        }, 0)
+        if (estimated <= H - tableBottom - yPos) { chosen = fontSize; break }
+      }
+
+      autoTable(doc, {
+        startY: yPos,
+        margin: { left: mg, right: mg, top: 32, bottom: tableBottom },
+        body: rows.map(row => [row[0], doc.splitTextToSize(row[1], textW - 2).join('\n')]),
+        theme: 'plain',
+        styles: {
+          font: 'helvetica',
+          fontSize: chosen,
+          cellPadding: { top: 0.35, right: 0.8, bottom: 0.42, left: 0.7 },
+          overflow: 'linebreak',
+          lineWidth: 0,
+          textColor: rgb('#1f2937'),
+          valign: 'top',
+        },
+        columnStyles: {
+          0: { cellWidth: numberW, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765'), fontSize: chosen + 0.25 },
+          1: { cellWidth: textW },
+        },
+      })
+      return
+    }
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setText('#374151')
     const parrafos = condicionesLimpText.split(/\n\n+/).filter(p => p.trim())
-    for (const parr of parrafos) {
-      const lineasTexto = doc.splitTextToSize(parr.trim(), W - 2 * mg)
-      const bloqueH = lineasTexto.length * lineHeight
-      if (y2 + bloqueH > CONTENT_BOTTOM) {
-        doc.addPage()
-        y2 = CONTENT_TOP
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(GRAY800)
-        doc.text('CONDICIONES IMPORTANTES (continuación)', W / 2, y2 + 2, { align: 'center' })
-        y2 += 6.5
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(GRAY700)
-      }
-      doc.text(lineasTexto, mg, y2 + 2)
-      y2 += bloqueH + 1.4
+    for (const parrafo of parrafos) {
+      const lines = doc.splitTextToSize(limpiar(parrafo.trim()), W - 2 * mg)
+      doc.text(lines, mg, yPos + 2)
+      yPos += lines.length * 2.8 + 1.4
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Dibujar HEADER en todas las páginas + FOOTER solo en páginas ANTERIORES a condiciones.
-  // Las páginas de condiciones NO llevan footer (libera espacio para las 18 cláusulas).
-  // ═══════════════════════════════════════════════════════════════════════════
+  drawPage1()
+  doc.addPage()
+  drawPage2()
+  doc.addPage()
+  const paginaInicioCondiciones = doc.getNumberOfPages()
+  drawConditionsPage()
+
   const totalPages = doc.getNumberOfPages()
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p)
-    dibujarHeader(doc, W, mg, logoDataUrl, data.correlativo, data.fecha, p, totalPages)
-    if (p < paginaInicioCondiciones) {
-      dibujarFooter(doc, W, H, mg, data.vendedor || 'Gerencia Hidroperforaciones', emailVendedor, telVendedor, logoDataUrl)
-    }
+  for (let page = 1; page <= totalPages; page++) {
+    doc.setPage(page)
+    headerV2(page, totalPages)
+    if (page < paginaInicioCondiciones) footerV2()
   }
-
   return new Uint8Array(doc.output('arraybuffer') as ArrayBuffer)
 }
 
-// ── Nombre de archivo limpio ─────────────────────────────────────────────────
+// â”€â”€ Nombre de archivo limpio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function sanitize(s: string): string {
   return s
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -867,3 +929,4 @@ export function sanitize(s: string): string {
     .replace(/\s+/g, '_')
     .slice(0, 50)
 }
+

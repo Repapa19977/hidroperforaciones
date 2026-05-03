@@ -3,12 +3,10 @@
 // Si el contacto ya tiene un Usuario cliente_final, regenera el password.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash, randomBytes } from 'crypto'
+import { randomBytes, randomInt } from 'crypto'
 import { prisma } from '@/lib/db'
-import { requireSuperAdmin, getRequestInfo } from '@/lib/auth'
+import { requireSuperAdmin, getRequestInfo, hashPassword } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
-
-function sha256(s: string) { return createHash('sha256').update(s).digest('hex') }
 
 // Genera username limpio desde el nombre del contacto
 function slugUsername(nombre: string, id: string): string {
@@ -26,9 +24,9 @@ function slugUsername(nombre: string, id: string): string {
 function generarPasswordAmigable(): string {
   // Palabras cortas sin ambigüedad (sin i/l/o/0 para evitar confusión)
   const palabras = ['azul','rojo','verde','amarillo','nube','sol','luna','agua','cielo','mar','tierra','rio','pozo','bomba','tubo','valle','cerro','ruta','camino','casa']
-  const w1 = palabras[Math.floor(Math.random() * palabras.length)]
-  const w2 = palabras[Math.floor(Math.random() * palabras.length)]
-  const n = String(Math.floor(Math.random() * 90) + 10)  // 10-99
+  const w1 = palabras[randomInt(palabras.length)]
+  const w2 = palabras[randomInt(palabras.length)]
+  const n = String(randomInt(10, 100))  // 10-99
   return `${w1}-${w2}-${n}`
 }
 
@@ -66,11 +64,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const email = (emailOverride || contacto.email || '').trim()
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: 'El contacto necesita email válido para crear acceso al portal. Editá el contacto primero.' }, { status: 400 })
+    return NextResponse.json({ error: 'El contacto necesita email válido para crear acceso al portal. Edita el contacto primero.' }, { status: 400 })
   }
 
   const password = generarPasswordAmigable()
-  const passwordHash = sha256(password)
+  const passwordHash = hashPassword(password)
 
   const existing = await prisma.usuario.findFirst({
     where: { contactoId: id, rol: 'cliente_final' },

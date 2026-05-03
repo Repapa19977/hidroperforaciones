@@ -13,11 +13,12 @@ import {
   Search,
   Download,
   Trash2,
+  XCircle,
 } from 'lucide-react'
 import type { Rol } from '@/lib/config-store'
-import { cn } from '@/lib/utils'
+import { cn, formatQ, estadoBadgeClass } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import * as XLSX from 'xlsx'
+import { exportJsonXlsx } from '@/lib/export-xlsx'
 
 interface ProyectoRow {
   id: string
@@ -29,39 +30,28 @@ interface ProyectoRow {
   tipo: string
   monto: number
   vendedor: string
-  estado: 'activo' | 'completado' | 'pausado'
+  estado: 'activo' | 'completado' | 'pausado' | 'cancelado'
   fechaInicio: string
   entradas: { id: string; fecha: string }[]
 }
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
 }
-
-const formatQ = (n: number) => `Q ${Math.round(n).toLocaleString('es-GT')}`
 
 function tipoLabel(tipo: string) {
   return tipo === 'perforacion' ? 'Perforacion' : 'Limpieza'
 }
 
-function estadoBadge(estado: ProyectoRow['estado']) {
-  const map = {
-    activo: 'bg-emerald-500/20 text-emerald-400',
-    pausado: 'bg-amber-500/20 text-amber-400',
-    completado: 'bg-blue-500/20 text-blue-400',
-  } as const
-  return map[estado] ?? 'bg-slate-500/20 text-slate-400'
-}
-
 export default function ProyectosPage() {
   const [role, setRole]           = useState<Rol>('admin')
-  const [myVendedor, setMyVendedor] = useState('')
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<ProyectoRow[]>([])
   const [sinActualizar, setSinActualizar] = useState<ProyectoRow[]>([])
   const [search, setSearch] = useState('')
-  const [estado, setEstado] = useState<'todos' | 'activo' | 'pausado' | 'completado'>('todos')
+  const [estado, setEstado] = useState<'todos' | 'activo' | 'pausado' | 'completado' | 'cancelado'>('todos')
   const [vendedorFiltro, setVendedorFiltro] = useState('Todos')
   const [deleteTarget, setDeleteTarget] = useState<ProyectoRow | null>(null)
   const [deleteReason, setDeleteReason] = useState('')
@@ -107,9 +97,7 @@ export default function ProyectosPage() {
   // Lee cookies solo en el cliente (después de hidratación) y carga datos
   useEffect(() => {
     const r = (getCookie('user_role') as Rol) || 'admin'
-    const v = getCookie('user_vendedor') || ''
     setRole(r)
-    setMyVendedor(v)
     void loadData()
   }, [])
 
@@ -130,10 +118,11 @@ export default function ProyectosPage() {
   const activos = filtrados.filter(r => r.estado === 'activo')
   const pausados = filtrados.filter(r => r.estado === 'pausado')
   const completados = filtrados.filter(r => r.estado === 'completado')
+  const cancelados = filtrados.filter(r => r.estado === 'cancelado')
   const montoActivo = activos.reduce((acc, r) => acc + r.monto, 0)
 
   return (
-    <div className="flex flex-col h-full bg-[#070d1a]">
+    <div className="flex flex-col md:h-full bg-[#070d1a]">
       <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-white/5 bg-[#0a1020] shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -151,7 +140,7 @@ export default function ProyectosPage() {
               Actualizar
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 const exportRows = filtrados.map(r => ({
                   'Correlativo': r.correlativo,
                   'Cliente': r.cliente,
@@ -164,11 +153,12 @@ export default function ProyectosPage() {
                   'Fecha Inicio': r.fechaInicio,
                   'Entradas Bitácora': r.entradas.length,
                 }))
-                const wb = XLSX.utils.book_new()
-                const ws = XLSX.utils.json_to_sheet(exportRows)
-                ws['!cols'] = [14,20,18,24,12,12,16,18,14,18].map(w => ({ wch: w }))
-                XLSX.utils.book_append_sheet(wb, ws, 'Proyectos')
-                XLSX.writeFile(wb, `Proyectos_${new Date().toISOString().split('T')[0]}.xlsx`)
+                await exportJsonXlsx(
+                  `Proyectos_${new Date().toISOString().split('T')[0]}.xlsx`,
+                  'Proyectos',
+                  exportRows,
+                  [14, 20, 18, 24, 12, 12, 16, 18, 14, 18],
+                )
               }}
               title="Exportar a Excel"
               className="flex items-center gap-1.5 border border-white/10 text-slate-300 hover:text-white hover:border-white/20 px-3 py-2 rounded-lg text-xs font-medium transition-all"
@@ -185,7 +175,7 @@ export default function ProyectosPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <KPIChip
             icon={<Briefcase className="w-4 h-4 text-blue-400" />}
             label="Activos"
@@ -206,6 +196,13 @@ export default function ProyectosPage() {
             value={String(completados.length)}
             sub="cerrados"
             color="emerald"
+          />
+          <KPIChip
+            icon={<XCircle className="w-4 h-4 text-red-400" />}
+            label="Cancelados"
+            value={String(cancelados.length)}
+            sub="liquidados"
+            color="red"
           />
           <KPIChip
             icon={<AlertTriangle className="w-4 h-4 text-red-400" />}
@@ -233,7 +230,7 @@ export default function ProyectosPage() {
             />
           </div>
 
-          {(['todos', 'activo', 'pausado', 'completado'] as const).map(s => (
+          {(['todos', 'activo', 'pausado', 'completado', 'cancelado'] as const).map(s => (
             <button
               key={s}
               onClick={() => setEstado(s)}
@@ -250,7 +247,9 @@ export default function ProyectosPage() {
                   ? 'Activos'
                   : s === 'pausado'
                     ? 'Pausados'
-                    : 'Completados'}
+                    : s === 'cancelado'
+                      ? 'Cancelados'
+                      : 'Completados'}
             </button>
           ))}
 
@@ -285,7 +284,7 @@ export default function ProyectosPage() {
         </div>
       ) : (
         <>
-          <div className="hidden md:block flex-1 overflow-auto">
+          <div className="hidden md:block flex-1 md:overflow-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-white/5 bg-[#0a1020] sticky top-0 z-20">
                 <tr className="text-xs text-slate-500">
@@ -314,7 +313,7 @@ export default function ProyectosPage() {
                     <td className="px-5 py-3.5 text-slate-400 text-xs">{tipoLabel(r.tipo)}</td>
                     <td className="px-5 py-3.5 text-right text-white font-semibold">{formatQ(r.monto)}</td>
                     <td className="px-5 py-3.5">
-                      <span className={cn('px-2 py-0.5 rounded-md text-xs font-medium', estadoBadge(r.estado))}>
+                      <span className={cn('px-2 py-0.5 rounded-md text-xs font-medium', estadoBadgeClass(r.estado))}>
                         {r.estado}
                       </span>
                     </td>
@@ -347,7 +346,7 @@ export default function ProyectosPage() {
             </table>
           </div>
 
-          <div className="md:hidden flex-1 overflow-auto divide-y divide-white/5">
+          <div className="md:hidden flex-1 divide-y divide-white/5">
             {filtrados.map(r => (
               <div key={r.id} className="flex items-stretch hover:bg-white/2 transition-colors">
                 <Link href={`/proyectos/${r.id}`} className="flex-1 min-w-0 px-4 py-3.5">
@@ -361,7 +360,7 @@ export default function ProyectosPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-[10px] text-blue-400">{r.correlativo}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400">{tipoLabel(r.tipo)}</span>
-                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded', estadoBadge(r.estado))}>{r.estado}</span>
+                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded', estadoBadgeClass(r.estado))}>{r.estado}</span>
                   </div>
                 </Link>
                 {isSuperAdmin && (
@@ -386,8 +385,8 @@ export default function ProyectosPage() {
         title={`¿Eliminar proyecto ${deleteTarget?.correlativo ?? ''}?`}
         description={
           deleteTarget && deleteTarget.entradas.length > 0
-            ? `Tiene ${deleteTarget.entradas.length} entrada(s) de bitácora. El proyecto pasa a la papelera. Podés restaurarlo.`
-            : 'El proyecto pasa a la papelera. Podés restaurarlo cuando quieras.'
+            ? `Tiene ${deleteTarget.entradas.length} entrada(s) de bitácora. El proyecto pasa a la papelera. Puedes restaurarlo.`
+            : 'El proyecto pasa a la papelera. Puedes restaurarlo cuando quieras.'
         }
         confirmLabel="Sí, eliminar"
         variant="destructive"

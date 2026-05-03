@@ -3,19 +3,16 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
-import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit'
 import { auditLog } from '@/lib/audit'
-import { getRequestInfo } from '@/lib/auth'
+import { getRequestInfo, hashPassword, isLegacyPasswordHash, verifyPassword } from '@/lib/auth'
 import { z } from 'zod'
 
 const schema = z.object({
   email: z.string().email().min(1).max(200).trim(),
   password: z.string().min(1).max(200),
 })
-
-function sha256(s: string) { return createHash('sha256').update(s).digest('hex') }
 
 const WINDOW_MS = 15 * 60 * 1000
 const IP_LIMIT = 10
@@ -48,7 +45,7 @@ export async function POST(request: NextRequest) {
 
   const info = getRequestInfo(request)
 
-  if (!usuario || usuario.passwordHash !== sha256(password)) {
+  if (!usuario || !verifyPassword(password, usuario.passwordHash)) {
     await auditLog({
       user: null, accion: 'login', entidad: 'cliente_final', entidadId: email,
       despues: { resultado: 'falla' }, ...info,
@@ -64,6 +61,13 @@ export async function POST(request: NextRequest) {
   prisma.usuario.update({
     where: { id: usuario.id }, data: { ultimoAcceso: new Date() },
   }).catch(() => {})
+
+  if (isLegacyPasswordHash(usuario.passwordHash)) {
+    prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { passwordHash: hashPassword(password) },
+    }).catch(() => {})
+  }
 
   await auditLog({
     user: { username: usuario.username, role: 'cliente_final', contactoId: usuario.contactoId },

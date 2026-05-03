@@ -5,31 +5,31 @@ import { useEffect, useState } from 'react'
 
 const SESSION_KEY = 'hc_intro_shown'
 
+function shouldSkipIntro() {
+  if (typeof window === 'undefined') return false
+  try {
+    if (sessionStorage.getItem(SESSION_KEY) === '1') return true
+  } catch { /* sessionStorage puede fallar en modos privados */ }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 /**
  * Intro cinematográfica — se muestra UNA sola vez por sesión de navegador.
  * Secuencia: fade-in logo → escala sutil → blur out → desmonta.
  * Respeta prefers-reduced-motion y la puede saltar tapeando cualquier parte.
  */
 export function CinematicIntro() {
-  const [stage, setStage] = useState<'mounted' | 'visible' | 'exiting' | 'done'>('mounted')
+  const [stage, setStage] = useState<'pending' | 'mounted' | 'visible' | 'exiting' | 'done'>('pending')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    try {
-      if (sessionStorage.getItem(SESSION_KEY) === '1') {
-        setStage('done')
-        return
-      }
-    } catch { /* sessionStorage puede fallar en modos privados */ }
-
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduced) {
+    if (shouldSkipIntro()) {
       try { sessionStorage.setItem(SESSION_KEY, '1') } catch {}
-      setStage('done')
       return
     }
 
+    const t0 = setTimeout(() => setStage('mounted'), 0)
     const t1 = setTimeout(() => setStage('visible'), 20)
     const t2 = setTimeout(() => setStage('exiting'), 1900)
     const t3 = setTimeout(() => {
@@ -37,7 +37,7 @@ export function CinematicIntro() {
       setStage('done')
     }, 2600)
 
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [])
 
   function skip() {
@@ -45,7 +45,7 @@ export function CinematicIntro() {
     setStage('done')
   }
 
-  if (stage === 'done') return null
+  if (stage === 'pending' || stage === 'done') return null
 
   return (
     <div

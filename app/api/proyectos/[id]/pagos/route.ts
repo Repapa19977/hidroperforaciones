@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireSuperAdmin, getCurrentUser, getRequestInfo } from '@/lib/auth'
+import { requireSuperAdmin, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
 import { z } from 'zod'
 

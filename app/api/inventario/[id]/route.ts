@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/auth'
 
 // PATCH /api/inventario/[id] — actualizar reserva (cantidad, estado, nota, etc.)
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(req)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const body = await req.json()
   const data: Record<string, string | number> = {}
@@ -19,7 +23,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 // DELETE /api/inventario/[id] — eliminar reserva (casos excepcionales)
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(req)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   // Eliminar movimientos asociados primero
   await prisma.movimientoInventario.deleteMany({ where: { reservaId: id } })

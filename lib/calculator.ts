@@ -55,48 +55,72 @@ export function camionadasGrava(m3Grava: number, capacidad: number = 12): number
 }
 
 // ── CATÁLOGO DE TUBERÍA ────────────────────────────────────────────────────────
-// Fuente: Hoja de datos de perforaciones — precios reales
+// Fuente: Hoja de datos de perforaciones — costos internos reales
 export interface TuberiaSpec {
   tipo: 'lisa' | 'ranurada'
   diametro: number    // pulgadas (6, 8, 10, 12…)
   espesor: number     // pulgadas (0.188, 0.219, 0.250…)
-  precio: number      // Q por tubo
+  precio: number      // Q por tubo — costo interno empresa, no precio cliente
 }
 
 export const CATALOGO_TUBERIA: TuberiaSpec[] = [
   // ── Lisa ──────────────────────────────────────────
-  { tipo: 'lisa', diametro: 6,  espesor: 0.188, precio: 2200 },
-  { tipo: 'lisa', diametro: 8,  espesor: 0.188, precio: 2200 },
-  { tipo: 'lisa', diametro: 8,  espesor: 0.219, precio: 2400 },
-  { tipo: 'lisa', diametro: 8,  espesor: 0.250, precio: 2600 },
-  { tipo: 'lisa', diametro: 10, espesor: 0.250, precio: 4000 },
-  { tipo: 'lisa', diametro: 12, espesor: 0.250, precio: 8000 },
+  { tipo: 'lisa', diametro: 6,  espesor: 0.188, precio: 0 },
+  { tipo: 'lisa', diametro: 8,  espesor: 0.188, precio: 1700 },
+  { tipo: 'lisa', diametro: 8,  espesor: 0.219, precio: 1900 },
+  { tipo: 'lisa', diametro: 8,  espesor: 0.250, precio: 2250 },
+  { tipo: 'lisa', diametro: 10, espesor: 0.250, precio: 3500 },
+  { tipo: 'lisa', diametro: 12, espesor: 0.250, precio: 4500 },
   // ── Ranurada ──────────────────────────────────────
-  { tipo: 'ranurada', diametro: 6,  espesor: 0.188, precio: 2200 },
-  { tipo: 'ranurada', diametro: 8,  espesor: 0.188, precio: 2200 },
-  { tipo: 'ranurada', diametro: 8,  espesor: 0.219, precio: 2900 },
-  { tipo: 'ranurada', diametro: 8,  espesor: 0.250, precio: 3200 },
-  { tipo: 'ranurada', diametro: 10, espesor: 0.250, precio: 5800 },
+  { tipo: 'ranurada', diametro: 6,  espesor: 0.188, precio: 1975 },
+  { tipo: 'ranurada', diametro: 8,  espesor: 0.188, precio: 2300 },
+  { tipo: 'ranurada', diametro: 8,  espesor: 0.219, precio: 2500 },
+  { tipo: 'ranurada', diametro: 8,  espesor: 0.250, precio: 2750 },
+  { tipo: 'ranurada', diametro: 10, espesor: 0.250, precio: 4500 },
 ]
 
-export function getPrecioTuberia(tipo: 'lisa' | 'ranurada', diametro: number, espesor: number): number {
+/** Genera la key estable del catálogo de tuberías. Usada por overrides del config. */
+export function tuberiaKey(tipo: 'lisa' | 'ranurada', diametro: number, espesor: number): string {
+  return `${tipo}-${diametro}-${espesor}`
+}
+
+export function getPrecioTuberia(
+  tipo: 'lisa' | 'ranurada',
+  diametro: number,
+  espesor: number,
+  override?: Record<string, number>,
+  extras?: TuberiaSpec[],
+): number {
+  if (override) {
+    const k = tuberiaKey(tipo, diametro, espesor)
+    const ov = override[k]
+    if (typeof ov === 'number' && Number.isFinite(ov) && ov >= 0) return ov
+  }
   const t = CATALOGO_TUBERIA.find(
     t => t.tipo === tipo && t.diametro === diametro && Math.abs(t.espesor - espesor) < 0.001
   )
-  return t?.precio ?? 0
+  if (t) return t.precio
+  if (extras) {
+    const e = extras.find(
+      e => e.tipo === tipo && e.diametro === diametro && Math.abs(e.espesor - espesor) < 0.001
+    )
+    if (e) return e.precio
+  }
+  return 0
 }
 
 /** Espesores disponibles en catálogo para un tipo y diámetro dado */
-export function getEspesoresDisponibles(tipo: 'lisa' | 'ranurada', diametro: number): number[] {
-  return CATALOGO_TUBERIA
-    .filter(t => t.tipo === tipo && t.diametro === diametro)
-    .map(t => t.espesor)
-    .sort((a, b) => a - b)
+export function getEspesoresDisponibles(tipo: 'lisa' | 'ranurada', diametro: number, extras: TuberiaSpec[] = []): number[] {
+  const all = [...CATALOGO_TUBERIA, ...extras]
+  return [...new Set(
+    all.filter(t => t.tipo === tipo && t.diametro === diametro).map(t => t.espesor)
+  )].sort((a, b) => a - b)
 }
 
 /** Diámetros de tubería disponibles en catálogo */
-export function getDiametrosTuberia(tipo: 'lisa' | 'ranurada'): number[] {
-  return [...new Set(CATALOGO_TUBERIA.filter(t => t.tipo === tipo).map(t => t.diametro))].sort((a, b) => a - b)
+export function getDiametrosTuberia(tipo: 'lisa' | 'ranurada', extras: TuberiaSpec[] = []): number[] {
+  const all = [...CATALOGO_TUBERIA, ...extras]
+  return [...new Set(all.filter(t => t.tipo === tipo).map(t => t.diametro))].sort((a, b) => a - b)
 }
 
 // ── CATÁLOGO PRECIO/PIE POR DIÁMETRO DE PERFORACIÓN ─────────────────────────
@@ -128,6 +152,29 @@ export const PRECIOS_BROCAS: Record<number, number> = {
   22:     90000,
   24:    115000,
   26:    115000,
+}
+
+// ── COSTO DE COLOCACIÓN DE TUBERÍA (ADEME) POR DIÁMETRO ────────────────────
+// Costo interno real de mano de obra + combustible para entubar según diámetro
+// de la tubería. El precio al cliente es uniforme (Q 35/pie sin importar diámetro).
+// Fuente: René (jefe) — 2026-04-20
+export const COSTO_COLOCACION_TUBERIA_POR_DIAMETRO: Record<number, number> = {
+  8: 8,    // Q 8/pie
+  10: 10,  // Q 10/pie
+  12: 12,  // Q 12/pie
+  14: 14,  // Q 14/pie
+  16: 16,  // Q 16/pie
+}
+
+/** Retorna el costo interno de colocación ADEME para un diámetro de tubería dado.
+ *  Si el diámetro no está en la tabla, cae al costo mínimo del catálogo (8). */
+export function getCostoColocacionPorDiametro(diametroTuberia: number): number {
+  const exact = COSTO_COLOCACION_TUBERIA_POR_DIAMETRO[diametroTuberia]
+  if (typeof exact === 'number') return exact
+  // Para diámetros intermedios o fuera de tabla, buscar el más cercano por arriba
+  const diametros = Object.keys(COSTO_COLOCACION_TUBERIA_POR_DIAMETRO).map(Number).sort((a, b) => a - b)
+  for (const d of diametros) if (diametroTuberia <= d) return COSTO_COLOCACION_TUBERIA_POR_DIAMETRO[d]
+  return COSTO_COLOCACION_TUBERIA_POR_DIAMETRO[diametros[diametros.length - 1]] ?? 8
 }
 
 // ── CONVERSIÓN PULGADAS → MM ──────────────────────────────────────────────────
@@ -215,13 +262,50 @@ export function formatBroca(diametro: number): string {
 }
 
 // ── HORAS ADVERSAS ────────────────────────────────────────────
-// Fuente: CALCULO DE HORAS ADVERSAS.xlsx
-export const RENDIMIENTO_MINIMO = 2.5  // pies/hora
-export const VALOR_HORA_ADVERSA = 500  // Q/hora
+// Fuente: CALCULO DE HORAS ADVERSAS (2).xlsx — fórmula del jefe 2026-04-20.
+// La constante pies/hora se deriva: piesMinimoTurno / horasTurno.
+// Con default (10h, 20 pies) → 2 pies/hora.  Con viejo (8h, 20 pies) → 2.5 pies/hora.
+// El valor de "rendimiento mínimo" queda como compat legacy; el cálculo real
+// usa la constante dinámica que respeta el turno del proyecto/config.
+export const RENDIMIENTO_MINIMO = 2.5  // pies/hora — @deprecated mantener por compat
+export const VALOR_HORA_ADVERSA = 500  // Q/hora — default (sobreescribible por config)
 
-export function calcularHorasAdversas(piesPerforadosEnTurno: number, horasTurno = 8): number {
-  const horasProductivas = piesPerforadosEnTurno / RENDIMIENTO_MINIMO
-  return Math.max(0, horasTurno - horasProductivas)
+/** Default del turno — alineado con la fórmula nueva del jefe (antes era 8h). */
+export const HORAS_TURNO_DEFAULT = 10
+/** Default de pies mínimos requeridos por turno para no incurrir en horas adversas. */
+export const PIES_MINIMO_TURNO_DEFAULT = 20
+
+export interface ParamsAdversas {
+  /** Horas que dura el turno operativo. Default 10. */
+  horasTurno?: number
+  /** Pies mínimos que se deben perforar en ese turno. Default 20. */
+  piesMinimoTurno?: number
+  /** Valor Q por hora adversa cobrada al cliente. Default 500. */
+  valorHoraAdversa?: number
+}
+
+/**
+ * Calcula horas adversas (horas no productivas que se le cobran al cliente).
+ * Fórmula: horasAdversas = max(0, horasTurno − pies / constante)  con  constante = piesMinimoTurno / horasTurno
+ *
+ * La firma mantiene compat: si pasás solo (pies, horasTurno) como number, usa los defaults nuevos
+ * para piesMinimoTurno (20) y el comportamiento es igual al Excel del jefe.
+ */
+export function calcularHorasAdversas(
+  piesPerforadosEnTurno: number,
+  horasTurnoOrParams: number | ParamsAdversas = HORAS_TURNO_DEFAULT,
+): number {
+  const params: Required<ParamsAdversas> = typeof horasTurnoOrParams === 'number'
+    ? { horasTurno: horasTurnoOrParams, piesMinimoTurno: PIES_MINIMO_TURNO_DEFAULT, valorHoraAdversa: VALOR_HORA_ADVERSA }
+    : {
+        horasTurno: horasTurnoOrParams.horasTurno ?? HORAS_TURNO_DEFAULT,
+        piesMinimoTurno: horasTurnoOrParams.piesMinimoTurno ?? PIES_MINIMO_TURNO_DEFAULT,
+        valorHoraAdversa: horasTurnoOrParams.valorHoraAdversa ?? VALOR_HORA_ADVERSA,
+      }
+  const constante = params.piesMinimoTurno / params.horasTurno  // pies/hora que exige el estándar
+  if (constante <= 0) return 0
+  const horasProductivas = piesPerforadosEnTurno / constante
+  return Math.max(0, params.horasTurno - horasProductivas)
 }
 
 // ════════════════════════════════════════════════════════════
@@ -384,7 +468,8 @@ export interface InputsPerforacion {
 
   // ── Servicios opcionales ──
   incluirRegistroElectrico: boolean  // cargo al cliente por registro eléctrico
-  incluirSelloSanitario: boolean     // sello sanitario: Q7/pie de profundidad
+  incluirSelloSanitario: boolean     // sello sanitario activo/inactivo
+  piesSelloSanitario?: number        // pies que se van a sellar (entre 10 y 40 según terreno, default 20). NO es la profundidad total del pozo.
   incluirExtraccionLodos: boolean    // extracción de lodos
   incluirSeguridad: boolean          // tubería/casing de seguridad
   incluirSanitario: boolean          // sanitario
@@ -457,9 +542,11 @@ export interface InputsPerforacion {
   // ── Limpieza mecánica interna (cuando incluirLimpieza=true) ──
   horasLimpiezaMecanica: number  // horas de limpieza interna (default 20, Excel)
 
-  // ── Bomba (INFORMATIVO — NO se suma al costoTotalProyecto) ──
-  // El Excel no incluye bomba en servicio de perforación. Campo conservado por backward compat.
-  costoBomba: number           // Q (default 27,500) — solo informativo
+  // ── Override de catálogo de tuberías (viene del Config global) ──
+  // Map de `${tipo}-${diametro}-${espesor}` → costo interno editado. Si existe, reemplaza CATALOGO_TUBERIA.
+  tuberiasOverride?: Record<string, number>
+  // Tuberías custom agregadas por superadmin (medidas fuera de catálogo).
+  tuberiasExtra?: TuberiaSpec[]
 
   // ── Aforo detallado (opcional) — si existe, reemplaza costoAforoBase legacy ──
   // Fuente: COSTO DE AFORO (1).xlsx — fórmula completa con 18 sub-inputs editables
@@ -517,7 +604,6 @@ export interface ResultadosPerforacion {
   costoAforo: number
   costoLimpieza: number
   costoComision: number
-  costoBomba: number
   costoSelloSanitario: number
   costoPipasAgua: number
   costoSoldador: number
@@ -632,9 +718,9 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   const costoFleteReal = Math.round(costoFleteGrava * PCT_COSTO_REAL_FLETE)
   const reservaFlete = costoFleteGrava - costoFleteReal
 
-  // Tubería — catálogo por diámetro y espesor
-  const precioTubLisa     = getPrecioTuberia('lisa',     inp.diametroTuberia, inp.espesorLisa)
-  const precioTubRanurada = getPrecioTuberia('ranurada', inp.diametroTuberia, inp.espesorRanurada)
+  // Tubería — catálogo por diámetro y espesor (puede sobreescribirse desde config + extras custom)
+  const precioTubLisa     = getPrecioTuberia('lisa',     inp.diametroTuberia, inp.espesorLisa,     inp.tuberiasOverride, inp.tuberiasExtra)
+  const precioTubRanurada = getPrecioTuberia('ranurada', inp.diametroTuberia, inp.espesorRanurada, inp.tuberiasOverride, inp.tuberiasExtra)
   const costoTuberia = inp.tubosLisos     * precioTubLisa
   const costoFiltros = inp.tubosRanurados * precioTubRanurada
 
@@ -663,12 +749,16 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
       })()
     : 0
 
-  const costoBomba = inp.costoBomba  // informativo — NO se suma al total
   // Comisión: 1% sobre ingresos NETOS (bruto − IVA 12% − ISR 7% = bruto × 0.81)
   const costoComision = ingresosNetos * (inp.comisionVendedorPct / 100)
 
   // Costos adicionales de campo
-  const costoPipasAgua    = inp.costoPipasAgua
+  // Pipas: si costoPipasAgua=0, auto-calcular (pipasInternas × Q500/pipa).
+  // Si el admin lo editó a >0, respeta el override.
+  const pipasInternasCount = pipasInternas(inp.profundidad, inp.rendimientoPorDia ?? 20)
+  const costoPipasAgua    = inp.costoPipasAgua > 0
+    ? inp.costoPipasAgua
+    : pipasInternasCount * 500  // Q500/pipa costo real (Config.pipaCostoUnitario)
   const costoSoldador     = inp.costoSoldador
   const costoTaponTuberia = inp.costoTaponTuberia
   const costoBrocaCompra  = inp.comprarBroca ? inp.costoBroca : 0
@@ -682,7 +772,6 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   // NOTAS IMPORTANTES:
   //   - costoMaquinaria NO se suma — el Excel lo trata como MARGEN (rentabilidad), no gasto.
   //     Se expone como resultado aparte (margenMaquinaria) para visibilidad financiera.
-  //   - costoBomba NO se suma — el Excel no lo cuenta en servicio de perforación.
   // Imprevisto global fijo del proyecto (Excel reunión — rubro nuevo editable)
   const imprevistoGlobalMonto = inp.imprevistoGlobal ?? 20000
 
@@ -728,7 +817,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
     costoBentonita, sacosBentonita, sacosEntregaCliente, sacosReserva, valorReservaBentonita,
     m3Grava, costoGrava, costoFleteGrava, camionesFlete, costoFleteReal, reservaFlete,
     costoTuberia, costoFiltros, costoSelloSanitario,
-    costoAforo, costoLimpieza, costoComision, costoBomba,
+    costoAforo, costoLimpieza, costoComision,
     costoPipasAgua, costoSoldador, costoTaponTuberia, costoBrocaCompra,
     costoExtraccionLodosTotal, costoSeguridadTotal, costoSanitarioTotal,
     costoOperacionPerforacion, costoTotalProyecto,
@@ -741,7 +830,36 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
 // CALCULADORA LIMPIEZA MECÁNICA
 // ════════════════════════════════════════════════════════════
 
+export type ServicioSubtipo = 'basico' | 'aforo' | 'completo' | 'item'
+
 export interface InputsLimpieza {
+  servicioSubtipo?: ServicioSubtipo
+  trabajoEjecutar?: string
+  aliasInterno?: string
+  departamentoServicio?: string
+  impuestosPct?: number
+  comisionVentaPct?: number
+  aumentoKmPct?: number
+  equipoServicio?: string
+  horasAforo?: number
+  tubosExtraccion?: number
+  tubosInstalacion?: number
+  diametroTuberiaServicio?: string
+  costoTuboServicioUnitario?: number
+  precioVentaTuboServicioUnitario?: number
+  margenTuboServicioPct?: number
+  precioMaterialInstalacionServicio?: number
+  costoMaterialInstalacionServicio?: number
+  precioTecnicoChequeoServicio?: number
+  costoTecnicoChequeoServicio?: number
+  dobleTurno?: boolean
+  inspeccionCamara?: boolean
+  precioGasolina?: number
+  moneda?: 'Quetzal' | 'Dolar'
+  tipoCambio?: number
+  agregarCondicionesPerforacion?: boolean
+  precioVentaAforoTotal?: number
+  precioInspeccionCamara?: number
   horasLimpieza: number         // horas de limpieza (default 40)
   horasDia: number              // horas por día (default 10)
   precioVentaHora: number       // Q/hora al cliente (default 375)
@@ -759,9 +877,27 @@ export interface InputsLimpieza {
 }
 
 export interface ResultadosLimpieza {
+  servicioSubtipo: ServicioSubtipo
+  usaLimpieza: boolean
+  usaAforo: boolean
+  kmConAumento: number
+  kmIdaVuelta: number
+  galonesTraslado: number
   diasTotales: number
   costoTraslado: number
   costoDieselTrabajo: number
+  costoDieselAforo: number
+  costoAforo: number
+  costoInspeccionCamara: number
+  cantidadTubosServicio: number
+  costoTuboServicioUnitario: number
+  precioVentaTuboServicioUnitario: number
+  costoTuberiaServicio: number
+  precioVentaTuberiaServicio: number
+  costoMaterialInstalacionServicio: number
+  precioMaterialInstalacionServicio: number
+  costoTecnicoChequeoServicio: number
+  precioTecnicoChequeoServicio: number
   costoQuimicos: number
   costoPersonal: number
   costoViaticos: number
@@ -782,53 +918,90 @@ export interface ResultadosLimpieza {
 }
 
 export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
+  const servicioSubtipo = inp.servicioSubtipo ?? 'basico'
+  const usaLimpieza = (servicioSubtipo === 'basico' || servicioSubtipo === 'completo') && inp.horasLimpieza > 0
+  const usaAforo = (servicioSubtipo === 'aforo' || servicioSubtipo === 'completo') && (inp.horasAforo ?? 0) > 0
+  const aumentoKmPct = inp.aumentoKmPct ?? 0
+  const horasLimpieza = usaLimpieza ? Math.max(0, inp.horasLimpieza) : 0
+  const horasAforo = usaAforo ? Math.max(0, inp.horasAforo ?? 0) : 0
+  const horasCosto = Math.max(1, horasLimpieza + horasAforo)
   // Estructura de días: 1 traslado + diasTrabajo + 1 regreso
-  const diasTotales = 1 + inp.diasTrabajo + 1
+  const diasServicio = Math.max(1, inp.diasTrabajo || 1)
+  const diasTotales = 1 + diasServicio + 1
 
   // ── COMBUSTIBLE ──────────────────────────────────────────────────────────────
   // Traslado (Hoja: 7 km/gal, 240 km → 34.29 gal × Q41 = Q1,405.71)
   const GAL_KM_LIMP = 7
-  const galTraslado = (inp.kilometros * 2) / GAL_KM_LIMP
-  const costoTraslado = galTraslado * inp.precioDiesel
+  const kmConAumento = Math.max(0, inp.kilometros) * (1 + aumentoKmPct / 100)
+  const kmIdaVuelta = kmConAumento * 2
+  const galonesTraslado = kmIdaVuelta / GAL_KM_LIMP
+  const costoTraslado = galonesTraslado * inp.precioDiesel
 
   // Operativo (Hoja: 1.5 gal/hora × 20h × Q41 = Q1,230)
   const GAL_HORA_TRABAJO = 1.5
-  const costoDieselTrabajo = GAL_HORA_TRABAJO * inp.horasLimpieza * inp.precioDiesel
+  const costoDieselTrabajo = GAL_HORA_TRABAJO * horasLimpieza * inp.precioDiesel
+  const costoDieselAforo = 5 * horasAforo * inp.precioDiesel
 
   // ── OTROS COSTOS ─────────────────────────────────────────────────────────────
-  const costoQuimicos  = inp.precioQuimicoCaneca * inp.canecasQuimicos
+  const costoQuimicos  = usaLimpieza ? inp.precioQuimicoCaneca * inp.canecasQuimicos : 0
+  const costoAforo = costoDieselAforo
+  const costoInspeccionCamara = servicioSubtipo === 'completo' && inp.inspeccionCamara ? (inp.precioInspeccionCamara ?? 0) : 0
+  const cantidadTubosServicio = Math.max(0, (inp.tubosExtraccion ?? 0) + (inp.tubosInstalacion ?? 0))
+  const costoTuboServicioUnitario = Math.max(0, inp.costoTuboServicioUnitario ?? 0)
+  const margenTuboServicioPct = inp.margenTuboServicioPct ?? 30
+  const precioVentaTuboAuto = costoTuboServicioUnitario * (1 + margenTuboServicioPct / 100)
+  const precioVentaTuboServicioUnitario = Math.max(
+    0,
+    (inp.precioVentaTuboServicioUnitario ?? 0) > 0 ? (inp.precioVentaTuboServicioUnitario ?? 0) : precioVentaTuboAuto
+  )
+  const costoTuberiaServicio = cantidadTubosServicio * costoTuboServicioUnitario
+  const precioVentaTuberiaServicio = cantidadTubosServicio * precioVentaTuboServicioUnitario
+  const usarLineasServicioBase = servicioSubtipo !== 'item'
+  const precioMaterialInstalacionServicio = usarLineasServicioBase ? Math.max(0, inp.precioMaterialInstalacionServicio ?? 0) : 0
+  const costoMaterialInstalacionServicio = Math.max(0, inp.costoMaterialInstalacionServicio ?? precioMaterialInstalacionServicio)
+  const precioTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.precioTecnicoChequeoServicio ?? 0) : 0
+  const costoTecnicoChequeoServicio = Math.max(0, inp.costoTecnicoChequeoServicio ?? precioTecnicoChequeoServicio)
   const costoPersonal  = inp.personal * inp.salarioMensual * diasTotales / 30
   const costoViaticos  = inp.personal * diasTotales * 3 * inp.viaticosDiarios
   // Hospedaje: noches = díasTotales - 1 (Excel "LIMPIEZA MECANICA COSTO (3)": 2 pers × 5 noches × Q100 = Q1,000)
   const costoHospedaje = inp.personal * Math.max(0, diasTotales - 1) * inp.hospedajeDiario
 
-  const subtotalSinImprevistos = costoTraslado + costoDieselTrabajo + costoQuimicos +
-    costoPersonal + costoViaticos + costoHospedaje
+  const subtotalSinImprevistos = costoTraslado + costoDieselTrabajo + costoDieselAforo + costoInspeccionCamara + costoTuberiaServicio +
+    costoMaterialInstalacionServicio + costoTecnicoChequeoServicio +
+    costoQuimicos + costoPersonal + costoViaticos + costoHospedaje
 
   // ── IMPREVISTOS — fórmula exacta Hoja LIMPIEZA MECÁNICA ─────────────────────
   // El Excel aplica imprevistos sobre el total y divide por horasDia:
   //   imprevistoPorHora = totalGasto × 10% / horasDia
   //   (ej: Q6,635.71 × 0.10 / 10 = Q66.36/hora)
-  const imprevistoPorHora  = subtotalSinImprevistos * inp.imprevistoPctLimpieza / inp.horasDia
-  const imprevisto10pct    = imprevistoPorHora * inp.horasLimpieza  // total imprevistos
+  const imprevistoPorHora  = subtotalSinImprevistos * inp.imprevistoPctLimpieza / Math.max(1, inp.horasDia)
+  const imprevisto10pct    = imprevistoPorHora * horasCosto  // total imprevistos
   const costoTotalProyecto = subtotalSinImprevistos + imprevisto10pct
 
   // ── POR HORA ─────────────────────────────────────────────────────────────────
-  const costoPorHora  = subtotalSinImprevistos / inp.horasLimpieza
+  const costoPorHora  = subtotalSinImprevistos / horasCosto
   const costoNetoHora = costoPorHora + imprevistoPorHora  // = Q398.14 con datos Excel
 
   // ── VENTA ─────────────────────────────────────────────────────────────────────
-  const precioVentaTotal    = inp.precioVentaHora * inp.horasLimpieza
+  const precioVentaLimpieza = inp.precioVentaHora * horasLimpieza
+  const precioVentaAforo = usaAforo ? (inp.precioVentaAforoTotal ?? 23000) : 0
+  const precioVentaCamara = servicioSubtipo === 'completo' && inp.inspeccionCamara ? (inp.precioInspeccionCamara ?? 0) : 0
+  const precioVentaTotal    = precioVentaLimpieza + precioVentaAforo + precioVentaCamara + precioVentaTuberiaServicio +
+    precioMaterialInstalacionServicio + precioTecnicoChequeoServicio
   const ivaSobreVenta       = precioVentaTotal * IVA
   const isrSobreVenta       = precioVentaTotal * 0.05  // ISR limpieza = 5%
   const precioNetoVendedor  = precioVentaTotal - ivaSobreVenta - isrSobreVenta
 
-  const utilidadPorHora = (precioNetoVendedor - costoTotalProyecto) / inp.horasLimpieza
+  const utilidadPorHora = (precioNetoVendedor - costoTotalProyecto) / horasCosto
   const gananciaNeta    = precioNetoVendedor - costoTotalProyecto
   const margenPct       = precioVentaTotal > 0 ? (gananciaNeta / precioVentaTotal) * 100 : 0
 
   return {
-    diasTotales, costoTraslado, costoDieselTrabajo, costoQuimicos,
+    servicioSubtipo, usaLimpieza, usaAforo, kmConAumento, kmIdaVuelta, galonesTraslado,
+    diasTotales, costoTraslado, costoDieselTrabajo, costoDieselAforo, costoAforo, costoInspeccionCamara,
+    cantidadTubosServicio, costoTuboServicioUnitario, precioVentaTuboServicioUnitario, costoTuberiaServicio, precioVentaTuberiaServicio,
+    costoMaterialInstalacionServicio, precioMaterialInstalacionServicio, costoTecnicoChequeoServicio, precioTecnicoChequeoServicio,
+    costoQuimicos,
     costoPersonal, costoViaticos, costoHospedaje,
     subtotalSinImprevistos, imprevisto10pct, imprevistoPorHora, costoNetoHora,
     costoTotalProyecto, costoPorHora, precioVentaTotal, ivaSobreVenta, isrSobreVenta,
@@ -839,14 +1012,19 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
 // ── HORAS ADVERSAS (cotización por separado) ────────────────────────────────
 export interface InputsHorasAdversas {
   piesEnTurno: number
-  horasTurno: number  // default 8
+  horasTurno: number          // default 10 (fórmula nueva del jefe)
+  piesMinimoTurno?: number    // default 20
+  valorHoraAdversa?: number   // default 500
 }
 
 export function calcularHorasAdversasCompleto(inp: InputsHorasAdversas) {
-  const horasProductivas = inp.piesEnTurno / RENDIMIENTO_MINIMO
+  const piesMinimo = inp.piesMinimoTurno ?? PIES_MINIMO_TURNO_DEFAULT
+  const valor = inp.valorHoraAdversa ?? VALOR_HORA_ADVERSA
+  const constante = inp.horasTurno > 0 ? piesMinimo / inp.horasTurno : 0
+  const horasProductivas = constante > 0 ? inp.piesEnTurno / constante : 0
   const horasAdversas = Math.max(0, inp.horasTurno - horasProductivas)
-  const cobro = horasAdversas * VALOR_HORA_ADVERSA
-  return { horasProductivas, horasAdversas, cobro }
+  const cobro = horasAdversas * valor
+  return { horasProductivas, horasAdversas, cobro, constante }
 }
 
 // ── DEFAULTS basados en los Excel reales ────────────────────────────────────
@@ -868,6 +1046,7 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   // Servicios
   incluirRegistroElectrico: true,
   incluirSelloSanitario: true,
+  piesSelloSanitario: 20,  // pies estándar del sello (rango 10-40 según terreno)
   incluirExtraccionLodos: false,
   incluirSeguridad: false,
   incluirSanitario: false,
@@ -912,7 +1091,9 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   imprevistoPctAforo: 0.10,   // 10% imprevistos sobre subtotal aforo
 
   // Costos adicionales de campo
-  costoPipasAgua: 10000,
+  // costoPipasAgua: 0 = auto-calcular (pipasInternas × pipaCosto). >0 = override manual del admin.
+  // Fórmula auto: ceil(profundidad / rendimientoPorDia) × 500 Q/pipa
+  costoPipasAgua: 0,
   costoSoldador: 5600,
   costoTaponTuberia: 800,
   comprarBroca: false,
@@ -923,10 +1104,9 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   costoSeguridad: 200,         // cargo de seguridad
   costoSanitario: 800,         // baños portátiles
 
-  // Comisión / Limpieza / Bomba / Imprevistos / Markup
+  // Comisión / Limpieza / Imprevistos / Markup
   comisionVendedorPct: 1,
   horasLimpiezaMecanica: 20,  // horas de limpieza interna (Excel ejemplo: 20h)
-  costoBomba: 27500,          // informativo — NO suma al costoTotalProyecto
   imprevistoGlobal: 20000,    // Excel reunión: Q 20,000 rubro fijo (editable)
   markupPrecioPorPiePct: 0.55, // Excel "PRECIO DE PIE PERFORADO reunion": +55% sobre precio neto/pie
 
@@ -935,19 +1115,46 @@ export const defaultInputsPerforacion: InputsPerforacion = {
 }
 
 export const defaultInputsLimpieza: InputsLimpieza = {
-  horasLimpieza: 40,           // horas total de trabajo
+  servicioSubtipo: 'basico',
+  trabajoEjecutar: 'Limpieza mecanica',
+  aliasInterno: '',
+  departamentoServicio: '1_NINGUNO',
+  impuestosPct: 17,
+  comisionVentaPct: 0,
+  aumentoKmPct: 5,
+  equipoServicio: '10T1',
+  horasAforo: 0,
+  tubosExtraccion: 0,
+  tubosInstalacion: 0,
+  diametroTuberiaServicio: 'Ninguna',
+  costoTuboServicioUnitario: 0,
+  precioVentaTuboServicioUnitario: 0,
+  margenTuboServicioPct: 30,
+  precioMaterialInstalacionServicio: 1500,
+  costoMaterialInstalacionServicio: 1500,
+  precioTecnicoChequeoServicio: 2500,
+  costoTecnicoChequeoServicio: 2500,
+  dobleTurno: false,
+  inspeccionCamara: false,
+  precioGasolina: 33,
+  moneda: 'Quetzal',
+  tipoCambio: 1,
+  agregarCondicionesPerforacion: false,
+  precioVentaAforoTotal: 23000,
+  precioInspeccionCamara: 0,
+  horasLimpieza: 0,            // horas total de trabajo
   horasDia: 10,                // horas por día → diasTrabajo = 40/10 = 4
   precioVentaHora: 375,        // Excel LIMPIEZA MECANICA COSTO (3): Q375/h
-  kilometros: 100,             // Excel (3): 100 km al sitio
-  precioDiesel: 41,
+  kilometros: 0,               // km al sitio; traslado usa ida/vuelta y 7 km/gal
+  precioDiesel: 32,
   personal: 2,
-  diasTrabajo: 4,              // diasTotales = 1+4+1 = 6 para proyecto de 40h
+  diasTrabajo: 1,              // diasTotales = 1 traslado + servicio + 1 regreso
   viaticosDiarios: 25,
   hospedajeDiario: 100,
   salarioMensual: 4500,
   precioQuimicoCaneca: 700,
   canecasQuimicos: 2,
-  imprevistoPctLimpieza: 0.10, // 10% imprevistos (Hoja verificada)
+  imprevistoPctLimpieza: 0.20, // Excel aplica 20% aunque la etiqueta antigua diga 10%
   markupQuimicos: 1.5,         // 50% markup sobre costo — editable en Configuración
 }
 

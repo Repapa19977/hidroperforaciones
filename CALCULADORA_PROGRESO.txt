@@ -4,7 +4,7 @@ Objetivo: Sistema que calcule TODO automáticamente, sugiera
 precios, muestre márgenes, y genere cotizaciones profesionales
 al 100% basadas en los Excel reales de Hidroperforaciones.
 ================================================================
-Última actualización: 2026-04-17
+Última actualización: 2026-04-21
 ================================================================
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -651,24 +651,112 @@ Archivos de deploy (carpeta /deploy):
   · update.sh          — deploys futuros (git pull + build + reload)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-USUARIOS Y ACCESOS  ✅
+USUARIOS Y ACCESOS  ✅ (estado 2026-04-21)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Super admins (tabla Usuario + env legacy):
-  · rene       (env var)         — password hidro2026
-  · mario      (Mario Ramírez)   — password hidro2026
-  · rodrigo    (Rodrigo Porres)  — password hidro2026
-  · superadmin (cuenta genérica) — password separada
-Admins:
-  · admin1 a admin5 (Administrador 1-5)
+Super admins ACTIVOS (2):
+  · rodrigo    (Rodrigo Porres)        — superadmin, dueño
+  · superadmin (Super Administrador)   — cuenta genérica
+
+Admin ACTIVO (1):
+  · Mario Ramírez — movido de superadmin → admin (2026-04-21)
+    · (admin1 a admin5 desactivados por ser cuentas demo)
+
+Cliente Final (1):
+  · José Porres (joseporres100@gmail.com) — acceso a portal cliente
+
 Hash algoritmo: SHA-256 hex de la password (lib/auth simple)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SESIÓN 2026-04-21 — BARRIDO MÓDULO POR MÓDULO + FIXES CRÍTICOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DASHBOARD — ajustes por rol:
+  [✓] KPI "Monto Total" oculto para admin (solo superadmin lo ve)
+  [✓] Operaciones en campo filtradas por vendedor para admin
+       /api/dashboard/operaciones acepta ?vendedor=
+  [✓] Chart "Monto por Estado" + "Por Tipo de Servicio" removidos
+       (eran redundantes con los KPIs)
+  [✓] Label dinámico: "De tus N proyectos" (admin) vs
+                       "Agregado de los N proyectos" (superadmin)
+
+CONTACTOS — anti-duplicados:
+  [✓] Validación de duplicados nombre+empresa (case-insensitive,
+      sin tildes) al crear y editar → HTTP 409 con mensaje claro
+       Endpoint POST/PATCH en /api/contactos
+  [✓] Semáforo live rojo/amarillo/verde al tipear nombre/empresa
+       Endpoint /api/contactos/check con debounce 300ms
+       Verde: disponible · Amarillo: similar · Rojo: ya existe
+  [✓] Fecha de creación visible en cada card ("Creado 15 abr 2026")
+  [✓] Filtro por vendedor: admin solo ve los suyos · superadmin todos
+       Check de duplicados es global (contra toda la BD)
+  [✓] Fix bug tildes: "jose porres" ahora matchea "José Porres"
+       (Postgres ILIKE no ignora diacríticos → filtrado en memoria)
+
+COTIZACIÓN NUEVA — selector contactos:
+  [✓] ContactoSelector filtra por rol (admin solo sus contactos)
+  [✓] Fix decodificación cookies URL-encoded en 8 archivos
+       (bug: user_vendedor=Mario%20Ram%C3%ADrez vs Mario Ramírez)
+  [✓] Limpieza DB: 1 contacto con vendedor URL-encoded arreglado
+
+COMPARATIVA DE COSTOS — NUEVO MÓDULO  ⭐ (solo superadmin):
+  [✓] Botón "💰 Comparativa" en /cotizaciones/nueva (arriba)
+  [✓] Modal con tabla de TODOS los rubros:
+       Rubro | Cant | Costo/u ✏️ | Total Costo | Venta/u ✏️ |
+       Total Venta | Margen Q | Margen %
+  [✓] Semáforo de margen: verde ≥30% · amarillo 10-30% · rojo <10%
+  [✓] Todos los precios editables (costo Y venta)
+  [✓] Rubro 3 (Perforación) actúa como AMORTIGUADOR residual:
+       si cambio venta de otro rubro → rubro 3 se ajusta solo
+       para mantener total pactado (profundidad × precio/pie)
+  [✓] Indicador "residual auto" vs "manual" con botón reset
+  [✓] Banner con delta: "Rubro 3 ajustado +Q 2,300 (+1.8%)"
+  [✓] Botón "Guardar en esta cotización":
+       persiste en BD inmediatamente (solo esa cotización)
+       Se serializa a datos.preciosVentaOverride + datos.comparativaCostosOv
+  [✓] Al reabrir la cotización, overrides se restauran al state
+  [✓] Build lineas usa override universal: aplica a TODOS los rubros
+       (antes solo 4: bentonita, grava, pipas, transporte-grava)
+
+INTRO CINEMATOGRÁFICA:
+  [✓] "Hidroperforaciones" va junto (gap: 0 + mismo delay animación)
+
+INPUTS / UX:
+  [✓] Spinners ▲▼ nativos ocultos globalmente (CSS en globals.css)
+  [✓] Fix bug "agregar 0": si input tiene valor → cursor al final
+       (antes: siempre select-all → impedía agregar dígitos)
+  [✓] Fix Safari Mac interrumpiendo typing: timers cancelables
+       al primer input/keydown/click del usuario
+  [✓] Fix NumCell perdiendo foco en comparativa: movido fuera
+       del componente padre (cada render creaba nueva función → remount)
+  [✓] Clamps destructivos on-change movidos a on-blur:
+       - Pies sello sanitario (10-40)
+       - % entrega bentonita (0-100)
+  [✓] Quitados onFocus={e.target.select()} locales que sobrescribían
+       el handler global (4 ocurrencias)
+
+TESTS E2E VERIFICADOS (2026-04-21):
+  ✓ preciosVentaOverride se guarda en BD (UPDATE datos jsonb)
+  ✓ Se lee al reabrir (JSON.parse en useEffect)
+  ✓ Se aplica a TODOS los rubros en buildLineasPerf
+  ✓ Rubro 3 absorbe la diferencia (subtotal + impuestos = total pactado)
+  ✓ Total al cliente es invariante (Q979,000 en P0540)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PENDIENTES / PRÓXIMAS ITERACIONES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  [ ] Cambiar passwords individualizadas a los 3 superadmins
-      (hoy los 3 nominales usan hidro2026)
+  [ ] Cambiar passwords individualizadas a los superadmins
+      (usar panel Hostinger / script rotate-passwords)
+  [ ] Reasignar contactos "legacy" (René, Carlos, Gilda) que
+      aparecen como vendedor pero no son usuarios del sistema
+  [ ] 29 combinaciones de tuberías sin precio (esperando a René)
   [ ] Módulo Venta de Equipo (especificación pendiente)
   [ ] Edición de cotización → generar nuevo correlativo P o S
       (conservar histórico, no sobrescribir)
   [ ] Backup automático de Neon DB (hoy es automático en Neon)
   [ ] Monitoreo de uptime del VPS (ej. UptimeRobot gratis)
+  [ ] Continuar barrido por módulos: Oportunidades/CRM, Proyectos,
+      Control Gastos, Inventario, Reportes, Guía, Papelera
+  [ ] Validar bentonita modelo "cliente paga 100% del valor":
+      Rodrigo preguntó si la lógica actual (173 sacos × Q535.71)
+      equivale al modelo "247 sacos × precio venta" (pendiente de
+      decisión A/B/C — ver historial de conversación 2026-04-21)

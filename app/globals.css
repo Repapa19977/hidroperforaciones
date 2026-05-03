@@ -126,13 +126,53 @@
   }
   html {
     @apply font-sans;
+    /* Compensa el sticky header al hacer scroll-into-view en focus (iPhone Chrome bug típico).
+       Sin esto, los inputs quedan tapados por el header sticky cuando el browser auto-scrollea al focus. */
+    scroll-padding-top: 80px;
+  }
+  /* Evita zoom automático en iOS al hacer focus en inputs (iOS sólo zoomea si <16px) */
+  @media (max-width: 767px) {
+    input[type="text"], input[type="email"], input[type="password"],
+    input[type="number"], input[type="search"], input[type="tel"],
+    input[type="url"], input[type="date"], textarea, select {
+      font-size: 16px;
+    }
+  }
+
+  /* Ocultar spinners nativos (▲▼) de inputs numéricos en todos los navegadores.
+     Chrome/Safari/Edge usan ::-webkit-*-spin-button; Firefox usa -moz-appearance: textfield. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  /* Fix iPhone Chrome: elementos position:fixed se rompen cuando el address bar
+     aparece/desaparece al scrollear. Forzamos GPU layer y contención para que
+     el navegador re-pinte el elemento correctamente en cada cambio de viewport. */
+  .mobile-bottom-nav,
+  .mobile-top-header {
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    will-change: transform;
+    contain: layout paint;
   }
 }
 
 /* ── Page transition ───────────────────────────────────────────────── */
+/* Animación de entrada de página — SOLO opacity.
+   NO usar transform porque crea un "containing block" nuevo que rompe
+   position:fixed en modales hijos (el fixed se vuelve relativo al div con
+   transform en vez del viewport). Fix universal para todos los modales. */
 @keyframes pageEnter {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0);   }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .page-fade-in {
   animation: pageEnter 0.22s ease-out both;
@@ -245,10 +285,10 @@
   100% { opacity: 1; transform: scale(1) rotate(0); filter: blur(0); }
 }
 
-/* Título */
+/* Título — una sola palabra "Hidroperforaciones" sin espacio entre las partes */
 .hc-intro-title {
   display: flex;
-  gap: 0.45rem;
+  gap: 0;
   font-family: var(--font-sans);
   font-size: clamp(1.8rem, 5vw, 2.6rem);
   font-weight: 700;
@@ -258,9 +298,8 @@
 .hc-intro-title-word {
   opacity: 0;
   animation: hcTitleUp 0.9s cubic-bezier(0.16,1,0.3,1) forwards;
+  animation-delay: 0.55s;
 }
-.hc-intro-title-word:nth-child(1) { animation-delay: 0.55s; }
-.hc-intro-title-word:nth-child(2) { animation-delay: 0.8s; }
 .hc-intro-title-accent {
   background: linear-gradient(90deg, #60a5fa, #93c5fd);
   -webkit-background-clip: text;

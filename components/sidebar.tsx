@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FileText, Users, Settings, ClipboardList,
   Menu, ShieldCheck, Shield, LogOut, Sun, Moon, X, BarChart2,
-  TrendingUp, Package, BookOpen, MoreHorizontal, Trash2
+  TrendingUp, Package, BookOpen, MoreHorizontal, Trash2,
+  ArrowDownRight, ArrowUpRight, Archive,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
@@ -28,15 +29,18 @@ function getVendedorFromCookie(): string {
 }
 
 const navItems = [
-  { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'    },
-  { href: '/contactos',    icon: Users,            label: 'Contactos'    },
-  { href: '/crm',          icon: TrendingUp,       label: 'Oportunidades'},
-  { href: '/cotizaciones', icon: FileText,         label: 'Cotizaciones' },
-  { href: '/proyectos',    icon: ClipboardList,    label: 'Bitácora'     },
-  { href: '/gastos',       icon: Package,          label: 'Control Gastos' },  // solo superadmin
-  { href: '/reportes',     icon: BarChart2,        label: 'Reportes'     },
-  { href: '/presentacion', icon: BookOpen,         label: 'Guía'         },
-  { href: '/papelera',     icon: Trash2,           label: 'Papelera'     },  // solo superadmin
+  { href: '/dashboard',         icon: LayoutDashboard, label: 'Dashboard'    },
+  { href: '/contactos',         icon: Users,            label: 'Contactos'    },
+  { href: '/crm',               icon: TrendingUp,       label: 'Oportunidades'},
+  { href: '/cotizaciones',      icon: FileText,         label: 'Cotizaciones' },
+  { href: '/proyectos',         icon: ClipboardList,    label: 'Bitácora'     },
+  { href: '/gastos',            icon: Package,          label: 'Control Gastos' },    // solo superadmin
+  { href: '/cuentas-por-cobrar',icon: ArrowDownRight,   label: 'Por Cobrar' },       // solo superadmin
+  { href: '/cuentas-por-pagar', icon: ArrowUpRight,     label: 'Por Pagar' },         // solo superadmin
+  { href: '/reportes',          icon: BarChart2,        label: 'Reportes'     },
+  { href: '/presentacion',      icon: BookOpen,         label: 'Guía'         },
+  { href: '/papelera',          icon: Trash2,           label: 'Papelera'     },      // solo superadmin
+  { href: '/legacy/',           icon: Archive,          label: 'Cotizador Viejo', external: true },
 ]
 
 export function Sidebar() {
@@ -66,6 +70,18 @@ export function Sidebar() {
     return () => clearTimeout(timer)
   }, [pathname])
 
+  useEffect(() => {
+    if (!mobileOpen) return
+    const prevOverflow = document.body.style.overflow
+    const prevOverscroll = document.body.style.overscrollBehavior
+    document.body.style.overflow = 'hidden'
+    document.body.style.overscrollBehavior = 'contain'
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.body.style.overscrollBehavior = prevOverscroll
+    }
+  }, [mobileOpen])
+
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/login')
@@ -76,6 +92,8 @@ export function Sidebar() {
   const visibleNavItems = navItems.filter(item => {
     if (item.href === '/proyectos') return isSuperAdmin
     if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
+    if (item.href === '/cuentas-por-pagar') return isSuperAdmin  // contabilidad solo superadmin
+    if (item.href === '/cuentas-por-cobrar') return isSuperAdmin
     if (item.href === '/papelera') return isSuperAdmin // papelera solo superadmin
     return true
   })
@@ -87,11 +105,11 @@ export function Sidebar() {
     <>
       {/* ── DESKTOP SIDEBAR (md+) ───────────────────────────────── */}
       <aside className={cn(
-        'hidden md:flex flex-col h-screen bg-[#0d1526] border-r border-white/5 transition-all duration-300 shrink-0',
+        'hidden md:flex flex-col h-screen overflow-hidden bg-[#0d1526] border-r border-white/5 transition-all duration-300 shrink-0',
         collapsed ? 'w-16' : 'w-60'
       )}>
         {/* Logo */}
-        <div className="flex items-center justify-between px-4 py-5 border-b border-white/5">
+        <div className="shrink-0 flex items-center justify-between px-4 py-5 border-b border-white/5">
           {!collapsed && (
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0">
@@ -116,24 +134,37 @@ export function Sidebar() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-2 py-4 space-y-1">
-          {visibleNavItems.map(({ href, icon: Icon, label }) => {
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2 py-4 space-y-1">
+          {visibleNavItems.map(({ href, icon: Icon, label, external }) => {
             const active = pathname === href || pathname.startsWith(href)
-            return (
-              <Link key={href} href={href} className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
-                active ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
-                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-              )}>
+            const className = cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
+              active ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            )
+            const content = (
+              <>
                 <Icon className={cn('w-4 h-4 shrink-0', active ? 'text-blue-400' : '')} />
                 {!collapsed && <span>{label}</span>}
+              </>
+            )
+            if (external) {
+              return (
+                <a key={href} href={href} className={className}>
+                  {content}
+                </a>
+              )
+            }
+            return (
+              <Link key={href} href={href} className={className}>
+                {content}
               </Link>
             )
           })}
         </nav>
 
         {/* Bottom */}
-        <div className="px-2 pb-4 space-y-1 border-t border-white/5 pt-4">
+        <div className="shrink-0 px-2 pb-4 space-y-1 border-t border-white/5 pt-4">
           <Link href="/configuracion" className={cn(
             'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
             pathname === '/configuracion'
@@ -188,7 +219,16 @@ export function Sidebar() {
       </aside>
 
       {/* ── MOBILE HEADER (< md) ────────────────────────────────── */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-2.5 bg-[#0d1526]/85 backdrop-blur-xl border-b border-white/5" style={{ paddingTop: 'calc(0.625rem + env(safe-area-inset-top))' }}>
+      <header
+        className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-2.5 bg-[#0d1526]/85 backdrop-blur-xl border-b border-white/5 mobile-top-header"
+        style={{
+          paddingTop: 'calc(0.625rem + env(safe-area-inset-top))',
+          transform: 'translateZ(0)',
+          WebkitTransform: 'translateZ(0)',
+          WebkitBackfaceVisibility: 'hidden',
+          willChange: 'transform',
+        }}
+      >
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-sm shadow-blue-500/20">
             <Image src="/logo.png" alt="HP" width={28} height={28} className="object-contain" />
@@ -202,13 +242,19 @@ export function Sidebar() {
 
       {/* ── MOBILE DRAWER ───────────────────────────────────────── */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
+        <div className="md:hidden fixed inset-0 z-50 flex overflow-hidden">
           {/* Overlay */}
           <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
           {/* Drawer */}
-          <div className="relative w-72 h-full bg-[#0d1526] border-r border-white/5 flex flex-col">
+          <div
+            className="relative flex h-screen max-h-screen h-[100svh] max-h-[100svh] w-[min(20rem,calc(100vw-1rem))] max-w-full flex-col overflow-hidden bg-[#0d1526] border-r border-white/5 shadow-2xl"
+            style={{ height: '100dvh', maxHeight: '100dvh' }}
+          >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-5 border-b border-white/5">
+            <div
+              className="shrink-0 flex items-center justify-between px-4 py-4 border-b border-white/5"
+              style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
+            >
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0">
                   <Image src="/logo.png" alt="HP" width={32} height={32} className="object-contain" />
@@ -218,28 +264,41 @@ export function Sidebar() {
                   <p className="text-[10px] text-slate-500 mt-0.5">Hidroperforaciones</p>
                 </div>
               </div>
-              <button onClick={() => setMobileOpen(false)} className="text-slate-500 hover:text-slate-300">
+              <button onClick={() => setMobileOpen(false)} className="p-2 -mr-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5" aria-label="Cerrar menu">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Nav */}
-            <nav className="flex-1 px-3 py-4 space-y-1">
-              {visibleNavItems.map(({ href, icon: Icon, label }) => {
+            <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 space-y-1">
+              {visibleNavItems.map(({ href, icon: Icon, label, external }) => {
                 const active = pathname === href || pathname.startsWith(href)
-                return (
-                  <Link key={href} href={href} className={cn(
-                    'flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all',
-                    active ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
-                           : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                  )}>
+                const className = cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                  active ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                         : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                )
+                const content = (
+                  <>
                     <Icon className="w-5 h-5 shrink-0" />
                     <span>{label}</span>
+                  </>
+                )
+                if (external) {
+                  return (
+                    <a key={href} href={href} className={className}>
+                      {content}
+                    </a>
+                  )
+                }
+                return (
+                  <Link key={href} href={href} className={className}>
+                    {content}
                   </Link>
                 )
               })}
               <Link href="/configuracion" className={cn(
-                'flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all',
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
                 pathname === '/configuracion'
                   ? 'bg-violet-500/15 text-violet-400 border border-violet-500/20'
                   : 'text-slate-500 hover:text-slate-400 hover:bg-white/5'
@@ -253,7 +312,10 @@ export function Sidebar() {
             </nav>
 
             {/* Bottom */}
-            <div className="px-3 pb-6 space-y-2 border-t border-white/5 pt-4">
+            <div
+              className="shrink-0 px-3 space-y-2 border-t border-white/5 pt-3 bg-[#0d1526]"
+              style={{ paddingBottom: 'calc(0.875rem + env(safe-area-inset-bottom))' }}
+            >
               {/* User info */}
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/3">
                 <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0',
@@ -271,12 +333,12 @@ export function Sidebar() {
                 </div>
               </div>
 
-              <button onClick={toggleTheme} className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all w-full text-slate-400 hover:text-slate-200 hover:bg-white/5">
+              <button onClick={toggleTheme} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full text-slate-400 hover:text-slate-200 hover:bg-white/5">
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Oscuro'}</span>
               </button>
 
-              <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all w-full text-slate-500 hover:text-red-400 hover:bg-red-500/5">
+              <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full text-slate-500 hover:text-red-400 hover:bg-red-500/5">
                 <LogOut className="w-5 h-5" />
                 <span>Cerrar Sesión</span>
               </button>
@@ -322,7 +384,18 @@ function MobileBottomNav({
       ]
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch bg-[#0d1526]/95 backdrop-blur-md border-t border-white/5 pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch bg-[#0d1526]/95 backdrop-blur-md border-t border-white/5 mobile-bottom-nav"
+      style={{
+        // Fix iOS Chrome: el address bar dinámico rompe `fixed bottom-0`. Forzar GPU layer y
+        // usar la variable CSS que controla el safe-area inset del home indicator.
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        transform: 'translateZ(0)',
+        WebkitTransform: 'translateZ(0)',
+        WebkitBackfaceVisibility: 'hidden',
+        willChange: 'transform',
+      }}
+    >
       {items.map(({ href, icon: Icon, label }) => {
         const active = pathname === href || pathname.startsWith(href)
         return (
@@ -346,4 +419,3 @@ function MobileBottomNav({
     </nav>
   )
 }
-

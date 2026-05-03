@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
   AlertTriangle, ArrowLeft, Plus, RefreshCw, Trash2,
   FileDown, Archive, X, Save, Sun, Moon, AlertCircle,
-  TrendingUp, Droplets, Clock, Layers, Calendar, ChevronDown, ChevronUp,
+  TrendingUp, Clock, Layers, Calendar, ChevronDown,
   Mail, CheckCircle,
 } from 'lucide-react'
 import {
@@ -18,10 +18,11 @@ import {
   generarPDFEntrada, generarPDFExpediente, descargarPDF,
   type ProyectoBitacora,
 } from '@/lib/pdf-bitacora'
+import { formatFechaArchivoPdf, formatFechaDDMMYYYY } from '@/lib/date-format'
 import { format, parseISO, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { PagosPanel } from '@/components/pagos-panel'
 import { AlertasConsumo } from '@/components/alertas-consumo'
+import { LiquidacionProyectoPanel } from '@/components/liquidacion-proyecto-panel'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BitacoraEntry {
@@ -77,6 +78,15 @@ function emptyForm(tipo: string, lastEntry?: BitacoraEntry): FormData {
   }
 }
 
+function parseDiasPactados(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value)
+  if (typeof value !== 'string') return null
+  const match = value.match(/\d+(?:[.,]\d+)?/)
+  if (!match) return null
+  const parsed = Number(match[0].replace(',', '.'))
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 function StatChip({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
@@ -88,34 +98,10 @@ function StatChip({ label, value, sub, accent }: { label: string; value: string;
   )
 }
 
-function NF({ label, hint, value, onChange, disabled }: { label: string; hint?: string; value: number; onChange: (v: number) => void; disabled?: boolean }) {
-  return (
-    <div>
-      <label className="text-[10px] text-slate-400 font-medium block leading-none">{label}</label>
-      {hint && <p className="text-[9px] text-slate-600 mb-1 mt-0.5 leading-none">{hint}</p>}
-      {!hint && <div className="mb-1" />}
-      <input type="number" min={0} step="any"
-        value={value || ''}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        disabled={disabled}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 disabled:opacity-40 transition-colors"
-      />
-    </div>
-  )
-}
-
-function getCookie(name: string) {
-  if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ProyectoDetallePage() {
   const params   = useParams()
   const id       = Array.isArray(params?.id) ? params.id[0] : (params?.id ?? '')
-
-  const [role, setRole]             = useState('admin')
-  const [myVendedor, setMyVendedor] = useState('')
 
   const [proyecto, setProyecto]     = useState<Proyecto | null>(null)
   const [loading, setLoading]       = useState(true)
@@ -129,25 +115,23 @@ export default function ProyectoDetallePage() {
   const [expandedId, setExpandedId]   = useState<string | null>(null)
   const [profObjetivo, setProfObjetivo]       = useState<number | null>(null)
   const [duracionEstimada, setDuracionEstimada] = useState<number | null>(null)
-  const [modalHorasTurno, setModalHorasTurno]   = useState(8)
-
   const today = new Date().toISOString().slice(0, 10)
 
-  function load() {
+  const load = useCallback(() => {
     setLoading(true)
     fetch(`/api/proyectos/${id}`)
       .then(r => r.json())
-      .then(d => { setProyecto(d); setLoading(false) })
+      .then(d => {
+        setProyecto(d)
+        const dias = parseDiasPactados(d?.diasHabilesTotal)
+        if (dias) setDuracionEstimada(dias)
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
-  }
+  }, [id])
 
   // Lee cookies solo en el cliente después de hidratación
-  useEffect(() => {
-    setRole(getCookie('user_role') || 'admin')
-    setMyVendedor(getCookie('user_vendedor') || '')
-  }, [])
-
-  useEffect(() => { if (id) load() }, [id])
+  useEffect(() => { if (id) load() }, [id, load])
 
   // Fetch profundidad objetivo desde la cotización asociada
   useEffect(() => {
@@ -159,8 +143,8 @@ export default function ProyectoDetallePage() {
         const datos = typeof cot.datos === 'string' ? JSON.parse(cot.datos) : (cot.datos ?? {})
         const prof = datos?.ip?.profundidad ?? null
         if (prof) setProfObjetivo(Number(prof))
-        const dur = datos?.duracion ?? null
-        if (dur) setDuracionEstimada(Number(dur))
+        const dur = parseDiasPactados(datos?.duracion)
+        if (dur) setDuracionEstimada(dur)
       })
       .catch(() => {})
   }, [proyecto?.correlativo])
@@ -169,14 +153,12 @@ export default function ProyectoDetallePage() {
     const last = proyecto?.entradas.at(-1)
     setEditEntry(null)
     setForm(emptyForm(proyecto?.tipo ?? 'perforacion', last))
-    setModalHorasTurno(8)
     setShowModal(true)
   }
 
   function openEdit(e: BitacoraEntry) {
     setEditEntry(e)
     setForm({ ...e })
-    setModalHorasTurno(e.turno === 'noche' ? 12 : 8)
     setShowModal(true)
   }
 
@@ -251,13 +233,13 @@ export default function ProyectoDetallePage() {
     try {
       if (plantilla === 'dia-sin' || plantilla === 'dia-con') {
         if (!entry) {
-          alert('No hay entradas de bitácora todavía. Agregá al menos una.')
+          alert('No hay entradas de bitácora todavía. Agrega al menos una.')
           return
         }
         const b = await generarPDFEntrada(proyecto as ProyectoBitacora, entry, {
           incluirConsumos: plantilla === 'dia-con',
         })
-        descargarPDF(b, `Bitacora_${proyecto.correlativo}_${entry.fecha}.pdf`)
+        descargarPDF(b, `Bitacora_${proyecto.correlativo}_${formatFechaArchivoPdf(entry.fecha)}.pdf`)
       } else {
         const b = await generarPDFExpediente(proyecto as ProyectoBitacora, {
           incluirConsumos: plantilla === 'exp-con',
@@ -292,7 +274,7 @@ export default function ProyectoDetallePage() {
           correlativo: proyecto.correlativo,
           cliente:    proyecto.cliente,
           empresa:    proyecto.empresa,
-          fecha:      e.fecha,
+          fecha:      formatFechaDDMMYYYY(e.fecha),
           vendedor:   proyecto.vendedor,
         }),
       })
@@ -315,7 +297,7 @@ export default function ProyectoDetallePage() {
     const tel = (proyecto.telefonoCliente ?? '').replace(/\D/g, '')
     const msg =
       `📋 *Reporte diario — ${proyecto.correlativo}*\n` +
-      `📅 ${e.fecha} · Turno ${e.turno === 'dia' ? 'DIURNO' : 'NOCTURNO'}` +
+      `📅 ${formatFechaDDMMYYYY(e.fecha)} · Turno ${e.turno === 'dia' ? 'DIURNO' : 'NOCTURNO'}` +
       (e.diaAdverso ? ' · ⚠️ Día adverso' : '') + `\n\n` +
       (proyecto.tipo === 'perforacion'
         ? `🔩 Perforación del día: *${e.perforacionDia.toFixed(1)} pies*\n📊 Acumulado: *${e.perforacionTotal.toFixed(1)} pies*\n` +
@@ -335,15 +317,12 @@ export default function ProyectoDetallePage() {
 
   const totalPerfDia   = sorted.reduce((s, e) => s + e.perforacionDia, 0)
   const totalAmp1      = sorted.reduce((s, e) => s + e.ampliacion1Dia, 0)
-  const totalAmp2      = sorted.reduce((s, e) => s + e.ampliacion2Dia, 0)
-  const totalRehab     = sorted.reduce((s, e) => s + e.rehabilitacionDia, 0)
   const totalBentonita = sorted.reduce((s, e) => s + e.bentonitaSacos, 0)
   const totalPipas     = sorted.reduce((s, e) => s + e.pipas, 0)
   const totalLimpieza  = sorted.reduce((s, e) => s + e.horasLimpieza, 0)
   const totalAforo     = sorted.reduce((s, e) => s + e.horasAforo, 0)
   const diasAdversos   = sorted.filter(e => e.diaAdverso).length
   const diasPerf       = sorted.filter(e => e.perforacionDia > 0).length
-  const diasAmp1       = sorted.filter(e => e.ampliacion1Dia > 0).length
   const turnosDiurnos  = sorted.filter(e => e.turno === 'dia').length
   const turnosNocturnos= sorted.filter(e => e.turno === 'noche').length
   const diasProyecto   = (() => {
@@ -394,6 +373,7 @@ export default function ProyectoDetallePage() {
                 <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-medium border',
                   proyecto.estado === 'activo'     ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
                   proyecto.estado === 'pausado'    ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
+                  proyecto.estado === 'cancelado'  ? 'bg-red-500/15 text-red-400 border-red-500/20' :
                   'bg-slate-500/15 text-slate-400 border-slate-500/20'
                 )}>{proyecto.estado}</span>
                 {!hayHoy && proyecto.estado === 'activo' && (
@@ -412,6 +392,7 @@ export default function ProyectoDetallePage() {
               <option value="activo">Activo</option>
               <option value="pausado">Pausado</option>
               <option value="completado">Completado</option>
+              <option value="cancelado">Cancelado</option>
             </select>
             <button onClick={pdfExpediente} disabled={pdfLoad === 'exp' || sorted.length === 0}
               className="flex items-center gap-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-400 hover:bg-violet-600/30 disabled:opacity-40 px-3 py-2 rounded-lg text-xs font-medium transition-all">
@@ -450,11 +431,10 @@ export default function ProyectoDetallePage() {
         {/* ── ALERTAS DE CONSUMO (Fase F) ─────────────────────────────────── */}
         <AlertasConsumo proyectoId={proyecto.id} />
 
-        {/* ── CONTROL DE PAGOS (Fase E) ───────────────────────────────────── */}
-        <PagosPanel proyectoId={proyecto.id} isSuperAdmin={true} />
+        {/* Control de Pagos movido a /gastos/[id] (refactor 2026-04-22) */}
 
         {/* ── RESUMEN RÁPIDO ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
           <div className="bg-[#0d1526] rounded-xl border border-blue-500/20 p-4">
             <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Pies perforados</p>
             <p className="text-2xl font-bold text-blue-300 leading-none">{perfAcum.toFixed(1)}</p>
@@ -485,7 +465,7 @@ export default function ProyectoDetallePage() {
           <div className="bg-[#0d1526] rounded-xl border border-white/5 p-4">
             <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Días en obra</p>
             <p className="text-2xl font-bold text-white leading-none">{diasProyecto}</p>
-            <p className="text-[10px] text-slate-600 mt-1">{sorted.length} días con entrada</p>
+            <p className="text-[10px] text-slate-600 mt-1">{sorted.length} dias con entrada</p>
           </div>
           {/* Bentonita con plan + % */}
           <div className="bg-[#0d1526] rounded-xl border border-amber-500/20 p-4">
@@ -528,6 +508,29 @@ export default function ProyectoDetallePage() {
               <>
                 <p className="text-2xl font-bold text-white leading-none">{totalPipas}</p>
                 <p className="text-[10px] text-slate-600 mt-1">pipas consumidas</p>
+              </>
+            )}
+          </div>
+          <div className="bg-[#0d1526] rounded-xl border border-violet-500/20 p-4">
+            <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wide">Avance dias proyecto</p>
+            {duracionEstimada ? (() => {
+              const pct = Math.min(100, (diasProyecto / duracionEstimada) * 100)
+              const excedido = diasProyecto > duracionEstimada
+              return <>
+                <p className={cn('text-2xl font-bold leading-none tabular-nums', excedido ? 'text-red-300' : 'text-violet-300')}>
+                  {diasProyecto}<span className="text-sm text-slate-500"> / {duracionEstimada}</span>
+                </p>
+                <div className="mt-2 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className={cn('h-full transition-all', excedido ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-violet-500')} style={{ width: `${pct}%` }} />
+                </div>
+                <p className={cn('text-[10px] mt-1', excedido ? 'text-red-400' : 'text-slate-500')}>
+                  {excedido ? `+${diasProyecto - duracionEstimada} dias sobre plazo` : `${duracionEstimada - diasProyecto} dias disponibles`}
+                </p>
+              </>
+            })() : (
+              <>
+                <p className="text-2xl font-bold text-slate-500 leading-none">-</p>
+                <p className="text-[10px] text-slate-600 mt-1">sin plazo pactado</p>
               </>
             )}
           </div>
@@ -668,7 +671,7 @@ export default function ProyectoDetallePage() {
             <div className="py-16 text-center text-slate-600">
               <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="text-sm mb-1">Sin entradas todavía</p>
-              <p className="text-xs">Presioná "Nueva entrada" para empezar el registro diario</p>
+              <p className="text-xs">Presioná &quot;Nueva entrada&quot; para empezar el registro diario</p>
             </div>
           ) : (
             <>
@@ -875,6 +878,8 @@ export default function ProyectoDetallePage() {
             </>
           )}
         </div>
+
+        <LiquidacionProyectoPanel proyectoId={proyecto.id} onProyectoUpdated={load} />
       </div>
 
       {/* ── MODAL NUEVA / EDITAR ENTRADA ──────────────────────────────────── */}
@@ -1111,7 +1116,7 @@ export default function ProyectoDetallePage() {
               </div>
 
               <p className="text-[10px] text-slate-600">
-                ℹ Las 4 plantillas están disponibles. La del "día" usa la fecha mostrada arriba.
+                ℹ Las 4 plantillas están disponibles. La del &quot;día&quot; usa la fecha mostrada arriba.
               </p>
             </div>
           </div>

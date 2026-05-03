@@ -18,7 +18,7 @@ import {
   startOfYear, format, subMonths
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import * as XLSX from 'xlsx'
+import { exportXlsx } from '@/lib/export-xlsx'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Periodo = 'hoy' | 'semana' | 'mes' | 'trimestre' | 'anio' | 'personalizado'
@@ -46,7 +46,8 @@ interface ReportData {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
 }
 
 const fmtQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
@@ -123,11 +124,16 @@ export default function ReportesPage() {
   }, [])
 
   useEffect(() => {
-    const r = getCookie('user_role') as Rol || 'admin'
-    const v = getCookie('user_vendedor') || ''
-    setRole(r)
-    setMyVendedor(v)
-    fetchReport('mes', '', '', v, r)
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (cancelled) return
+      const r = getCookie('user_role') as Rol || 'admin'
+      const v = getCookie('user_vendedor') || ''
+      setRole(r)
+      setMyVendedor(v)
+      fetchReport('mes', '', '', v, r)
+    })
+    return () => { cancelled = true }
   }, [fetchReport])
 
   function generar() {
@@ -135,14 +141,13 @@ export default function ReportesPage() {
   }
 
   // ── Excel export ─────────────────────────────────────────────────────────────
-  function exportExcel() {
+  async function exportExcel() {
     if (!data) return
-    const wb = XLSX.utils.book_new()
     const { label } = getPeriodRange(periodo, fromDate, toDate)
 
-    const ws1 = XLSX.utils.aoa_to_sheet([
-      ['HidroCRM — Reporte de Cotizaciones'],
-      [`Período: ${label}`],
+    const resumenRows = [
+      ['HidroCRM - Reporte de Cotizaciones'],
+      [`Periodo: ${label}`],
       [`Generado: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`],
       [],
       ['KPI', 'Valor'],
@@ -150,40 +155,38 @@ export default function ReportesPage() {
       ['Monto total (Q)', Math.round(data.resumen.monto)],
       ['Confirmadas', data.resumen.confirmadas],
       ['Monto confirmado (Q)', Math.round(data.resumen.confirmadoMonto)],
-      ['Tasa de conversión (%)', data.resumen.conversionPct.toFixed(1)],
+      ['Tasa de conversion (%)', data.resumen.conversionPct.toFixed(1)],
       ['Canceladas', data.resumen.canceladas],
       ['Enviadas', data.resumen.enviadas],
       [],
       ['Por tipo', 'Cantidad', 'Monto (Q)'],
-      ['Perforación de Pozo', data.resumen.perforacion, Math.round(data.resumen.montoPerforacion)],
-      ['Limpieza Mecánica',   data.resumen.limpieza,    Math.round(data.resumen.montoLimpieza)],
-    ])
-    ws1['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }]
-    XLSX.utils.book_append_sheet(wb, ws1, 'Resumen')
+      ['Perforacion de Pozo', data.resumen.perforacion, Math.round(data.resumen.montoPerforacion)],
+      ['Limpieza Mecanica', data.resumen.limpieza, Math.round(data.resumen.montoLimpieza)],
+    ]
 
-    const ws2 = XLSX.utils.aoa_to_sheet([
-      ['Vendedor','Total','Monto Total (Q)','Confirmadas','Monto Conf. (Q)','Enviadas','Canceladas','% Conversión'],
+    const vendedorRows = [
+      ['Vendedor', 'Total', 'Monto Total (Q)', 'Confirmadas', 'Monto Conf. (Q)', 'Enviadas', 'Canceladas', '% Conversion'],
       ...data.porVendedor.map(v => [
         v.vendedor, v.total, Math.round(v.monto), v.confirmadas,
         Math.round(v.confirmadoMonto), v.enviadas, v.canceladas,
         `${v.conversionPct.toFixed(1)}%`,
-      ])
-    ])
-    ws2['!cols'] = [22,8,18,12,18,10,12,14].map(w => ({ wch: w }))
-    XLSX.utils.book_append_sheet(wb, ws2, 'Por Vendedor')
+      ]),
+    ]
 
-    const ws3 = XLSX.utils.aoa_to_sheet([
-      ['Correlativo','Cliente','Empresa','Tipo','Estado','Monto (Q)','Fecha','Vendedor'],
+    const cotizacionRows = [
+      ['Correlativo', 'Cliente', 'Empresa', 'Tipo', 'Estado', 'Monto (Q)', 'Fecha', 'Vendedor'],
       ...data.cotizaciones.map(c => [
         c.correlativo, c.cliente, c.empresa,
-        c.tipo === 'perforacion' ? 'Perforación' : 'Limpieza',
+        c.tipo === 'perforacion' ? 'Perforacion' : 'Limpieza',
         c.estado, Math.round(c.monto), c.fecha, c.vendedor,
-      ])
-    ])
-    ws3['!cols'] = [16,20,18,14,12,16,12,18].map(w => ({ wch: w }))
-    XLSX.utils.book_append_sheet(wb, ws3, 'Cotizaciones')
+      ]),
+    ]
 
-    XLSX.writeFile(wb, `Reporte_HidroCRM_${format(new Date(),'yyyyMMdd')}.xlsx`)
+    await exportXlsx(`Reporte_HidroCRM_${format(new Date(), 'yyyyMMdd')}.xlsx`, [
+      { name: 'Resumen', rows: resumenRows, widths: [30, 20, 20] },
+      { name: 'Por Vendedor', rows: vendedorRows, widths: [22, 8, 18, 12, 18, 10, 12, 14] },
+      { name: 'Cotizaciones', rows: cotizacionRows, widths: [16, 20, 18, 14, 12, 16, 12, 18] },
+    ])
   }
 
   const { label: periodoLabel } = getPeriodRange(periodo, fromDate, toDate)

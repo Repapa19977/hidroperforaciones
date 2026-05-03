@@ -449,7 +449,7 @@ curl -X POST https://hidrocrm.com/api/mcp \
 - [ ] Catálogo: `lib/mcp/tools.ts` con los 6 tools
 - [ ] Implementar `calcularPrecioEstimado` y `isRevoked` con tu lógica
 - [ ] Sustituir stubs de idempotencia por Redis real (opcional MVP)
-- [ ] Generar los 2 JWTs con `scripts/generate-tokens.ts`
+- [ ] Generar los 2 JWTs con `scripts/admin/generate-tokens.ts`
 - [ ] Probar los 3 curls
 - [ ] Pasar tokens a Rodri
 

@@ -1,5 +1,5 @@
 // Generador de presentación PowerPoint de HidroCRM
-// Uso: node scripts/generar-presentacion.js
+// Uso: node scripts/tools/generar-presentacion.js
 // Output: HidroCRM_Presentacion_Completa.pptx
 
 const PptxGenJS = require('pptxgenjs')
@@ -321,7 +321,7 @@ function addBox(slide, x, y, w, h, title, content, color = BLUE) {
     { text: 'Perforación de pozos · Limpieza mecánica', fontSize: 16 },
     '',
     { text: 'Numeración automática:', bold: true, fontSize: 17, color: NAVY },
-    'P#### para perforación · L#### para limpieza',
+    'P#### para perforación · S#### para servicios/limpieza',
     'Correlativo único desde la base de datos (no duplicado)',
     '',
     { text: 'Estados del ciclo de vida:', bold: true, fontSize: 17, color: NAVY },
@@ -408,7 +408,7 @@ function addBox(slide, x, y, w, h, title, content, color = BLUE) {
     'Cambiás horas o horas/día → días de trabajo se ajustan solos',
     'Hospedaje: noches = días_totales − 1 (sale y vuelve el mismo día)',
     '',
-    { text: 'Correlativo L####', bold: true, fontSize: 17, color: NAVY },
+    { text: 'Correlativo S####', bold: true, fontSize: 17, color: NAVY },
     'PDF simplificado con 7 líneas estándar',
   ])
 }
@@ -451,7 +451,7 @@ function addBox(slide, x, y, w, h, title, content, color = BLUE) {
     { text: 'Creación automática:', bold: true, fontSize: 17, color: GREEN },
     'Al marcar una cotización como "Confirmada" → se crea un Proyecto',
     'Hereda: cliente, empresa, monto, vendedor, tipo, fecha de inicio',
-    'Correlativo del proyecto = mismo que la cotización (P#### o L####)',
+    'Correlativo del proyecto = mismo que la cotización (P#### o S####)',
     '',
     { text: 'Datos del proyecto:', bold: true, fontSize: 17, color: NAVY },
     'Estado: Activo · Pausado · Completado',
@@ -633,7 +633,7 @@ function addBox(slide, x, y, w, h, title, content, color = BLUE) {
   const steps = [
     { title: '1. Contacto', desc: 'Alta del lead en\n/contactos', color: BLUE },
     { title: '2. Oportunidad', desc: 'Pipeline CRM\nEtapa "Nuevo"', color: VIOLET },
-    { title: '3. Cotización', desc: 'P0123 o L0123\nEstado Borrador', color: AMBER },
+    { title: '3. Cotización', desc: 'P0123 o S0123\nEstado Borrador', color: AMBER },
     { title: '4. Enviada', desc: 'Cliente recibe\nPDF + WhatsApp', color: AMBER },
     { title: '5. Confirmada', desc: 'Oportunidad →\nGanado (auto)', color: GREEN },
     { title: '6. Proyecto', desc: 'Auto-creado\nBitácora abierta', color: GREEN },

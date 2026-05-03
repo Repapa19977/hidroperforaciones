@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
 
-// Rutas que NO requieren autenticación
+// Rutas que NO requieren autenticación (la auth se valida en el handler mismo)
 const PUBLIC_PATHS = [
   '/login', '/api/auth/login', '/api/auth/logout',
   '/cliente/login', '/api/auth/cliente-login',  // portal del cliente
+  '/api/mcp', // OpenClaw MCP — valida Bearer JWT HS256 aud="hidrocrm-mcp" internamente
+  '/api/cron', // Cron endpoints — validan X-Cron-Secret internamente
 ]
 
 export async function proxy(request: NextRequest) {
@@ -60,6 +62,17 @@ export async function proxy(request: NextRequest) {
     // /papelera y /api/tokens — solo superadmin
     if (
       (pathname.startsWith('/papelera') || pathname.startsWith('/api/tokens')) &&
+      role !== 'superadmin'
+    ) {
+      return pathname.startsWith('/api/')
+        ? NextResponse.json({ error: 'Solo superadmin' }, { status: 403 })
+        : NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+    // Cuentas por pagar / cobrar — módulos contables solo superadmin
+    if (
+      (pathname.startsWith('/cuentas-por-pagar')  || pathname.startsWith('/api/cuentas-pagar') ||
+       pathname.startsWith('/cuentas-por-cobrar') || pathname.startsWith('/api/cuentas-cobrar')) &&
       role !== 'superadmin'
     ) {
       return pathname.startsWith('/api/')

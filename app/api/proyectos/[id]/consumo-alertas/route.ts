@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { calcularPerforacion, pipasClienteCantidad, camionadasGrava, type InputsPerforacion } from '@/lib/calculator'
+import { requireSuperAdmin } from '@/lib/auth'
 
 interface Alerta {
   producto: 'pies' | 'bentonita' | 'pipas' | 'grava'
@@ -19,7 +20,10 @@ interface Alerta {
   reservaDisponible?: number
 }
 
-export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
 
   const proyecto = await prisma.proyecto.findUnique({
@@ -94,7 +98,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       nivel = 'exceso'
       mensaje = `Excediste el ${producto} contratado por ${excedente.toFixed(1)} ${unidad}. Costo extra Q${costoExtra.toLocaleString('es-GT')} · cobrable al cliente Q${ventaExtra.toLocaleString('es-GT')}.`
       if (reserva !== undefined && reserva > 0) {
-        mensaje += ` Tenés ${reserva.toFixed(0)} ${unidad} en reserva (30%).`
+        mensaje += ` Tienes ${reserva.toFixed(0)} ${unidad} en reserva (30%).`
       }
     } else if (pct >= 90) {
       nivel = 'critico'

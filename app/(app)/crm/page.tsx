@@ -44,7 +44,8 @@ const ETAPA_ORDER = ETAPAS.map(e => e.id)
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
 }
 
 const fmtQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
@@ -235,7 +236,7 @@ export default function CrmPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full bg-[#070d1a]">
+    <div className="flex flex-col md:h-full bg-[#070d1a]">
 
       {/* HEADER */}
       <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-white/5 bg-[#0a1020] shrink-0">
@@ -367,7 +368,7 @@ export default function CrmPage() {
             </div>
 
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Cliente *</label>
                   <input
@@ -388,7 +389,7 @@ export default function CrmPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Tipo de servicio</label>
                   <select
@@ -411,7 +412,7 @@ export default function CrmPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Profundidad (pies)</label>
                   <input
@@ -483,7 +484,7 @@ export default function CrmPage() {
         onCancel={() => { setDeleteTarget(null); setDeleteReason('') }}
         onConfirm={ejecutarEliminar}
         title={`¿Eliminar oportunidad de "${deleteTarget?.cliente ?? ''}"?`}
-        description="La oportunidad pasa a la papelera. Podés restaurarla cuando quieras."
+        description="La oportunidad pasa a la papelera. Puedes restaurarla cuando quieras."
         confirmLabel="Sí, eliminar"
         variant="destructive"
         loading={deleting}

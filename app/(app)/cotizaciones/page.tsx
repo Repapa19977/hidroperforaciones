@@ -2,21 +2,21 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { updateEstadoCotizacion, deleteCotizacion, type CotizacionRecord } from '@/lib/quotation-store'
+import { updateEstadoCotizacion, type CotizacionRecord } from '@/lib/quotation-store'
 import {
   Plus, Search, FileText, Send, CheckCircle, XCircle, FileEdit,
   ArrowUpRight, Trash2, ChevronDown, Loader2, LayoutList, Kanban,
   TrendingUp, Award, Drill, Wrench, ExternalLink, Download,
-  Pencil, Clock, X
+  Pencil, Clock, X, User, Copy
 } from 'lucide-react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn, formatQ } from '@/lib/utils'
+import { KPICard } from '@/components/kpi-card'
 import { type Rol } from '@/lib/config-store'
-import * as XLSX from 'xlsx'
+import { exportJsonXlsx } from '@/lib/export-xlsx'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 
-// ── Formatters ─────────────────────────────────────────────────────────────────
-const formatQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
+// ── Formatters específicos (formatQ estándar viene de lib/utils) ──────────────
 const fmtQk    = (n: number) =>
   n >= 1_000_000 ? `Q${(n/1_000_000).toFixed(1)}M` :
   n >= 1_000     ? `Q${(n/1_000).toFixed(0)}k`     :
@@ -24,7 +24,8 @@ const fmtQk    = (n: number) =>
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
 }
 
 const tipoLabel = (t: string) => t === 'perforacion' ? 'Perforación' : 'Limpieza Mecánica'
@@ -74,6 +75,10 @@ export default function CotizacionesPage() {
   const [deleteReason, setDeleteReason] = useState('')
   const [deleting, setDeleting] = useState(false)
 
+  // Modal de reasignación (solo superadmin)
+  const [reasignarTarget, setReasignarTarget] = useState<CotizacionRecord | null>(null)
+  const [vendedoresDB, setVendedoresDB] = useState<string[]>([])
+
   // Persist view
   useEffect(() => {
     const saved = localStorage.getItem('hidrocrm_view') as View | null
@@ -94,7 +99,29 @@ export default function CotizacionesPage() {
     setRole(r)
     setMyVendedor(v)
     fetchRows(v, r)
+    // Vendedores activos desde BD (para el modal de reasignar — solo superadmin)
+    if (r === 'superadmin') {
+      fetch('/api/vendedores')
+        .then(res => res.ok ? res.json() : [])
+        .then((rows: { nombre: string }[]) => setVendedoresDB(rows.map(x => x.nombre).filter(Boolean)))
+        .catch(() => {})
+    }
   }, [fetchRows])
+
+  async function handleReasignar(correlativo: string, nuevoVendedor: string) {
+    const res = await fetch(`/api/cotizaciones/${encodeURIComponent(correlativo)}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ vendedor: nuevoVendedor, usuario: myVendedor }),
+    })
+    if (res.ok) {
+      setRows(prev => prev.map(r => r.correlativo === correlativo ? { ...r, vendedor: nuevoVendedor } : r))
+      setReasignarTarget(null)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error ?? 'No se pudo reasignar')
+    }
+  }
 
   const isSuperAdmin = role === 'superadmin'
 
@@ -167,7 +194,7 @@ export default function CotizacionesPage() {
     }
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     const exportRows = filtered.map(c => ({
       'Correlativo': c.correlativo,
       'Cliente': c.cliente,
@@ -178,11 +205,12 @@ export default function CotizacionesPage() {
       'Vendedor': c.vendedor,
       'Fecha': c.fecha,
     }))
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(exportRows)
-    ws['!cols'] = [16,20,18,14,12,16,18,12].map(w => ({ wch: w }))
-    XLSX.utils.book_append_sheet(wb, ws, 'Cotizaciones')
-    XLSX.writeFile(wb, `Cotizaciones_${new Date().toISOString().split('T')[0]}.xlsx`)
+    await exportJsonXlsx(
+      `Cotizaciones_${new Date().toISOString().split('T')[0]}.xlsx`,
+      'Cotizaciones',
+      exportRows,
+      [16, 20, 18, 14, 12, 16, 18, 12],
+    )
   }
 
   async function openCotizacion(correlativo: string) {
@@ -197,8 +225,16 @@ export default function CotizacionesPage() {
       return
     }
     try {
-      const datos = typeof row.datos === 'string' ? row.datos : JSON.stringify(row.datos)
-      localStorage.setItem('hidrocrm_quotation_draft', datos)
+      const datos = typeof row.datos === 'string' ? JSON.parse(row.datos) : row.datos
+      const esLegacy =
+        String(row.correlativo ?? '').startsWith('HP-COT-') ||
+        Boolean(datos?.ip?.numeroDeTubos || datos?.ip?.numeroDeFilteros) ||
+        Boolean(datos?.tipo === 'perforacion' && datos?.ip && typeof datos.ip.tubosLisos !== 'number')
+
+      localStorage.setItem('hidrocrm_quotation_draft', JSON.stringify({
+        ...datos,
+        ...(esLegacy && typeof row.monto === 'number' ? { montoGuardado: row.monto } : {}),
+      }))
       window.open('/imprimir', '_blank')
     } catch {
       alert('Error al procesar la cotización.')
@@ -206,7 +242,7 @@ export default function CotizacionesPage() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#070d1a]">
+    <div className="flex flex-col md:h-full bg-[#070d1a]">
 
       {/* ── HEADER ──────────────────────────────────────────────────── */}
       <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-white/5 bg-[#0a1020] shrink-0">
@@ -262,17 +298,17 @@ export default function CotizacionesPage() {
 
         {/* KPI chips */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <KPIChip icon={<TrendingUp className="w-4 h-4 text-blue-400" />}
+          <KPICard icon={<TrendingUp className="w-4 h-4 text-blue-400" />}
             label="Proyectos activos" value={fmtQk(totalActivo)}
             sub={`${activas.length} cotizaciones`} color="blue" />
-          <KPIChip icon={<Send className="w-4 h-4 text-amber-400" />}
+          <KPICard icon={<Send className="w-4 h-4 text-amber-400" />}
             label="Enviadas" value={String(enviadas.length)}
             sub={enviadas.length > 0 ? fmtQk(enviadas.reduce((a,b)=>a+b.monto,0)) : 'sin respuesta'}
             color="amber" />
-          <KPIChip icon={<Award className="w-4 h-4 text-emerald-400" />}
+          <KPICard icon={<Award className="w-4 h-4 text-emerald-400" />}
             label="Confirmadas" value={fmtQk(totalConf)}
             sub={`${confirmadas.length} proyectos`} color="emerald" />
-          <KPIChip icon={<XCircle className="w-4 h-4 text-red-400" />}
+          <KPICard icon={<XCircle className="w-4 h-4 text-red-400" />}
             label="Canceladas" value={String(canceladas.length)}
             sub="en el período" color={canceladas.length > 0 ? 'red' : 'slate'} />
         </div>
@@ -361,6 +397,7 @@ export default function CotizacionesPage() {
           menuOpen={menuOpen} setMenuOpen={setMenuOpen}
           changeEstado={changeEstado} handleDelete={handleDelete}
           openCotizacion={openCotizacion} openHistorial={openHistorial}
+          onReasignar={setReasignarTarget}
         />
       ) : (
         <KanbanView
@@ -430,7 +467,7 @@ export default function CotizacionesPage() {
         onCancel={() => { setDeleteTarget(null); setDeleteReason('') }}
         onConfirm={ejecutarDelete}
         title={`¿Eliminar cotización ${deleteTarget ?? ''}?`}
-        description="La cotización pasa a la papelera. Podés restaurarla cuando quieras. El correlativo NO se reutiliza."
+        description="La cotización pasa a la papelera. Puedes restaurarla cuando quieras. El correlativo NO se reutiliza."
         confirmLabel="Sí, eliminar"
         variant="destructive"
         loading={deleting}
@@ -438,12 +475,81 @@ export default function CotizacionesPage() {
         reason={deleteReason}
         onReasonChange={setDeleteReason}
       />
+
+      {/* Modal reasignar vendedor (solo superadmin) */}
+      {reasignarTarget && isSuperAdmin && (
+        <ReasignarModal
+          cotizacion={reasignarTarget}
+          vendedoresActivos={vendedoresDB}
+          onCancel={() => setReasignarTarget(null)}
+          onConfirm={nuevo => handleReasignar(reasignarTarget.correlativo, nuevo)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal: reasignar vendedor de una cotización ──────────────────────────────
+function ReasignarModal({ cotizacion, vendedoresActivos, onCancel, onConfirm }: {
+  cotizacion: CotizacionRecord
+  vendedoresActivos: string[]
+  onCancel: () => void
+  onConfirm: (nuevo: string) => void
+}) {
+  const [nuevo, setNuevo] = useState(cotizacion.vendedor)
+  const sinCambio = nuevo === cotizacion.vendedor
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-[#0d1526] border border-cyan-500/30 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="px-5 py-4 border-b border-white/10 flex items-center gap-2">
+          <User className="w-4 h-4 text-cyan-400" />
+          <p className="text-sm font-bold text-white">Reasignar {cotizacion.correlativo}</p>
+        </div>
+        <div className="px-5 py-5 space-y-3">
+          <p className="text-xs text-slate-500">
+            Cliente: <b className="text-slate-300">{cotizacion.cliente}</b>
+            {cotizacion.empresa && <span className="text-slate-500"> · {cotizacion.empresa}</span>}
+          </p>
+          <p className="text-xs text-slate-500">
+            Vendedor actual: <b className="text-amber-400">{cotizacion.vendedor}</b>
+          </p>
+          <div>
+            <label className="text-xs text-slate-500 mb-1.5 block">Nuevo vendedor</label>
+            <select value={nuevo} onChange={e => setNuevo(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500/50">
+              {vendedoresActivos.map(v => (
+                <option key={v} value={v} className="bg-[#0d1526]">{v}</option>
+              ))}
+              {/* Si el vendedor actual no está en la lista activa, lo agregamos para no perderlo */}
+              {!vendedoresActivos.includes(cotizacion.vendedor) && (
+                <option value={cotizacion.vendedor} className="bg-[#0d1526] text-slate-500">
+                  {cotizacion.vendedor} (legacy)
+                </option>
+              )}
+            </select>
+          </div>
+          <p className="text-[10px] text-slate-600 leading-relaxed">
+            El proyecto asociado (si existe) también cambia de dueño.
+            Queda registrado en el historial de la cotización.
+          </p>
+        </div>
+        <div className="px-5 py-3 border-t border-white/10 flex gap-2 justify-end">
+          <button onClick={onCancel}
+            className="px-4 py-2 border border-white/10 text-slate-300 hover:text-white rounded-lg text-sm transition-all">
+            Cancelar
+          </button>
+          <button onClick={() => onConfirm(nuevo)} disabled={sinCambio}
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-lg text-sm font-medium transition-all">
+            Reasignar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
 // ── Lista view ─────────────────────────────────────────────────────────────────
-function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial }: {
+function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, onReasignar }: {
   filtered: CotizacionRecord[]
   search: string
   isSuperAdmin: boolean
@@ -453,6 +559,7 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
   openHistorial: (c: string) => void
+  onReasignar: (c: CotizacionRecord) => void
 }) {
   if (filtered.length === 0) {
     return (
@@ -473,7 +580,7 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
   return (
     <>
       {/* Desktop table — md+ */}
-      <div className="hidden md:block flex-1 overflow-auto">
+      <div className="hidden md:block flex-1 md:overflow-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-white/5 bg-[#0a1020] sticky top-0 z-20">
             <tr className="text-xs text-slate-500">
@@ -493,14 +600,16 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
               <ListRow key={c.correlativo} c={c}
                 menuOpen={menuOpen} setMenuOpen={setMenuOpen}
                 changeEstado={changeEstado} handleDelete={handleDelete}
-                openCotizacion={openCotizacion} openHistorial={openHistorial} />
+                openCotizacion={openCotizacion} openHistorial={openHistorial}
+                isSuperAdmin={isSuperAdmin}
+                onReasignar={() => onReasignar(c)} />
             ))}
           </tbody>
         </table>
       </div>
 
       {/* Mobile cards — < md */}
-      <div className="md:hidden flex-1 overflow-auto divide-y divide-white/5">
+      <div className="md:hidden flex-1 divide-y divide-white/5">
         {filtered.map(c => (
           <MobileRow key={c.correlativo} c={c}
             menuOpen={menuOpen} setMenuOpen={setMenuOpen}
@@ -513,7 +622,7 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
 }
 
 // ── List row ───────────────────────────────────────────────────────────────────
-function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial }: {
+function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, isSuperAdmin, onReasignar }: {
   c: CotizacionRecord
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
@@ -521,6 +630,8 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
   openHistorial: (c: string) => void
+  isSuperAdmin: boolean
+  onReasignar: () => void
 }) {
   const s = statusMap[c.estado]
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -592,14 +703,28 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
       <td className="px-5 py-3.5 text-slate-400 text-xs">{c.vendedor}</td>
       <td className="px-5 py-3.5">
         <div className="flex items-center gap-2.5">
-          <Link href={`/cotizaciones/nueva?edit=${c.correlativo}`} title="Editar"
-            className="text-slate-500 hover:text-amber-400 transition-colors">
-            <Pencil className="w-4 h-4" />
-          </Link>
+          {c.estado === 'borrador' ? (
+            <Link href={`/cotizaciones/nueva?edit=${c.correlativo}`} title="Editar"
+              className="text-slate-500 hover:text-amber-400 transition-colors">
+              <Pencil className="w-4 h-4" />
+            </Link>
+          ) : (
+            <Link href={`/cotizaciones/nueva?duplicate=${c.correlativo}`}
+              title={`Duplicar (${c.estado}: se crea una nueva con otro correlativo)`}
+              className="text-slate-500 hover:text-emerald-400 transition-colors">
+              <Copy className="w-4 h-4" />
+            </Link>
+          )}
           <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
             className="text-slate-500 hover:text-blue-400 transition-colors">
             <ArrowUpRight className="w-4 h-4" />
           </button>
+          {isSuperAdmin && (
+            <button onClick={onReasignar} title="Reasignar vendedor"
+              className="text-slate-500 hover:text-cyan-400 transition-colors">
+              <User className="w-4 h-4" />
+            </button>
+          )}
           <button onClick={() => openHistorial(c.correlativo)} title="Historial"
             className="text-slate-500 hover:text-violet-400 transition-colors">
             <Clock className="w-4 h-4" />
@@ -688,10 +813,18 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
           )}
         </div>
         <div className="flex items-center gap-2.5">
-          <Link href={`/cotizaciones/nueva?edit=${c.correlativo}`} title="Editar"
-            className="text-slate-500 hover:text-amber-400 transition-colors">
-            <Pencil className="w-4 h-4" />
-          </Link>
+          {c.estado === 'borrador' ? (
+            <Link href={`/cotizaciones/nueva?edit=${c.correlativo}`} title="Editar"
+              className="text-slate-500 hover:text-amber-400 transition-colors">
+              <Pencil className="w-4 h-4" />
+            </Link>
+          ) : (
+            <Link href={`/cotizaciones/nueva?duplicate=${c.correlativo}`}
+              title={`Duplicar (${c.estado})`}
+              className="text-slate-500 hover:text-emerald-400 transition-colors">
+              <Copy className="w-4 h-4" />
+            </Link>
+          )}
           <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
             className="text-slate-500 hover:text-blue-400 transition-colors">
             <ArrowUpRight className="w-4 h-4" />
@@ -722,8 +855,8 @@ function KanbanView({ filtered, totalActivo, isSuperAdmin, menuOpen, setMenuOpen
   openCotizacion: (c: string) => void
 }) {
   return (
-    <div className="flex-1 overflow-x-auto p-5">
-      <div className="flex gap-4 h-full" style={{ minWidth: `${COLS.length * 296}px` }}>
+    <div className="flex-1 w-full max-w-full overflow-x-auto p-5">
+      <div className="flex gap-4 md:h-full" style={{ minWidth: `${COLS.length * 296}px` }}>
         {COLS.map(col => {
           const cards    = filtered.filter(c => c.estado === col.id)
           const colMonto = cards.reduce((a, b) => a + b.monto, 0)
@@ -885,31 +1018,6 @@ function KanbanCard({ c, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, open
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// ── KPI chip ──────────────────────────────────────────────────────────────────
-function KPIChip({ icon, label, value, sub, color }: {
-  icon: React.ReactNode; label: string; value: string; sub: string
-  color: 'blue' | 'amber' | 'emerald' | 'red' | 'slate'
-}) {
-  const cls = {
-    blue:    'border-blue-500/15 bg-blue-500/5',
-    amber:   'border-amber-500/15 bg-amber-500/5',
-    emerald: 'border-emerald-500/15 bg-emerald-500/5',
-    red:     'border-red-500/20 bg-red-500/8',
-    slate:   'border-white/5 bg-white/3',
-  }[color]
-
-  return (
-    <div className={cn('rounded-xl border px-3.5 py-2.5 flex items-center gap-3', cls)}>
-      <div className="shrink-0">{icon}</div>
-      <div className="min-w-0">
-        <p className="text-base font-black text-white leading-none truncate">{value}</p>
-        <p className="text-[10px] text-slate-500 mt-0.5 truncate">{label}</p>
-        <p className="text-[10px] text-slate-600 truncate">{sub}</p>
-      </div>
     </div>
   )
 }

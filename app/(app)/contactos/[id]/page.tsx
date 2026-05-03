@@ -5,7 +5,7 @@
 // - Timeline cronológico mergeando eventos de los 3 módulos
 // - KPIs agregados: total cotizado, ganado, tasa conversión, proyectos activos
 
-import { useEffect, useState, use, useMemo } from 'react'
+import { useCallback, useEffect, useState, use, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -92,22 +92,30 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab] = useState<Tab>('resumen')
 
-  useEffect(() => {
+  const loadContacto = useCallback(async () => {
     setLoading(true)
-    fetch(`/api/contactos/${id}`)
-      .then(r => {
-        if (r.status === 404) { setNotFound(true); return null }
-        return r.ok ? r.json() : null
-      })
-      .then(data => {
-        if (!data) return
-        setContacto(data.contacto)
-        setCotizaciones(data.cotizaciones ?? [])
-        setProyectos(data.proyectos ?? [])
-        setOportunidades(data.oportunidades ?? [])
-      })
-      .finally(() => setLoading(false))
+    setNotFound(false)
+    try {
+      const r = await fetch(`/api/contactos/${id}`)
+      if (r.status === 404) {
+        setNotFound(true)
+        return
+      }
+      if (!r.ok) return
+      const data = await r.json()
+      if (!data) return
+      setContacto(data.contacto)
+      setCotizaciones(data.cotizaciones ?? [])
+      setProyectos(data.proyectos ?? [])
+      setOportunidades(data.oportunidades ?? [])
+    } finally {
+      setLoading(false)
+    }
   }, [id])
+
+  useEffect(() => {
+    void loadContacto()
+  }, [loadContacto])
 
   // ── KPIs calculados ────────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -247,7 +255,7 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
       </div>
 
       {/* KPIs Grid — 6 métricas */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
         <KPI icon={<FileText className="w-4 h-4 text-blue-400" />}
           label="Total cotizado" value={formatQ(kpis.totalCotizado)} sub={`${kpis.counts.cotizaciones} cotizaciones`} color="blue" />
         <KPI icon={<Award className="w-4 h-4 text-emerald-400" />}
@@ -317,7 +325,7 @@ function ResumenTab({ cotizaciones, proyectos, oportunidades, kpis, nuevaCotURL 
         {/* Estado de pipeline */}
         <div className="bg-[#0d1526] rounded-2xl border border-white/5 p-5">
           <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Estado del Pipeline</h3>
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <StatCompact icon={<FileEdit className="w-3.5 h-3.5" />} label="Borradores" value={kpis.counts.borradores} tone="slate" />
             <StatCompact icon={<Send className="w-3.5 h-3.5" />} label="Enviadas" value={kpis.counts.enviadas} tone="blue" />
             <StatCompact icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Confirmadas" value={kpis.counts.confirmadas} tone="emerald" />

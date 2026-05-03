@@ -1,17 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
-import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
 import { loginSchema, formatZodError } from '@/lib/validators'
 import { checkRateLimit, cleanupRateLimit, getClientIp } from '@/lib/rate-limit'
 import { auditLog } from '@/lib/audit'
-import { getRequestInfo } from '@/lib/auth'
+import { getRequestInfo, hashPassword, isLegacyPasswordHash, verifyPassword } from '@/lib/auth'
+import { verifyTotp } from '@/lib/totp'
 
-function sha256(s: string) {
-  return createHash('sha256').update(s).digest('hex')
-}
-
-// Límites: 10 intentos por IP en 15 min + 5 intentos por username en 15 min.
+// L?mites: 10 intentos por IP en 15 min + 5 intentos por username en 15 min.
 const WINDOW_MS = 15 * 60 * 1000
 const IP_LIMIT = 10
 const USER_LIMIT = 5
@@ -23,8 +19,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(formatZodError(parsed.error), { status: 400 })
   }
   const { username, password } = parsed.data
+  const totpCode = parsed.data.totpCode?.trim() || undefined
 
-  // Rate limit por IP y por username — limpieza ocasional
+  // Rate limit por IP y por username ? limpieza ocasional
   if (Math.random() < 0.05) cleanupRateLimit()
   const ip = getClientIp(request)
   const ipCheck = checkRateLimit(`ip:${ip}`, IP_LIMIT, WINDOW_MS)
@@ -33,50 +30,76 @@ export async function POST(request: NextRequest) {
     const resetAt = Math.max(ipCheck.resetAt, userCheck.resetAt)
     const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
     return NextResponse.json(
-      { error: 'Demasiados intentos. Intenta de nuevo más tarde.', retryAfter },
+      { error: 'Demasiados intentos. Intenta de nuevo m?s tarde.', retryAfter },
       { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
   }
 
-  const hash = sha256(password)
   let role: 'superadmin' | 'admin' | null = null
   let vendedor = ''
+  let usuarioDb: { id: string; passwordHash: string } | null = null
+  let twoFactorSecret: string | null = null
 
   // 1) Cuenta maestra superadmin del .env (siempre disponible)
   if (
     username === process.env.SUPERADMIN_USERNAME &&
-    hash     === process.env.SUPERADMIN_PASSWORD_HASH
+    verifyPassword(password, process.env.SUPERADMIN_PASSWORD_HASH)
   ) {
     role     = 'superadmin'
     vendedor = process.env.SUPERADMIN_VENDEDOR ?? 'Super Admin'
+    twoFactorSecret = process.env.SUPERADMIN_TOTP_SECRET || null
   }
 
   // 2) Usuarios creados en la DB
   if (!role) {
     const user = await prisma.usuario.findFirst({ where: { username, activo: true } })
-    if (user && user.passwordHash === hash) {
+    if (user && verifyPassword(password, user.passwordHash)) {
       role     = user.rol as 'admin' | 'superadmin'
       vendedor = user.nombre
+      usuarioDb = { id: user.id, passwordHash: user.passwordHash }
+      twoFactorSecret = user.twoFactorEnabled ? user.twoFactorSecret : null
     }
   }
 
   const info = getRequestInfo(request)
 
   if (!role) {
-    // Log intento fallido (útil para detectar ataques de fuerza bruta)
+    // Log intento fallido (?til para detectar ataques de fuerza bruta)
     await auditLog({
       user: null, accion: 'login', entidad: 'usuario', entidadId: username,
       despues: { resultado: 'falla', motivo: 'credenciales_incorrectas' },
       ...info,
     })
-    return NextResponse.json({ error: 'Usuario o contraseña incorrectos' }, { status: 401 })
+    return NextResponse.json({ error: 'Usuario o contrase?a incorrectos' }, { status: 401 })
   }
 
+  if (twoFactorSecret) {
+    if (!totpCode) {
+      return NextResponse.json({ ok: false, requiresTwoFactor: true, message: 'Código 2FA requerido' })
+    }
+    if (!verifyTotp(totpCode, twoFactorSecret)) {
+      await auditLog({
+        user: { username, role: role as 'admin' | 'superadmin', vendedor },
+        accion: 'login', entidad: 'usuario', entidadId: username,
+        despues: { resultado: 'falla', motivo: 'codigo_2fa_incorrecto' },
+        ...info,
+      })
+      return NextResponse.json({ error: 'Código de autenticación incorrecto' }, { status: 401 })
+    }
+  }
   // Actualizar ultimoAcceso (sin bloquear el login si falla)
   prisma.usuario.updateMany({
     where: { username, activo: true },
     data: { ultimoAcceso: new Date() },
   }).catch(() => {})
+
+  // Migraci?n transparente: si el usuario a?n estaba en SHA-256, al login exitoso queda en scrypt.
+  if (usuarioDb && isLegacyPasswordHash(usuarioDb.passwordHash)) {
+    prisma.usuario.update({
+      where: { id: usuarioDb.id },
+      data: { passwordHash: hashPassword(password) },
+    }).catch(() => {})
+  }
 
   // Log login exitoso
   await auditLog({
@@ -116,3 +139,4 @@ export async function POST(request: NextRequest) {
 
   return res
 }
+

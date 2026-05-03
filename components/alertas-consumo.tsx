@@ -4,8 +4,8 @@
 // Muestra solo alertas activas (warning, crítico, exceso).
 
 import { useState, useEffect } from 'react'
-import { AlertTriangle, TrendingUp, CheckCircle2, Loader2, Drill, FlaskConical, Droplets } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { AlertTriangle, TrendingUp, CheckCircle2, Drill, FlaskConical, Droplets } from 'lucide-react'
+import { cn, formatQ } from '@/lib/utils'
 
 interface Alerta {
   producto: 'pies' | 'bentonita' | 'pipas' | 'grava'
@@ -21,13 +21,12 @@ interface Alerta {
 }
 
 interface Response {
-  alertas: Alerta[]
-  alertasActivas: Alerta[]
-  totalCostoExtra: number
-  totalVentaExtra: number
+  alertas?: Alerta[]
+  alertasActivas?: Alerta[]
+  totalCostoExtra?: number
+  totalVentaExtra?: number
+  motivo?: string
 }
-
-const formatQ = (n: number) => `Q ${Math.round(n).toLocaleString('es-GT')}`
 
 const ICONOS = {
   pies:      Drill,
@@ -48,16 +47,19 @@ export function AlertasConsumo({ proyectoId }: { proyectoId: string }) {
   }, [proyectoId])
 
   if (loading) return null
-  if (!data || data.alertasActivas.length === 0) {
+  const activas = data?.alertasActivas ?? []
+  if (activas.length === 0) {
     return (
       <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center gap-3">
         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-        <p className="text-sm text-emerald-300">Consumo dentro de lo contratado. Todo bien.</p>
+        <p className="text-sm text-emerald-300">
+          {data?.motivo ?? 'Consumo dentro de lo contratado. Todo bien.'}
+        </p>
       </div>
     )
   }
 
-  const excesos = data.alertasActivas.filter(a => a.nivel === 'exceso')
+  const excesos = activas.filter(a => a.nivel === 'exceso')
   const tieneExcesos = excesos.length > 0
 
   return (
@@ -68,17 +70,17 @@ export function AlertasConsumo({ proyectoId }: { proyectoId: string }) {
       <div className="flex items-center gap-2">
         <AlertTriangle className={cn('w-5 h-5 shrink-0', tieneExcesos ? 'text-red-400' : 'text-amber-400')} />
         <h3 className="text-sm font-semibold text-white">
-          Alertas de consumo ({data.alertasActivas.length})
+          Alertas de consumo ({activas.length})
         </h3>
         {tieneExcesos && (
           <span className="ml-auto text-xs text-red-300">
-            Exceso facturar: <b className="tabular-nums">{formatQ(data.totalVentaExtra)}</b>
+            Exceso facturar: <b className="tabular-nums">{formatQ(data?.totalVentaExtra ?? 0)}</b>
           </span>
         )}
       </div>
 
       <div className="space-y-2">
-        {data.alertasActivas.map(a => {
+        {activas.map(a => {
           const Icon = ICONOS[a.producto]
           const colors = {
             warning: { ring: 'border-amber-500/30', text: 'text-amber-300', iconColor: 'text-amber-400' },

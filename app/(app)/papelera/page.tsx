@@ -147,7 +147,7 @@ export default function PapeleraPage() {
         onCancel={() => setConfirmId(null)}
         onConfirm={() => { if (confirmId) return ejecutarRestaurar(confirmId) }}
         title="¿Restaurar este registro?"
-        description="Va a volver a aparecer en la lista activa. Podés volver a eliminarlo cuando quieras."
+        description="Va a volver a aparecer en la lista activa. Puedes volver a eliminarlo cuando quieras."
         confirmLabel="Sí, restaurar"
         cancelLabel="Cancelar"
         variant="success"

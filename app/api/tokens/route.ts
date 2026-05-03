@@ -75,5 +75,5 @@ export async function POST(request: NextRequest) {
   })
 
   // Se devuelve el token raw UNA SOLA VEZ — el admin lo copia y lo configura en el bot
-  return NextResponse.json({ ...created, token: raw, aviso: 'Guardalo ahora — no se puede recuperar después' }, { status: 201 })
+  return NextResponse.json({ ...created, token: raw, aviso: 'Guárdalo ahora — no se puede recuperar después' }, { status: 201 })
 }

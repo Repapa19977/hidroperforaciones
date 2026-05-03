@@ -1,7 +1,12 @@
 .git
 .gitignore
+.env
+.env.*
 .env.local
 node_modules
 .next
 dev.db
+*.sql
+*.sql.gz
+backups*
 README.md

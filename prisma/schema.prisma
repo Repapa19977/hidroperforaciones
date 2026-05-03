@@ -92,6 +92,11 @@ model Usuario {
   contactoId   String?
   email        String    @default("") // para magic link
   ultimoAcceso DateTime? // último login efectivo
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorSecret        String?
+  twoFactorPendingSecret String?
+  twoFactorPendingAt     DateTime?
+  twoFactorConfirmedAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -104,6 +109,7 @@ model Usuario {
 model Contacto {
   id           String   @id @default(cuid())
   nombre       String
+  alias        String   @default("") // nombre corto/apodo para búsquedas rápidas (ej. "Don Luis")
   empresa      String   @default("")
   telefono     String   @default("")
   email        String   @default("")
@@ -111,6 +117,9 @@ model Contacto {
   pais         String   @default("Guatemala")
   departamento String   @default("")
   municipio    String   @default("")
+  // Nombre del proyecto asociado al contacto. Obligatorio al crearse desde el cotizador,
+  // opcional al crearse desde el módulo de contactos (un contacto puede aún no tener proyecto).
+  proyectoNombre String @default("")
   notas        String   @default("")
   vendedor     String // admin que creó el contacto
   // ── Soft delete ──
@@ -143,7 +152,7 @@ model Proyecto {
   tipo         String
   monto        Float
   vendedor     String
-  estado       String          @default("activo") // "activo" | "completado" | "pausado"
+  estado       String          @default("activo") // "activo" | "completado" | "pausado" | "cancelado"
   fechaInicio  String
   contactoId   String? // FK a Contacto.id — backfill por string match en A.1.b
   // Plan de pagos editable a nivel proyecto (JSON array de HitoPago). Si es null,
@@ -169,6 +178,30 @@ model Proyecto {
 }
 
 // ── Entradas diarias de la bitácora ──────────────────────────────────────────
+// Liquidacion de cancelacion de proyecto confirmado.
+// Guarda un snapshot separado de cotizaciones "canceladas" para no mezclar
+// ventas perdidas con proyectos ya autorizados.
+model ProyectoLiquidacion {
+  id                  String    @id @default(cuid())
+  proyectoId          String    @unique
+  proyectoCorrelativo String    @default("")
+  estado              String    @default("borrador") // "borrador" | "confirmada"
+  fecha               String    @default("") // YYYY-MM-DD
+  motivo              String    @default("")
+  lineas              String    @default("[]") // JSON: LiquidacionLinea[]
+  resumen             String    @default("{}") // JSON: totales al guardar/confirmar
+  creadoPor           String    @default("")
+  actualizadoPor      String    @default("")
+  confirmadoPor       String    @default("")
+  confirmadoEn        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([proyectoCorrelativo])
+  @@index([estado])
+  @@index([fecha])
+}
+
 model BitacoraEntry {
   id                  String   @id @default(cuid())
   proyectoId          String
@@ -398,4 +431,81 @@ model OportunidadAI {
 
   @@index([oportunidadId])
   @@index([oportunidadId, createdAt])
+}
+
+// ── CuentaPorPagar — obligaciones con proveedores (independiente de proyectos) ──
+// Módulo contable independiente. Lista facturas/compras pendientes de pagar a
+// proveedores, con control de crédito (días) y estado pagado/vencido.
+// Usa toggles de IVA/ISR como en cotizaciones para calcular el total real a pagar.
+model CuentaPorPagar {
+  id               String   @id @default(cuid())
+  proveedor        String                 // nombre/razón social del proveedor
+  nit              String   @default("")  // NIT del proveedor (opcional)
+  descripcion      String                 // qué se compró/servicio
+  monto            Float                  // subtotal antes de impuestos
+  aplicarIva       Boolean  @default(true)
+  aplicarIsr       Boolean  @default(false)
+  ivaMonto         Float    @default(0)   // snapshot calculado
+  isrMonto         Float    @default(0)   // snapshot calculado
+  total            Float                  // monto + iva - isr (snapshot)
+  fechaEmision     String                 // YYYY-MM-DD
+  diasCredito      Int      @default(0)   // 0 = contado
+  fechaVencimiento String                 // YYYY-MM-DD (= emision + diasCredito)
+  pagado           Boolean  @default(false)
+  fechaPago        String?                // YYYY-MM-DD cuando se pagó
+  metodoPago       String   @default("")  // transferencia | cheque | efectivo | etc
+  referenciaPago   String   @default("")  // # cheque, ref bancaria
+  nota             String   @default("")
+  creadoPor        String   @default("")
+  // Soft delete (consistencia con Pago)
+  eliminadoEn      DateTime?
+  eliminadoPor     String?
+  motivoBorrado    String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([proveedor])
+  @@index([pagado])
+  @@index([fechaVencimiento])
+  @@index([eliminadoEn])
+}
+
+// ── CuentaPorCobrar — facturas pendientes de cobro (independiente de proyectos) ──
+// Cliente/empresa que nos debe. Módulo independiente — no amarrado a cotizaciones
+// (para eso está /proyectos/[id]/pagos). Sirve para facturas fuera de proyecto
+// o para anticipos/otros cobros.
+model CuentaPorCobrar {
+  id               String   @id @default(cuid())
+  cliente          String                 // nombre de la persona
+  empresa          String   @default("")  // razón social (opcional)
+  nit              String   @default("")
+  descripcion      String
+  monto            Float
+  aplicarIva       Boolean  @default(true)
+  aplicarIsr       Boolean  @default(false)
+  ivaMonto         Float    @default(0)
+  isrMonto         Float    @default(0)
+  total            Float
+  fechaEmision     String
+  diasCredito      Int      @default(0)
+  fechaVencimiento String
+  cobrado          Boolean  @default(false)
+  fechaCobro       String?
+  metodoCobro      String   @default("")
+  referenciaCobro  String   @default("")
+  nota             String   @default("")
+  creadoPor        String   @default("")
+  // Soft delete
+  eliminadoEn      DateTime?
+  eliminadoPor     String?
+  motivoBorrado    String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([cliente])
+  @@index([cobrado])
+  @@index([fechaVencimiento])
+  @@index([eliminadoEn])
 }

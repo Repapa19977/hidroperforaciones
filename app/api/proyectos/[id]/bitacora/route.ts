@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { bitacoraEntrySchema, formatZodError } from '@/lib/validators'
+import { requireSuperAdmin } from '@/lib/auth'
+import { reconciliarReservaBentonitaProyecto } from '@/lib/inventario-bentonita'
 
-// GET — listar entradas de bitácora de un proyecto
-export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// GET - listar entradas de bitacora de un proyecto
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const rows = await prisma.bitacoraEntry.findMany({
     where: { proyectoId: id },
@@ -12,8 +17,11 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   return NextResponse.json(rows)
 }
 
-// POST — agregar nueva entrada de bitácora
+// POST - agregar nueva entrada de bitacora
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const raw = await request.json().catch(() => null)
   const parsed = bitacoraEntrySchema.safeParse(raw)
@@ -52,6 +60,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       circulacionPct: data.circulacionPct,
     },
   })
+
+  // La reserva 30% se recalcula contra la bitacora completa. Primero se consume
+  // el tramo cubierto por el cliente; solo el excedente descuenta inventario.
+  try {
+    await reconciliarReservaBentonitaProyecto(id)
+  } catch { /* no bloqueante */ }
 
   return NextResponse.json(row, { status: 201 })
 }

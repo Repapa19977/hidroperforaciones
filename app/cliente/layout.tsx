@@ -3,7 +3,7 @@
 
 export default function ClienteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-[100svh] bg-[#070d1a] text-slate-100 antialiased">
+    <div className="min-h-[100svh] w-full max-w-full overflow-x-hidden bg-[#070d1a] text-slate-100 antialiased">
       {children}
     </div>
   )

@@ -7,7 +7,7 @@ echo "==> Pull del repo..."
 git pull --ff-only
 
 echo "==> Instalar dependencias..."
-npm ci --omit=optional
+npm ci
 
 echo "==> Generar Prisma Client..."
 npx prisma generate

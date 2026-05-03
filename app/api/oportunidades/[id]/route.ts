@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireSuperAdmin, getCurrentUser, getRequestInfo } from '@/lib/auth'
+import { requireAuth, requireSuperAdmin, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
 
 // GET — obtener oportunidad por id
 export async function GET(
-  _: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const row = await prisma.oportunidad.findUnique({ where: { id } })
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (auth.user.role === 'admin' && row.vendedor !== auth.user.vendedor) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+  }
   return NextResponse.json(row)
 }
 
@@ -19,8 +25,16 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const body = await request.json()
+  const before = await prisma.oportunidad.findUnique({ where: { id } })
+  if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+  }
 
   // Solo actualizar los campos que vienen en el body
   const updateData: Record<string, unknown> = {}
@@ -32,8 +46,18 @@ export async function PATCH(
   for (const key of allowed) {
     if (body[key] !== undefined) updateData[key] = body[key]
   }
+  if (auth.user.role === 'admin') delete updateData.vendedor
 
   const row = await prisma.oportunidad.update({ where: { id }, data: updateData })
+  await auditLog({
+    user: auth.user,
+    accion: 'update',
+    entidad: 'oportunidad',
+    entidadId: id,
+    antes: before,
+    despues: row,
+    ...getRequestInfo(request),
+  })
   return NextResponse.json(row)
 }
 

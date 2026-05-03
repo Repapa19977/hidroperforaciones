@@ -1,8 +1,63 @@
 // Helpers de autenticación/autorización server-side.
-// Consolida patrones dispersos en los endpoints (jwtVerify, role checks, ip/userAgent).
+// Consolida patrones dispersos en los endpoints (jwtVerify, role checks, ip/userAgent,
+// password hashing + validación).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto'
+
+/** SHA-256 estándar usado para hashear passwords de Usuario y cliente_final. */
+export function sha256(s: string): string {
+  return createHash('sha256').update(s).digest('hex')
+}
+
+const SCRYPT_PREFIX = 'scrypt'
+const SCRYPT_KEYLEN = 64
+
+function safeEqualHex(a: string, b: string): boolean {
+  if (!/^[a-f0-9]+$/i.test(a) || !/^[a-f0-9]+$/i.test(b)) return false
+  const ab = Buffer.from(a, 'hex')
+  const bb = Buffer.from(b, 'hex')
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+/** Hash moderno para passwords nuevos. Mantiene sha256() para compatibilidad legacy/env. */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex')
+  const derived = scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex')
+  return `${SCRYPT_PREFIX}$${salt}$${derived}`
+}
+
+/** Verifica hashes nuevos scrypt y hashes legacy SHA-256 sin romper usuarios existentes. */
+export function verifyPassword(password: string, storedHash?: string | null): boolean {
+  if (!storedHash) return false
+  const parts = storedHash.split('$')
+  if (parts.length === 3 && parts[0] === SCRYPT_PREFIX) {
+    const [, salt, expected] = parts
+    const derived = scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex')
+    return safeEqualHex(derived, expected)
+  }
+  return safeEqualHex(sha256(password), storedHash)
+}
+
+export function isLegacyPasswordHash(storedHash?: string | null): boolean {
+  return !!storedHash && !storedHash.startsWith(`${SCRYPT_PREFIX}$`)
+}
+
+/** Política de passwords de la app:
+ *    - mínimo 8 caracteres
+ *    - al menos una letra
+ *    - al menos un número
+ *  Retorna mensaje de error en español, o null si cumple. Usado en creación
+ *  y cambio de password (usuarios, cliente_final).
+ */
+export function validarPassword(pw: string): string | null {
+  if (!pw || pw.length < 8) return 'La contraseña debe tener al menos 8 caracteres'
+  if (!/[a-zA-Z]/.test(pw)) return 'La contraseña debe incluir al menos una letra'
+  if (!/[0-9]/.test(pw))   return 'La contraseña debe incluir al menos un número'
+  return null
+}
 
 export type Rol = 'admin' | 'superadmin' | 'cliente_final' | 'bot'
 

@@ -5,7 +5,7 @@
  * (desde bitácora) + % avance físico basado en pies perforados.
  */
 
-import { calcularPerforacion, type InputsPerforacion, type ResultadosPerforacion, calcularHorasAdversasCompleto, VALOR_HORA_ADVERSA } from './calculator'
+import { calcularPerforacion, pipasInternas, type InputsPerforacion, type ResultadosPerforacion, calcularHorasAdversasCompleto, VALOR_HORA_ADVERSA } from './calculator'
 
 export interface PresupuestoRubro {
   key: string
@@ -71,12 +71,12 @@ export function calcularPresupuestoPerforacion(ip: InputsPerforacion): Presupues
       unidad: 'sacos',
       montoPresupuestado: res.costoBentonita,
     },
-    // Pipas: plan estimado = días maquinaria / 3 (aprox 1 pipa cada 3 días)
-    // para que se pueda comparar contra las pipas consumidas por día en la bitácora.
+    // Pipas: plan interno = 1 pipa por dia de perforacion real.
+    // No incluye los dias extra de maquinaria/mantenimiento.
     {
       key: 'pipas-agua',
       nombre: 'Pipas de agua',
-      cantidadPresupuestada: Math.max(1, Math.round(res.totalDiasMaquinaria / 3)),
+      cantidadPresupuestada: pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20),
       unidad: 'pipas',
       montoPresupuestado: res.costoPipasAgua,
     },
@@ -111,8 +111,8 @@ export function calcularPresupuestoPerforacion(ip: InputsPerforacion): Presupues
     {
       key: 'salarios',
       nombre: 'Salarios',
-      cantidadPresupuestada: ip.personalPerforacion,
-      unidad: 'personas',
+      cantidadPresupuestada: res.totalDiasMaquinaria,
+      unidad: 'días',
       montoPresupuestado: res.costoSalarios,
     },
     {
@@ -184,6 +184,7 @@ export function calcularPresupuestoPerforacion(ip: InputsPerforacion): Presupues
 export function agregarBitacora(
   entries: BitacoraEntryAgg[],
   presupuesto: Presupuesto,
+  paramsAdversas?: { horasTurno?: number; piesMinimoTurno?: number; valorHoraAdversa?: number },
 ): Ejecutado {
   const piesPerforadosTotal = entries.reduce((a, e) => a + (e.perforacionDia || 0), 0)
   const bentonitaConsumida  = entries.reduce((a, e) => a + (e.bentonitaSacos || 0), 0)
@@ -191,14 +192,25 @@ export function agregarBitacora(
   const diasActivos         = entries.filter(e => e.estado === 'activo'   || (e.perforacionDia > 0 && !e.diaAdverso)).length
   const diasInactivos       = entries.filter(e => e.estado === 'inactivo' || e.diaAdverso).length
 
-  // Horas adversas — aplicadas SOLO cuando pies < 20 por día (turno 8h)
-  // Fórmula Excel: horasAdversas = 8 − pies/2.5 × Q 500/h
+  // Horas adversas — fórmula nueva del jefe (2026-04-20):
+  //   constante    = piesMinimoTurno / horasTurno    (default 20 / 10 = 2 pies/hora)
+  //   horasAdversas = max(0, horasTurno − pies / constante)
+  //   cobro        = horasAdversas × valorHoraAdversa
+  // Solo se aplica cuando pies < piesMinimoTurno (día bajo rendimiento).
+  const horasTurno        = paramsAdversas?.horasTurno ?? 10
+  const piesMinimo        = paramsAdversas?.piesMinimoTurno ?? 20
+  const valorHoraAdversa  = paramsAdversas?.valorHoraAdversa ?? 500
   let horasAdversasTotal = 0
   let cobroHorasAdversas = 0
   const diasAdversosDetalle: DiaAdverso[] = []
   for (const e of entries) {
-    if (e.perforacionDia > 0 && e.perforacionDia < 20) {
-      const r = calcularHorasAdversasCompleto({ piesEnTurno: e.perforacionDia, horasTurno: 8 })
+    if (e.perforacionDia > 0 && e.perforacionDia < piesMinimo) {
+      const r = calcularHorasAdversasCompleto({
+        piesEnTurno: e.perforacionDia,
+        horasTurno,
+        piesMinimoTurno: piesMinimo,
+        valorHoraAdversa,
+      })
       horasAdversasTotal += r.horasAdversas
       cobroHorasAdversas += r.cobro
       diasAdversosDetalle.push({
@@ -224,7 +236,7 @@ export function agregarBitacora(
     // Diésel, viáticos y salarios se imputan proporcionalmente a los días activos
     { key: 'diesel',        cantidadConsumida: diasActivos,           montoGastado: diasActivos        * precioUnit('diesel') },
     { key: 'viaticos',      cantidadConsumida: diasActivos,           montoGastado: diasActivos        * precioUnit('viaticos') },
-    { key: 'salarios',      cantidadConsumida: diasActivos,           montoGastado: diasActivos        * (precioUnit('salarios') * presupuesto.diasMaquinaria / Math.max(1, presupuesto.diasMaquinaria)) },
+    { key: 'salarios',      cantidadConsumida: diasActivos,           montoGastado: diasActivos        * precioUnit('salarios') },
     // Bonificación por pie: según pies perforados
     { key: 'bonificaciones', cantidadConsumida: piesPerforadosTotal,  montoGastado: piesPerforadosTotal * precioUnit('bonificaciones') },
   ]
@@ -250,4 +262,75 @@ export { VALOR_HORA_ADVERSA }
 export function calcularAvance(piesPerforados: number, profundidad: number): number {
   if (profundidad <= 0) return 0
   return Math.min(100, Math.max(0, (piesPerforados / profundidad) * 100))
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// COMPRADO POR RUBRO — agrupa GastoExtra por rubro y calcula semáforo.
+// Control de Gastos es INDEPENDIENTE de la bitácora:
+//   · Presupuesto:  lo que la cotización dice que va a costar (N unidades × Q)
+//   · Comprado:     lo que Rodrigo registró en el libro de compras (GastoExtra)
+//   · Semáforo:     basado en cantidades (no en %)
+// ══════════════════════════════════════════════════════════════════════════
+export interface CompradoRubro {
+  key: string                     // coincide con PresupuestoRubro.key
+  cantidadComprada: number        // sum(cantidad) de GastoExtra del rubro
+  montoComprado: number           // sum(cantidad × costoUnitario) del rubro
+  comprasCount: number            // cantas compras se registraron en este rubro
+}
+
+export interface EstadoRubro extends PresupuestoRubro, CompradoRubro {
+  faltante: number                // cantidadPresupuestada − cantidadComprada
+  estado: 'verde' | 'amarillo' | 'rojo'
+  // verde   = faltante > 10   (hay margen holgado)
+  // amarillo= 0 ≤ faltante ≤ 10 (falta poco, ojo)
+  // rojo    = faltante < 0    (sobre-comprado)
+}
+
+/**
+ * Agrupa compras por `rubro` (campo del GastoExtra) y suma cantidades + montos.
+ * El rubro de GastoExtra puede ser un key del presupuesto (bentonita, grava, pipas…)
+ * o 'otro' / 'imprevisto' para compras sin rubro asociado.
+ */
+export function calcularCompradoPorRubro(
+  gastos: Array<{ rubro: string; cantidad: number; costoUnitario: number }>
+): Map<string, CompradoRubro> {
+  const map = new Map<string, CompradoRubro>()
+  for (const g of gastos) {
+    const key = g.rubro || 'otro'
+    const cur = map.get(key) ?? { key, cantidadComprada: 0, montoComprado: 0, comprasCount: 0 }
+    cur.cantidadComprada += g.cantidad
+    cur.montoComprado    += g.cantidad * g.costoUnitario
+    cur.comprasCount     += 1
+    map.set(key, cur)
+  }
+  return map
+}
+
+/**
+ * Calcula el estado (verde/amarillo/rojo) por cada rubro del presupuesto
+ * comparando vs lo comprado. Umbral amarillo = 10 unidades físicas (instrucción
+ * Rodrigo 2026-04-22).
+ */
+export function calcularEstadoPorRubro(
+  presupuesto: Presupuesto,
+  gastos: Array<{ rubro: string; cantidad: number; costoUnitario: number }>,
+  umbralAmarillo = 10,
+): EstadoRubro[] {
+  const compradoMap = calcularCompradoPorRubro(gastos)
+  return presupuesto.rubros.map(r => {
+    const c = compradoMap.get(r.key) ?? { key: r.key, cantidadComprada: 0, montoComprado: 0, comprasCount: 0 }
+    const faltante = r.cantidadPresupuestada - c.cantidadComprada
+    const estado: EstadoRubro['estado'] =
+      faltante < 0            ? 'rojo' :
+      faltante <= umbralAmarillo ? 'amarillo' :
+                                   'verde'
+    return {
+      ...r,
+      cantidadComprada: c.cantidadComprada,
+      montoComprado:    c.montoComprado,
+      comprasCount:     c.comprasCount,
+      faltante,
+      estado,
+    }
+  })
 }

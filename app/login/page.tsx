@@ -1,14 +1,16 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Lock, User } from 'lucide-react'
+import { Eye, EyeOff, Lock, ShieldCheck, User } from 'lucide-react'
 import Image from 'next/image'
 
 export default function LoginPage() {
   const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,13 +24,19 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, ...(requiresTwoFactor ? { totpCode } : {}) }),
       })
 
       const data = await res.json()
 
       if (!res.ok) {
         setError(data.error || 'Error al iniciar sesión')
+        return
+      }
+
+      if (data.requiresTwoFactor) {
+        setRequiresTwoFactor(true)
+        setTotpCode('')
         return
       }
 
@@ -39,6 +47,11 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function resetSecondFactor() {
+    setRequiresTwoFactor(false)
+    setTotpCode('')
   }
 
   return (
@@ -78,7 +91,7 @@ export default function LoginPage() {
                 <input
                   type="text"
                   value={username}
-                  onChange={e => setUsername(e.target.value)}
+                  onChange={e => { setUsername(e.target.value); resetSecondFactor() }}
                   placeholder="Tu usuario"
                   autoComplete="username"
                   required
@@ -94,7 +107,7 @@ export default function LoginPage() {
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={e => { setPassword(e.target.value); resetSecondFactor() }}
                   placeholder="Tu contraseña"
                   autoComplete="current-password"
                   required
@@ -110,6 +123,28 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {requiresTwoFactor && (
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">Código de Google Authenticator</label>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={totpCode}
+                    onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                    required
+                    autoFocus
+                    className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-slate-600 tracking-[0.35em] outline-none focus:border-emerald-500/60 transition-all"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">Abre Google Authenticator y copia el código de 6 dígitos.</p>
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2.5">
                 <p className="text-xs text-red-400">{error}</p>
@@ -118,10 +153,10 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (requiresTwoFactor && totpCode.length !== 6)}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-blue-500/20 mt-2"
             >
-              {loading ? 'Verificando...' : 'Entrar'}
+              {loading ? 'Verificando...' : requiresTwoFactor ? 'Verificar código' : 'Entrar'}
             </button>
           </form>
         </div>

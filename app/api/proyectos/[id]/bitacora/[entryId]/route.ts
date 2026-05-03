@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/auth'
+import { reconciliarReservaBentonitaProyecto } from '@/lib/inventario-bentonita'
 
 // PATCH — actualizar entrada de bitácora
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; entryId: string }> }
 ) {
-  const { entryId } = await params
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
+  const { id, entryId } = await params
   const body = await request.json()
 
   const row = await prisma.bitacoraEntry.update({
@@ -36,15 +41,25 @@ export async function PATCH(
     },
   })
 
+  try {
+    await reconciliarReservaBentonitaProyecto(id)
+  } catch { /* no bloqueante */ }
+
   return NextResponse.json(row)
 }
 
 // DELETE — eliminar entrada
 export async function DELETE(
-  _: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; entryId: string }> }
 ) {
-  const { entryId } = await params
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
+  const { id, entryId } = await params
   await prisma.bitacoraEntry.delete({ where: { id: entryId } })
+  try {
+    await reconciliarReservaBentonitaProyecto(id)
+  } catch { /* no bloqueante */ }
   return NextResponse.json({ ok: true })
 }

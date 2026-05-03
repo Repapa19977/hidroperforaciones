@@ -57,7 +57,7 @@ export default function ClienteLoginPage() {
         </div>
 
         <div className="bg-[#0d1526] rounded-2xl border border-white/5 p-7 shadow-2xl shadow-black/40">
-          <h2 className="text-lg font-semibold text-white mb-1">Ingresá a tu cuenta</h2>
+          <h2 className="text-lg font-semibold text-white mb-1">Ingresa a tu cuenta</h2>
           <p className="text-xs text-slate-500 mb-6">Con el email y la contraseña que te dieron</p>
 
           <form onSubmit={onSubmit} className="space-y-4">

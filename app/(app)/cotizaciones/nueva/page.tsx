@@ -1,13 +1,14 @@
 'use client'
 
-import React, { useState, useMemo, useEffect, useId } from 'react'
+import React, { useCallback, useState, useMemo, useEffect, useId } from 'react'
 import {
   calcularPerforacion, calcularLimpieza, calcularAforoDetallado,
   defaultInputsPerforacion, defaultInputsLimpieza, defaultInputsAforoDetallado,
-  sacosDebentonita, pipasClienteCantidad, camionadasGrava, IVA, ISR, formatBroca,
+  sacosDebentonita, pipasInternas, pipasClienteCantidad, camionadasGrava, IVA, ISR, formatBroca,
+  getCostoColocacionPorDiametro,
   getPrecioTuberia, getEspesoresDisponibles, getDiametrosTuberia, DIAMETROS_BROCA,
   PERFORACION_MM, TUBERIA_MM, calcGravaM3,
-  PRECIOS_POR_PIE_PERFORACION, PRECIOS_BROCAS,
+  PRECIOS_BROCAS,
   type InputsPerforacion, type InputsLimpieza, type InputsAforoDetallado,
   formatQ
 } from '@/lib/calculator'
@@ -18,16 +19,19 @@ import {
   type CondicionOverridePerf, type CondicionExtraPerf, type LineaExtra,
 } from '@/lib/quotation-store'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type PreciosLineas } from '@/lib/config-store'
-import { COSTOS_BASE, calcMarkupPct, calcVentaDesdeMarkup, getCostosBaseConOverrides } from '@/lib/costos-base'
+import { COSTOS_BASE, calcMarkupPct, calcVentaDesdeMarkup, getCostosBaseConOverrides, preciosVentaOverrideDesdeRubros } from '@/lib/costos-base'
 import { CONDICIONES_PERFORACION } from '@/lib/condiciones-perf'
 import {
   Drill, Wrench, ChevronDown, ChevronUp, ArrowLeft,
   AlertCircle, CheckCircle, FileDown, Send, Save,
   User, MapPin, Clock, BarChart3, ChevronRight, Tag,
-  Eye, EyeOff, DollarSign, TrendingUp, Plus, Trash2, Edit3
+  Eye, EyeOff, DollarSign, TrendingUp, Plus, Trash2,
+  ShieldCheck, FlaskConical, Truck, Droplets,
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
+import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
 
 type TipoCot = 'perforacion' | 'limpieza'
 
@@ -43,20 +47,56 @@ export default function NuevaCotizacionPage() {
   const [pl, setPl] = useState<PreciosLineas>(DEFAULT_PRECIOS_LINEAS)
   const [preciosBloqueados, setPreciosBloqueados] = useState(false)
   const [rolUsuario, setRolUsuario] = useState<'admin' | 'superadmin'>('admin')
+  const [mostrarComparativa, setMostrarComparativa] = useState(false)
+  // Overrides de COSTO del modal de comparativa — guardados por cotización, no global
+  const [comparativaCostosOv, setComparativaCostosOv] = useState<Record<string, number>>({})
   const [editMode, setEditMode] = useState(false)
-  const [editCorr, setEditCorr] = useState('')
+  // Bloqueo de edición: solo cotizaciones en "borrador" se pueden modificar.
+  // Si es enviada/confirmada/cancelada → read-only + banner + botón guardar deshabilitado.
+  const [bloqueada, setBloqueada] = useState(false)
+  const [estadoActual, setEstadoActual] = useState<string>('borrador')
+  // Duplicación: si venimos de un ?duplicate=, mostramos de qué cotización se duplicó
+  const [duplicadoDe, setDuplicadoDe] = useState<string | null>(null)
+  // Vendedores dinámicos desde BD (solo superadmin los usa para reasignar)
+  const [vendedoresDB, setVendedoresDB] = useState<string[]>(VENDEDORES)
 
   const patchPl = (key: keyof PreciosLineas, val: number) =>
     setPl(prev => ({ ...prev, [key]: val }))
 
+  const fetchSiguienteCorrelativo = (tipoCot: TipoCot) => {
+    fetch(`/api/cotizaciones/siguiente?tipo=${tipoCot}`)
+      .then(r => r.json())
+      .then(d => { if (d.correlativo) setCorrelativo(d.correlativo) })
+      .catch(() => setCorrelativo(getNextCorrelativo(tipoCot)))
+  }
+
+  const cambiarTipoCotizacion = (nuevoTipo: TipoCot) => {
+    setTipo(nuevoTipo)
+    if (!editMode) fetchSiguienteCorrelativo(nuevoTipo)
+  }
+
   useEffect(() => {
-    // Rol del usuario logueado
-    const match = document.cookie.match(/user_role=([^;]+)/)
-    setRolUsuario((match?.[1] as 'admin' | 'superadmin') ?? 'admin')
+    // Rol y nombre del usuario logueado
+    const rolMatch = document.cookie.match(/user_role=([^;]+)/)
+    const rol = (rolMatch?.[1] as 'admin' | 'superadmin') ?? 'admin'
+    setRolUsuario(rol)
+    const venMatch = document.cookie.match(/user_vendedor=([^;]+)/)
+    const miNombre = venMatch?.[1] ? decodeURIComponent(venMatch[1]) : ''
+    if (miNombre) setVendedor(miNombre)  // vendedor default = quien está logueado
+
+    // Cargar vendedores activos desde BD (solo útil para superadmin en dropdown)
+    fetch('/api/vendedores')
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: { nombre: string }[]) => {
+        const nombres = rows.map(x => x.nombre).filter(Boolean)
+        if (nombres.length > 0) setVendedoresDB(nombres)
+      })
+      .catch(() => {})
 
     // Detectar params de URL: edit mode + pre-fill desde CRM o Contacto
     const params = new URLSearchParams(window.location.search)
     const editParam      = params.get('edit')
+    const duplicateParam = params.get('duplicate')
     const clienteParam   = params.get('cliente')
     const empresaParam   = params.get('empresa')
     const tipoParam      = params.get('tipo')
@@ -65,10 +105,12 @@ export default function NuevaCotizacionPage() {
     // Pre-fill desde link de CRM (query simples)
     if (clienteParam) setCliente(decodeURIComponent(clienteParam))
     if (empresaParam) setEmpresa(decodeURIComponent(empresaParam))
-    if (tipoParam === 'limpieza') setTipo('limpieza')
+    const tipoInicial: TipoCot = tipoParam === 'limpieza' ? 'limpieza' : 'perforacion'
+    if (tipoInicial === 'limpieza') setTipo('limpieza')
 
     // Pre-fill desde link del perfil de contacto (carga el contacto completo)
     if (contactoIdParam && !editParam) {
+      setContactoId(contactoIdParam)  // vincula la cotización al contacto (necesario para portal cliente)
       fetch(`/api/contactos/${contactoIdParam}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
@@ -87,7 +129,6 @@ export default function NuevaCotizacionPage() {
     if (editParam) {
       // ── Modo edición: cargar cotización existente ──────────────────────────
       setEditMode(true)
-      setEditCorr(editParam)
       setCorrelativo(editParam)
       // Al editar, marcar el precio/pie como ya inicializado para no sobrescribir el guardado
       setPrecioPieInicializado(true)
@@ -98,22 +139,36 @@ export default function NuevaCotizacionPage() {
           if (cfg.preciosLineas) setPl({ ...DEFAULT_PRECIOS_LINEAS, ...cfg.preciosLineas })
           if (cfg.costosBaseOverride) setCostosBaseOverride(cfg.costosBaseOverride)
           setPreciosBloqueados(cfg.bloquearPreciosAdmin === true)
+          // Tuberías globales (override + extras) — siempre vienen de config
+          setIp(prev => ({
+            ...prev,
+            tuberiasOverride: cfg.tuberiasOverride ?? prev.tuberiasOverride,
+            tuberiasExtra:    cfg.tuberiasExtra ?? [],
+          }))
         })
       // Cargar datos guardados de la cotización
       fetch(`/api/cotizaciones/${encodeURIComponent(editParam)}`)
         .then(r => r.ok ? r.json() : null)
         .then(row => {
           if (!row?.datos) return
+          // Bloqueo de edición si la cotización NO está en borrador
+          if (row.estado && row.estado !== 'borrador') {
+            setBloqueada(true)
+            setEstadoActual(row.estado)
+          }
           try {
             const d = typeof row.datos === 'string' ? JSON.parse(row.datos) : row.datos
             if (d.tipo)       setTipo(d.tipo)
             if (d.cliente)    setCliente(d.cliente)
+            if (d.contactoId) setContactoId(d.contactoId)
             if (d.empresa)    setEmpresa(d.empresa)
             if (d.nit)        setNit(d.nit)
             if (d.telefono)   setTelefono(d.telefono)
             if (d.email)      setEmail(d.email)
             if (d.proyecto)   setProyecto(d.proyecto)
             if (d.direccion)  setDireccion(d.direccion)
+            if (d.departamento) setDepartamento(d.departamento)
+            if (d.municipio)    setMunicipio(d.municipio)
             if (d.duracion)   setDuracion(d.duracion)
             if (d.vendedor)   setVendedor(d.vendedor)
             if (d.notas)      setNotas(d.notas)
@@ -130,12 +185,16 @@ export default function NuevaCotizacionPage() {
             if (d.lineasConfig)    setLineasConfig(d.lineasConfig)
             if (d.preciosVentaOverride) setPreciosVentaOverride(d.preciosVentaOverride)
             if (d.costosCotizacionOverride) setCostosCotizacionOverride(d.costosCotizacionOverride)
+            if (d.comparativaCostosOv) setComparativaCostosOv(d.comparativaCostosOv)
             if (d.condicionesPerfOverride) setCondicionesPerfOverride(d.condicionesPerfOverride)
             if (d.condicionesPerfExtras)   setCondicionesPerfExtras(d.condicionesPerfExtras)
             if (d.lineasExtras)    setLineasExtras(d.lineasExtras)
             if (typeof d.aplicarIva === 'boolean') setAplicarIva(d.aplicarIva)
             if (typeof d.aplicarIsr === 'boolean') setAplicarIsr(d.aplicarIsr)
+            if (typeof d.aplicarDescuento === 'boolean') setAplicarDescuento(d.aplicarDescuento)
+            if (typeof d.descuentoMonto === 'number') setDescuentoMonto(d.descuentoMonto)
             if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
+            if (typeof d.mostrarNotaCheque === 'boolean') setMostrarNotaCheque(d.mostrarNotaCheque)
             if (d.planPagos)       setPlanPagos(d.planPagos)
             // Snapshots de pipas y grava — si la cotización los guardó, usarlos; sino defaults de Config
             if (typeof d.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(d.pipaPrecioVentaUnitario)
@@ -144,12 +203,79 @@ export default function NuevaCotizacionPage() {
           } catch { /* ignore parse errors */ }
         })
         .catch(() => {})
+    } else if (duplicateParam) {
+      // ── Modo duplicación: cargar datos de la original pero con correlativo NUEVO y estado borrador ──
+      setDuplicadoDe(duplicateParam)
+      setPrecioPieInicializado(true)
+      // Config
+      fetch('/api/config')
+        .then(r => r.ok ? r.json() : DEFAULT_CONFIG)
+        .then(cfg => {
+          if (cfg.preciosLineas) setPl({ ...DEFAULT_PRECIOS_LINEAS, ...cfg.preciosLineas })
+          if (cfg.costosBaseOverride) setCostosBaseOverride(cfg.costosBaseOverride)
+          if (cfg.costosBaseVentaOverride) setPreciosVentaOverride(preciosVentaOverrideDesdeRubros(cfg.costosBaseVentaOverride))
+          setPreciosBloqueados(cfg.bloquearPreciosAdmin === true)
+          setIp(prev => ({
+            ...prev,
+            tuberiasOverride: cfg.tuberiasOverride ?? prev.tuberiasOverride,
+            tuberiasExtra:    cfg.tuberiasExtra ?? [],
+          }))
+        })
+      // Datos de la original (copia SIN correlativo ni editMode)
+      fetch(`/api/cotizaciones/${encodeURIComponent(duplicateParam)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(row => {
+          if (!row?.datos) return
+          try {
+            const d = typeof row.datos === 'string' ? JSON.parse(row.datos) : row.datos
+            const tipoDuplicado: TipoCot = d.tipo === 'limpieza' ? 'limpieza' : 'perforacion'
+            setTipo(tipoDuplicado)
+            fetchSiguienteCorrelativo(tipoDuplicado)
+            if (d.cliente)    setCliente(d.cliente)
+            if (d.contactoId) setContactoId(d.contactoId)
+            if (d.empresa)    setEmpresa(d.empresa)
+            if (d.nit)        setNit(d.nit)
+            if (d.telefono)   setTelefono(d.telefono)
+            if (d.email)      setEmail(d.email)
+            if (d.proyecto)   setProyecto(d.proyecto)
+            if (d.direccion)  setDireccion(d.direccion)
+            if (d.departamento) setDepartamento(d.departamento)
+            if (d.municipio)    setMunicipio(d.municipio)
+            if (d.duracion)   setDuracion(d.duracion)
+            // vendedor NO se copia — lo fuerza el JWT al guardar (admin) o el default (superadmin)
+            if (d.notas)      setNotas(d.notas)
+            if (d.condicionesPerf) setCondicionesPerf(d.condicionesPerf)
+            else if (d.condiciones) setCondicionesPerf(d.condiciones)
+            if (d.condicionesLimp) setCondicionesLimp(d.condicionesLimp)
+            if (d.ip)         setIp(prev => ({ ...prev, ...d.ip }))
+            if (d.il)         setIl(prev => ({ ...prev, ...d.il }))
+            if (d.preciosLineas) setPl(prev => ({ ...prev, ...d.preciosLineas }))
+            if (d.mostrarEspesor !== undefined) setMostrarEspesor(d.mostrarEspesor)
+            if (d.descripcionSimple !== undefined) setDescripcionSimple(d.descripcionSimple)
+            if (d.lineasActivas)   setLineasActivas(d.lineasActivas)
+            if (d.lineasConfig)    setLineasConfig(d.lineasConfig)
+            if (d.preciosVentaOverride) setPreciosVentaOverride(d.preciosVentaOverride)
+            if (d.costosCotizacionOverride) setCostosCotizacionOverride(d.costosCotizacionOverride)
+            if (d.comparativaCostosOv) setComparativaCostosOv(d.comparativaCostosOv)
+            if (d.condicionesPerfOverride) setCondicionesPerfOverride(d.condicionesPerfOverride)
+            if (d.condicionesPerfExtras)   setCondicionesPerfExtras(d.condicionesPerfExtras)
+            if (d.lineasExtras)    setLineasExtras(d.lineasExtras)
+            if (typeof d.aplicarIva === 'boolean') setAplicarIva(d.aplicarIva)
+            if (typeof d.aplicarIsr === 'boolean') setAplicarIsr(d.aplicarIsr)
+            if (typeof d.aplicarDescuento === 'boolean') setAplicarDescuento(d.aplicarDescuento)
+            if (typeof d.descuentoMonto === 'number') setDescuentoMonto(d.descuentoMonto)
+            if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
+            if (typeof d.mostrarNotaCheque === 'boolean') setMostrarNotaCheque(d.mostrarNotaCheque)
+            if (d.planPagos)       setPlanPagos(d.planPagos)
+            if (typeof d.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(d.pipaPrecioVentaUnitario)
+            if (typeof d.camionadaGravaPrecioVentaUnitario === 'number') setCamionadaGravaPrecioVentaUnitario(d.camionadaGravaPrecioVentaUnitario)
+            if (typeof d.capacidadCamionM3 === 'number') setCapacidadCamionM3(d.capacidadCamionM3)
+          } catch { /* ignore */ }
+        })
+        .catch(() => {})
     } else {
       // ── Modo creación: correlativo nuevo + config defaults ─────────────────
-      fetch('/api/cotizaciones/siguiente')
-        .then(r => r.json())
-        .then(d => setCorrelativo(d.correlativo))
-        .catch(() => setCorrelativo(getNextCorrelativo()))
+      fetchSiguienteCorrelativo(tipoInicial)
       fetch('/api/config')
         .then(r => r.ok ? r.json() : DEFAULT_CONFIG)
         .then(cfg => {
@@ -162,9 +288,11 @@ export default function NuevaCotizacionPage() {
             bonificacionPorPie: cfg.bonificacionPorPie,
             precioBentonitaSaco: cfg.precioBentonitaSaco,
             costoAforoBase: cfg.costoAforoBase,
-            costoBomba: cfg.costoBombaDefault,
             costoGravaMaterial: cfg.costoGravaDefault,
             comisionVendedorPct: cfg.comisionVendedorPct,
+            // Override del catálogo de tuberías (editable desde /configuracion)
+            tuberiasOverride: cfg.tuberiasOverride ?? undefined,
+            tuberiasExtra:    cfg.tuberiasExtra ?? [],
           }))
           setIl(prev => ({
             ...prev,
@@ -173,6 +301,7 @@ export default function NuevaCotizacionPage() {
           }))
           if (cfg.preciosLineas) setPl({ ...DEFAULT_PRECIOS_LINEAS, ...cfg.preciosLineas })
           if (cfg.costosBaseOverride) setCostosBaseOverride(cfg.costosBaseOverride)
+          if (cfg.costosBaseVentaOverride) setPreciosVentaOverride(preciosVentaOverrideDesdeRubros(cfg.costosBaseVentaOverride))
           setPreciosBloqueados(cfg.bloquearPreciosAdmin === true)
           // Snapshot de precios venta pipas/grava al crear cotización
           if (typeof cfg.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(cfg.pipaPrecioVentaUnitario)
@@ -183,12 +312,16 @@ export default function NuevaCotizacionPage() {
   }, [])
 
   const [cliente, setCliente] = useState('')
+  const [contactoId, setContactoId] = useState<string | null>(null)  // FK al Contacto seleccionado (necesario para portal cliente)
   const [empresa, setEmpresa] = useState('')
   const [nit, setNit] = useState('')
   const [telefono, setTelefono] = useState('')
   const [email, setEmail]         = useState('')
   const [proyecto, setProyecto] = useState('Perforación de pozo mecánico')
   const [direccion, setDireccion] = useState('')
+  // Ubicación — usada para auto-crear el contacto con depto+municipio ya poblados.
+  const [departamento, setDepartamento] = useState('')
+  const [municipio, setMunicipio] = useState('')
   const [duracion, setDuracion] = useState('')  // auto-sincroniza con totalDiasMaquinaria
   const [vendedor, setVendedor] = useState(VENDEDORES[0])
   const [notas, setNotas] = useState('')
@@ -219,6 +352,9 @@ export default function NuevaCotizacionPage() {
   const [aplicarIva, setAplicarIva] = useState(true)   // default: IVA activo (suma al total)
   const [aplicarIsr, setAplicarIsr] = useState(true)   // default: ISR activo (suma al total); apagar si cliente no retiene
   const [mostrarDesgloseImpuestos, setMostrarDesgloseImpuestos] = useState(false)  // desglose visible en PDF
+  const [aplicarDescuento, setAplicarDescuento] = useState(false)  // descuento especial al cliente
+  const [descuentoMonto, setDescuentoMonto] = useState(0)          // Q descontado sobre subtotal (antes de IVA/ISR)
+  const [mostrarNotaCheque, setMostrarNotaCheque] = useState(false)  // nota "emitir cheque no negociable..." bajo valor por pie
 
   // Precios desde Configuración para líneas del PDF — snapshot al crear cotización
   const [pipaPrecioVentaUnitario, setPipaPrecioVentaUnitario] = useState(700)
@@ -255,7 +391,6 @@ export default function NuevaCotizacionPage() {
       if (prev.tubosLisos === nuevosLisos && prev.tubosRanurados === nuevosRanurados) return prev
       return { ...prev, tubosLisos: nuevosLisos, tubosRanurados: nuevosRanurados }
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ip.profundidad])
 
   // Auto-sync diasTrabajo = ceil(horasLimpieza / horasDia) cuando cambian horas.
@@ -263,20 +398,26 @@ export default function NuevaCotizacionPage() {
   useEffect(() => {
     setIl(prev => {
       if (prev.horasDia <= 0) return prev
-      const calculado = Math.ceil(prev.horasLimpieza / prev.horasDia)
+      const subtipo = prev.servicioSubtipo ?? 'basico'
+      if (subtipo === 'aforo' || subtipo === 'item') return prev
+      const calculado = Math.max(1, Math.ceil(prev.horasLimpieza / prev.horasDia))
       if (calculado === prev.diasTrabajo) return prev
       return { ...prev, diasTrabajo: calculado }
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [il.horasLimpieza, il.horasDia])
+  }, [il.horasLimpieza, il.horasDia, il.servicioSubtipo])
+
+  useEffect(() => {
+    if (tipo !== 'limpieza') return
+    setIl(prev => prev.equipoServicio === '10T1' ? prev : { ...prev, equipoServicio: '10T1' })
+  }, [tipo])
 
   const patchIp = (key: keyof InputsPerforacion, val: number | boolean | string) =>
     setIp(prev => ({ ...prev, [key]: val }))
-  const patchIl = (key: keyof InputsLimpieza, val: number) =>
+  const patchIl = (key: keyof InputsLimpieza, val: number | boolean | string) =>
     setIl(prev => ({ ...prev, [key]: val }))
 
   const lineasBase = tipo === 'perforacion'
-    ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, aplicarIva, aplicarIsr, { pipaPrecioVentaUnitario, camionadaGravaPrecioVentaUnitario, capacidadCamionM3 })
+    ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, { pipaPrecioVentaUnitario, camionadaGravaPrecioVentaUnitario, capacidadCamionM3 })
     : buildLineasLimp(il, resLimp, pl)
 
   // Líneas extras (Fase 2) — ítems libres agregados por el usuario
@@ -310,14 +451,15 @@ export default function NuevaCotizacionPage() {
     if (lineasActivas[key] === false) return { mostrar: false, cobrar: true }  // backward compat
     return { mostrar: true, cobrar: true }
   }
-  // lineas = solo las visibles en el preview/PDF
-  const lineas = todasLineas.filter(l => cfgDe(l.key).mostrar)
   // subtotal = suma de las que SÍ se cobran (independiente de su visibilidad)
   const subtotal    = todasLineas.filter(l => cfgDe(l.key).cobrar).reduce((a, b) => a + b.total, 0)
-  // IVA e ISR — cada uno suma al total solo si su toggle está activo
-  const ivaTotal    = aplicarIva ? Math.round(subtotal * IVA) : 0
-  const isrAplicado = aplicarIsr ? Math.round(subtotal * ISR) : 0
-  const totalConIva = subtotal + ivaTotal + isrAplicado
+  // Descuento especial — se resta antes de IVA/ISR. No puede exceder el subtotal.
+  const descuentoQ  = aplicarDescuento ? Math.min(subtotal, Math.max(0, descuentoMonto)) : 0
+  const baseGravable = subtotal - descuentoQ
+  // IVA e ISR — cada uno suma al total solo si su toggle está activo, calculados sobre la base ya descontada
+  const ivaTotal    = aplicarIva ? Math.round(baseGravable * IVA) : 0
+  const isrAplicado = aplicarIsr ? Math.round(baseGravable * ISR) : 0
+  const totalConIva = baseGravable + ivaTotal + isrAplicado
 
   // Análisis financiero basado en el TOTAL de las líneas (no solo perforación)
   // ISR: 5% para ambos (retención Guatemala)
@@ -330,11 +472,31 @@ export default function NuevaCotizacionPage() {
 
   function validate() {
     const e: Record<string, string> = {}
-    if (!cliente.trim()) e.cliente = 'Requerido'
-    if (!proyecto.trim()) e.proyecto = 'Requerido'
+    if (!cliente.trim())     e.cliente     = 'Requerido'
+    if (!proyecto.trim())    e.proyecto    = 'Requerido'
+    if (!departamento.trim()) e.departamento = 'Requerido'
+    if (!municipio.trim())    e.municipio    = 'Requerido'
     const em = email.trim()
     if (!em) e.email = 'Requerido'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) e.email = 'Formato inválido'
+
+    // Validar que las tuberías seleccionadas tengan costo interno en el catálogo.
+    // Bloquea la cotización si falta algún costo (instrucción René 2026-04-20).
+    if (tipo === 'perforacion') {
+      if (ip.tubosLisos > 0) {
+        const precioLisa = getPrecioTuberia('lisa', ip.diametroTuberia, ip.espesorLisa, ip.tuberiasOverride, ip.tuberiasExtra)
+        if (precioLisa <= 0) {
+          e.tuberia = `Falta costo interno para Tubería Lisa ${ip.diametroTuberia}" × ${ip.espesorLisa}". Pedí a René cargar el costo del proveedor antes de cotizar.`
+        }
+      }
+      if (ip.tubosRanurados > 0) {
+        const precioRan = getPrecioTuberia('ranurada', ip.diametroTuberia, ip.espesorRanurada, ip.tuberiasOverride, ip.tuberiasExtra)
+        if (precioRan <= 0) {
+          e.tuberia = (e.tuberia ? e.tuberia + ' · ' : '') + `Falta costo interno para Tubería Ranurada ${ip.diametroTuberia}" × ${ip.espesorRanurada}". Pedí a René cargar el costo del proveedor antes de cotizar.`
+        }
+      }
+    }
+
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -343,7 +505,8 @@ export default function NuevaCotizacionPage() {
     const condActiva = tipo === 'perforacion' ? condicionesPerf : condicionesLimp
     return {
       correlativo, tipo, fecha: new Date().toLocaleDateString('es-GT'),
-      validezDias: 15, cliente, empresa, nit, telefono, email, proyecto, direccion, duracion,
+      validezDias: 15, cliente, contactoId, empresa, nit, telefono, email, proyecto,
+      departamento, municipio, direccion, duracion,
       vendedor,
       ip: tipo === 'perforacion' ? ip : undefined,
       il: tipo === 'limpieza' ? il : undefined,
@@ -355,12 +518,16 @@ export default function NuevaCotizacionPage() {
       lineasConfig,
       preciosVentaOverride,
       costosCotizacionOverride,
+      comparativaCostosOv,
       condicionesPerfOverride,
       condicionesPerfExtras,
       lineasExtras,
       aplicarIva,
       aplicarIsr,
+      aplicarDescuento,
+      descuentoMonto,
       mostrarDesgloseImpuestos,
+      mostrarNotaCheque,
       // Snapshot de precios venta pipas/grava/capacidad para que al re-abrir/imprimir se mantengan
       pipaPrecioVentaUnitario,
       camionadaGravaPrecioVentaUnitario,
@@ -372,19 +539,55 @@ export default function NuevaCotizacionPage() {
   }
 
   async function handleSave() {
+    if (bloqueada) {
+      alert(`Esta cotización está "${estadoActual}" y no se puede editar. Crea una nueva.`)
+      return
+    }
     if (!validate()) return
     const data = buildData()
     saveQuotation(data)
-    await addCotizacion(data, totalConIva, 'borrador')
+    const res = await fetch('/api/cotizaciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        correlativo: data.correlativo, cliente: data.cliente, contactoId: data.contactoId ?? null,
+        empresa: data.empresa, proyecto: data.proyecto, tipo: data.tipo,
+        estado: 'borrador', monto: totalConIva, fecha: data.fecha, vendedor: data.vendedor,
+        datos: data,
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error ?? 'No se pudo guardar')
+      return
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
   async function handleEnviar() {
+    if (bloqueada) {
+      alert(`Esta cotización está "${estadoActual}" y no se puede editar. Crea una nueva.`)
+      return
+    }
     if (!validate()) return
     const data = buildData()
     saveQuotation(data)
-    await addCotizacion(data, totalConIva, 'enviada')
+    const res = await fetch('/api/cotizaciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        correlativo: data.correlativo, cliente: data.cliente, contactoId: data.contactoId ?? null,
+        empresa: data.empresa, proyecto: data.proyecto, tipo: data.tipo,
+        estado: 'enviada', monto: totalConIva, fecha: data.fecha, vendedor: data.vendedor,
+        datos: data,
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error ?? 'No se pudo guardar')
+      return
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -417,7 +620,7 @@ export default function NuevaCotizacionPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col md:h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-white/5 bg-[#0d1526] sticky top-0 z-10">
         <div className="flex items-center gap-3">
@@ -430,9 +633,19 @@ export default function NuevaCotizacionPage() {
             </h1>
             <p className="text-xs font-mono text-blue-400">{correlativo}</p>
           </div>
-          {editMode && (
+          {editMode && !bloqueada && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/25">
               Modo edición
+            </span>
+          )}
+          {bloqueada && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-500/15 text-red-300 border border-red-500/25 flex items-center gap-1">
+              🔒 {estadoActual} · no editable
+            </span>
+          )}
+          {duplicadoDe && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+              📋 Duplicado de {duplicadoDe}
             </span>
           )}
         </div>
@@ -443,21 +656,50 @@ export default function NuevaCotizacionPage() {
             </span>
           )}
           <button onClick={handleSave}
-            className="flex items-center gap-1.5 border border-white/10 text-slate-300 hover:text-white hover:border-white/20 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all">
+            disabled={bloqueada}
+            title={bloqueada ? `Cotización ${estadoActual}: no se puede editar. Crea una nueva.` : ''}
+            className="flex items-center gap-1.5 border border-white/10 text-slate-300 hover:text-white hover:border-white/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-300 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all">
             <Save className="w-3.5 h-3.5" /><span className="hidden sm:inline"> {editMode ? 'Guardar Cambios' : 'Guardar Borrador'}</span>
           </button>
+          {rolUsuario === 'superadmin' && tipo === 'perforacion' && (
+            <button
+              onClick={() => setMostrarComparativa(true)}
+              title="Comparativa costos vs venta por rubro (solo superadmin)"
+              className="flex items-center gap-1.5 bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all">
+              <DollarSign className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Comparativa</span>
+            </button>
+          )}
           <button onClick={handlePDF}
             className="flex items-center gap-1.5 bg-blue-600/20 border border-blue-500/40 text-blue-300 hover:bg-blue-600/30 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all">
             <FileDown className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Generar PDF</span>
           </button>
           <button onClick={handleEnviar}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-colors shadow-lg shadow-blue-500/20">
+            disabled={bloqueada}
+            title={bloqueada ? `Cotización ${estadoActual}: usá la lista para cambiar estado` : ''}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-colors shadow-lg shadow-blue-500/20">
             <Send className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Marcar como</span> Enviada
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto overscroll-contain p-4 sm:p-6">
+      <div className="flex-1 md:overflow-auto md:overscroll-contain p-4 sm:p-6">
+        {bloqueada && (
+          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 flex items-start gap-3 max-w-[1400px]">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-300">
+                Esta cotización está en estado &quot;{estadoActual}&quot; y no se puede editar
+              </p>
+              <p className="text-xs text-red-300/80 mt-1 leading-relaxed">
+                Solo las cotizaciones en <b>borrador</b> se pueden modificar. Si necesitas cambiar algo, crea una nueva cotización (se mantiene el historial de esta).
+              </p>
+              <Link href="/cotizaciones/nueva"
+                className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-red-200 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 px-3 py-1.5 rounded-lg transition-colors">
+                <Plus className="w-3 h-3" /> Crear nueva cotización
+              </Link>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 max-w-[1400px]">
 
           {/* LEFT */}
@@ -466,12 +708,12 @@ export default function NuevaCotizacionPage() {
             {/* Tipo */}
             <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Tipo de Servicio</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {([
                   { id: 'perforacion' as const, icon: <Drill className="w-5 h-5" />, label: 'Perforación de Pozo', sub: '19 líneas · precio por pie', color: 'blue' },
                   { id: 'limpieza' as const, icon: <Wrench className="w-5 h-5" />, label: 'Limpieza Mecánica', sub: '7 líneas · precio por hora', color: 'cyan' },
                 ]).map(t => (
-                  <button key={t.id} onClick={() => setTipo(t.id)}
+                  <button key={t.id} onClick={() => cambiarTipoCotizacion(t.id)}
                     className={cn('flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left',
                       tipo === t.id
                         ? t.color === 'blue' ? 'border-blue-500/60 bg-blue-500/10' : 'border-cyan-500/60 bg-cyan-500/10'
@@ -504,10 +746,13 @@ export default function NuevaCotizacionPage() {
               {!editMode && (
                 <ContactoSelector
                   onSelect={c => {
+                    setContactoId(c.id ?? null)  // vincula al portal cliente
                     setCliente(c.nombre || '')
                     setEmpresa(c.empresa || '')
                     setTelefono(c.telefono || '')
                     setEmail(c.email || '')
+                    if (c.departamento) setDepartamento(c.departamento)
+                    if (c.municipio)    setMunicipio(c.municipio)
                     const dir = [c.municipio, c.departamento].filter(Boolean).join(', ')
                     if (dir) setDireccion(dir)
                   }}
@@ -568,13 +813,22 @@ export default function NuevaCotizacionPage() {
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <User className="w-3 h-3" /> Vendedor
+                    {rolUsuario === 'admin' && (
+                      <span className="ml-auto text-[9px] text-slate-600 italic">autoasignada a tu usuario</span>
+                    )}
                   </label>
-                  <select value={vendedor} onChange={e => setVendedor(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer">
-                    {VENDEDORES.map(v => (
-                      <option key={v} value={v} className="bg-[#0d1526]">{v}</option>
-                    ))}
-                  </select>
+                  {rolUsuario === 'superadmin' ? (
+                    <select value={vendedor} onChange={e => setVendedor(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer">
+                      {vendedoresDB.map(v => (
+                        <option key={v} value={v} className="bg-[#0d1526]">{v}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="w-full bg-white/3 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-slate-300 cursor-not-allowed">
+                      {vendedor || '—'}
+                    </div>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block">
@@ -584,12 +838,61 @@ export default function NuevaCotizacionPage() {
                     className={cn('w-full bg-white/5 border rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors',
                       errors.proyecto ? 'border-red-500/50' : 'border-white/10')} />
                 </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Departamento *
+                    {errors.departamento && <span className="text-red-400 ml-1">{errors.departamento}</span>}
+                  </label>
+                  <select
+                    value={departamento}
+                    onChange={e => {
+                      setDepartamento(e.target.value)
+                      setMunicipio('')  // reset municipio al cambiar depto
+                      setErrors(p => ({ ...p, departamento: '' }))
+                    }}
+                    style={{ colorScheme: 'dark' }}
+                    className={cn(
+                      'w-full bg-white/5 border rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer',
+                      errors.departamento ? 'border-red-500/50' : 'border-white/10',
+                    )}
+                  >
+                    <option value="" className="bg-[#0d1526]">— Seleccionar —</option>
+                    {DEPARTAMENTOS_GT.map(d => (
+                      <option key={d} value={d} className="bg-[#0d1526]">{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Municipio *
+                    {errors.municipio && <span className="text-red-400 ml-1">{errors.municipio}</span>}
+                    {!departamento && (
+                      <span className="text-[10px] text-slate-600 ml-auto">elegí depto primero</span>
+                    )}
+                  </label>
+                  <select
+                    value={municipio}
+                    disabled={!departamento}
+                    onChange={e => { setMunicipio(e.target.value); setErrors(p => ({ ...p, municipio: '' })) }}
+                    style={{ colorScheme: 'dark' }}
+                    className={cn(
+                      'w-full bg-white/5 border rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500/50 transition-colors appearance-none',
+                      errors.municipio ? 'border-red-500/50' : 'border-white/10',
+                      departamento ? 'text-white cursor-pointer' : 'text-slate-600 cursor-not-allowed',
+                    )}
+                  >
+                    <option value="" className="bg-[#0d1526]">— Seleccionar —</option>
+                    {getMunicipios(departamento).map(m => (
+                      <option key={m} value={m} className="bg-[#0d1526]">{m}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Dirección del Proyecto
+                    <MapPin className="w-3 h-3" /> Dirección exacta del proyecto
                   </label>
                   <input value={direccion} onChange={e => setDireccion(e.target.value)}
-                    placeholder="Ubicación exacta del pozo"
+                    placeholder="Ej. Finca El Paraíso, km 35 ruta al pacífico"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
                 </div>
               </div>
@@ -598,8 +901,8 @@ export default function NuevaCotizacionPage() {
             {/* Calculadora */}
             {tipo === 'perforacion'
               ? <CalcPerforacion ip={ip} patchIp={patchIp} showCostos={showCostos} setShowCostos={setShowCostos} res={resPerf} rol={rolUsuario}
-                  rubro3PrecioPorPie={todasLineas.find(l => l.key === 'perforacion')?.precio ?? 0} />
-              : <CalcLimpieza il={il} patchIl={patchIl} res={resLimp} />}
+                  preciosVentaOverride={preciosVentaOverride} />
+              : <CalcServicios il={il} patchIl={patchIl} res={resLimp} />}
 
             {/* Precios de líneas */}
             <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
@@ -620,7 +923,7 @@ export default function NuevaCotizacionPage() {
                   <p className="text-xs text-slate-500 mb-4">
                     {preciosBloqueados && rolUsuario !== 'superadmin'
                       ? 'El Super Admin ha bloqueado la edición de estos precios.'
-                      : 'Precios predeterminados cargados desde configuración. Podés ajustarlos para esta cotización.'}
+                      : 'Precios predeterminados cargados desde configuración. Puedes ajustarlos para esta cotización.'}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {([
@@ -703,7 +1006,7 @@ export default function NuevaCotizacionPage() {
             )}
 
             {/* Líneas Libres — ítems custom que se suman al total */}
-            {tipo === 'perforacion' && (
+            {(tipo === 'perforacion' || (tipo === 'limpieza' && (il.servicioSubtipo ?? 'basico') === 'item')) && (
               <LineasExtrasEditor
                 extras={lineasExtras}
                 setExtras={setLineasExtras}
@@ -809,7 +1112,7 @@ export default function NuevaCotizacionPage() {
                   </span>
                 </div>
                 <p className="text-[9px] text-slate-500 mt-1.5 italic">
-                  Tip: podés quitar solo "Cobrar" para regalarla como cortesía, o solo "Ver" para ocultarla del PDF pero cobrarla igual.
+                  Tip: puedes quitar solo &quot;Cobrar&quot; para regalarla como cortesía, o solo &quot;Ver&quot; para ocultarla del PDF pero cobrarla igual.
                 </p>
               </div>
 
@@ -873,6 +1176,26 @@ export default function NuevaCotizacionPage() {
                           !cfg.cobrar && 'italic text-amber-500/80',
                           cfg.mostrar && cfg.cobrar && 'text-slate-300')}>
                           {l.nombre.length > 60 ? l.nombre.slice(0, 58) + '…' : l.nombre}
+                          {/* Badge: rubro 3 es residual — absorbe la diferencia del total */}
+                          {l.key === 'perforacion' && (
+                            <span
+                              className="ml-2 text-[10px] bg-orange-500/15 border border-orange-500/30 text-orange-300 px-1.5 py-0.5 rounded font-semibold"
+                              title="Este rubro se calcula automáticamente: profundidad × precio/pie MENOS los demás rubros. Si cambiás otros precios, acá se ajusta solo para mantener el total."
+                            >
+                              ⚠ Residual — absorbe diferencia del total
+                            </span>
+                          )}
+                          {/* Hint para superadmin en rubros con split: cantidad real a comprar */}
+                          {rolUsuario === 'superadmin' && l.key === 'bentonita' && resPerf.sacosBentonita > l.cant && (
+                            <span className="ml-2 text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-300 px-1.5 py-0.5 rounded font-semibold">
+                              Comprar: {Math.round(resPerf.sacosBentonita)} sacos (cliente ve {l.cant})
+                            </span>
+                          )}
+                          {rolUsuario === 'superadmin' && l.key === 'pipas-agua' && ip.profundidad > 0 && (
+                            <span className="ml-2 text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-300 px-1.5 py-0.5 rounded font-semibold">
+                              Comprar: {pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20)} pipas (cliente ve {l.cant})
+                            </span>
+                          )}
                         </span>
                         {estadoTexto && (
                           <span className={cn('text-[9px] leading-none mt-0.5 font-semibold uppercase tracking-wider',
@@ -913,15 +1236,48 @@ export default function NuevaCotizacionPage() {
                 >
                   ISR 5% {aplicarIsr ? '✓' : '—'}
                 </button>
+                {/* Descuento especial — se resta del subtotal antes de impuestos */}
                 <button
-                  onClick={() => setMostrarDesgloseImpuestos(v => !v)}
+                  onClick={() => setAplicarDescuento(v => !v)}
+                  className={cn('text-[10px] px-2 py-1 rounded border transition-colors',
+                    aplicarDescuento
+                      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                      : 'border-white/10 text-slate-500 hover:border-white/20')}
+                  title={aplicarDescuento
+                    ? 'Descuento especial activo — se resta al subtotal antes de IVA/ISR'
+                    : 'Agregar descuento especial al cliente'}
+                >
+                  Descuento {aplicarDescuento ? '✓' : '—'}
+                </button>
+                {aplicarDescuento && (
+                  <div className="flex items-center gap-1 border border-emerald-500/40 bg-emerald-500/5 rounded px-1.5 py-0.5">
+                    <span className="text-[10px] text-emerald-400/70">Q</span>
+                    <input
+                      type="number" step="1" min={0} max={subtotal}
+                      value={descuentoMonto || ''}
+                      onChange={e => setDescuentoMonto(parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-20 bg-transparent text-[11px] text-emerald-200 font-semibold outline-none tabular-nums"
+                    />
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    // Toggle unificado: ambos flags se sincronizan (ON → ambos ON, OFF → ambos OFF).
+                    // Mantenemos ambos state fields en backend por compat con cotizaciones guardadas.
+                    const nuevo = !(mostrarDesgloseImpuestos && mostrarNotaCheque)
+                    setMostrarDesgloseImpuestos(nuevo)
+                    setMostrarNotaCheque(nuevo)
+                  }}
                   className={cn('text-[10px] px-2 py-1 rounded border transition-colors ml-auto',
-                    mostrarDesgloseImpuestos
+                    (mostrarDesgloseImpuestos && mostrarNotaCheque)
                       ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
                       : 'border-white/10 text-slate-500 hover:border-white/20')}
-                  title={mostrarDesgloseImpuestos ? 'PDF muestra el desglose' : 'PDF solo muestra el total'}
+                  title={(mostrarDesgloseImpuestos && mostrarNotaCheque)
+                    ? 'PDF muestra: desglose de impuestos + nota "emitir cheque No Negociable"'
+                    : 'PDF muestra solo el total (sin desglose ni nota de cheque)'}
                 >
-                  Desglose PDF {mostrarDesgloseImpuestos ? '✓' : '—'}
+                  Desglose + nota cheque {(mostrarDesgloseImpuestos && mostrarNotaCheque) ? '✓' : '—'}
                 </button>
               </div>
 
@@ -930,6 +1286,12 @@ export default function NuevaCotizacionPage() {
                   <span className="text-slate-500">Subtotal</span>
                   <span className="text-slate-300 tabular-nums">{formatQ(subtotal)}</span>
                 </div>
+                {aplicarDescuento && descuentoQ > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-emerald-400 font-medium">Descuento especial</span>
+                    <span className="text-emerald-400 tabular-nums font-medium">− {formatQ(descuentoQ)}</span>
+                  </div>
+                )}
                 {aplicarIva && (
                   <div className="flex justify-between text-xs">
                     <span className="text-amber-400 font-medium">IVA (12%)</span>
@@ -956,7 +1318,7 @@ export default function NuevaCotizacionPage() {
                     <span className="text-slate-600"> · base con ambos impuestos: {formatQ(ip.profundidad * ip.precioPorPieVenta)}</span>
                   )}
                   <br/>
-                  <span className="text-slate-600">Editá el precio/pie arriba en la Calculadora.</span>
+                  <span className="text-slate-600">Edita el precio/pie arriba en la Calculadora.</span>
                 </div>
               )}
             </div>
@@ -967,7 +1329,11 @@ export default function NuevaCotizacionPage() {
                 todasLineas={todasLineas}
                 preciosVentaOverride={preciosVentaOverride}
                 setPreciosVentaOverride={setPreciosVentaOverride}
-                costosBaseOverride={costosBaseOverride}
+                costosBaseOverride={{
+                  ...costosBaseOverride,
+                  // Costo de colocación ADEME varía por diámetro de tubería (René 2026-04-20)
+                  colocacionAdeme: getCostoColocacionPorDiametro(ip.diametroTuberia),
+                }}
                 costosCotizacionOverride={costosCotizacionOverride}
                 setCostosCotizacionOverride={setCostosCotizacionOverride}
                 bentonitaSplit={rolUsuario === 'superadmin' ? {
@@ -984,6 +1350,67 @@ export default function NuevaCotizacionPage() {
                   reserva: resPerf.reservaFlete,
                 } : undefined}
               />
+            )}
+
+            {/* Error bloqueante de tubería sin precio */}
+            {errors.tuberia && (
+              <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-3 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-300 leading-relaxed">{errors.tuberia}</p>
+              </div>
+            )}
+
+            {/* Resumen financiero — cliente / costo / ganancia en grande */}
+            {tipo === 'perforacion' && ip.profundidad > 0 && (
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-white/10 rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resumen financiero</h3>
+                  {rolUsuario !== 'superadmin' && (
+                    <span className="ml-auto text-[10px] text-slate-600">Ganancia y costo solo visibles para superadmin</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/5">
+                  {/* Cliente paga */}
+                  <div className="p-4">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-blue-400 mb-1">
+                      <DollarSign className="w-3 h-3" /> Cliente paga
+                    </div>
+                    <p className="text-xl font-black text-white tabular-nums leading-none">{formatQ(totalConIva)}</p>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      {formatQ(subtotal)} subtotal + IVA
+                    </p>
+                  </div>
+                  {/* Tu costo — solo superadmin */}
+                  {rolUsuario === 'superadmin' && (
+                    <div className="p-4">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-400 mb-1">
+                        <TrendingUp className="w-3 h-3" /> Tu costo total
+                      </div>
+                      <p className="text-xl font-black text-amber-200 tabular-nums leading-none">{formatQ(resPerf.costoTotalProyecto)}</p>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                        suma de operación + materiales
+                      </p>
+                    </div>
+                  )}
+                  {/* Ganancia neta — solo superadmin */}
+                  {rolUsuario === 'superadmin' && (
+                    <div className="p-4">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-emerald-400 mb-1">
+                        <CheckCircle className="w-3 h-3" /> Ganancia neta
+                      </div>
+                      <p className={cn('text-xl font-black tabular-nums leading-none',
+                        gananciaNeta > 0 ? 'text-emerald-300' : 'text-red-400'
+                      )}>{formatQ(gananciaNeta)}</p>
+                      <p className={cn('text-[10px] mt-1 leading-tight',
+                        margenNeto >= 25 ? 'text-emerald-400' : margenNeto >= 10 ? 'text-amber-400' : 'text-red-400'
+                      )}>
+                        margen {margenNeto.toFixed(1)}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             <button onClick={handlePDF}
@@ -1029,6 +1456,39 @@ export default function NuevaCotizacionPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal Comparativa de costos — solo superadmin + perforación */}
+      {mostrarComparativa && tipo === 'perforacion' && rolUsuario === 'superadmin' && (
+        <ComparativaCostosModal
+          ip={ip}
+          pl={pl}
+          preciosVentaOverride={preciosVentaOverride}
+          costosOverrideInicial={comparativaCostosOv}
+          onApply={async ({ venta, costo }) => {
+            // Merge con los overrides existentes
+            const newVentaOv = { ...preciosVentaOverride, ...venta }
+            const newCostoOv = { ...comparativaCostosOv, ...costo }
+
+            // Actualizar states (para próximos renders)
+            setPreciosVentaOverride(newVentaOv)
+            setComparativaCostosOv(newCostoOv)
+
+            // Persistir inmediatamente en la BD con los valores nuevos (evitar state stale)
+            if (validate()) {
+              const data = {
+                ...buildData(),
+                preciosVentaOverride: newVentaOv,
+                comparativaCostosOv: newCostoOv,
+              }
+              saveQuotation(data)
+              await addCotizacion(data, totalConIva, 'borrador')
+              setSaved(true)
+              setTimeout(() => setSaved(false), 3000)
+            }
+          }}
+          onClose={() => setMostrarComparativa(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1044,6 +1504,7 @@ interface ContactoMini {
   email: string
   municipio: string
   departamento: string
+  proyectoNombre?: string
 }
 
 function ContactoSelector({ onSelect }: { onSelect: (c: ContactoMini) => void }) {
@@ -1053,15 +1514,29 @@ function ContactoSelector({ onSelect }: { onSelect: (c: ContactoMini) => void })
   const [search, setSearch] = useState('')
   const [seleccionado, setSeleccionado] = useState<ContactoMini | null>(null)
 
+  const loadContactos = useCallback(async () => {
+    // Admin: solo ve sus contactos. Superadmin: ve todos (sin query param).
+    const rawRol = document.cookie.match(/user_role=([^;]+)/)?.[1]
+    const rawVen = document.cookie.match(/user_vendedor=([^;]+)/)?.[1]
+    const rol      = rawRol ? decodeURIComponent(rawRol) : 'admin'
+    const vendedor = rawVen ? decodeURIComponent(rawVen) : ''
+    const url = rol === 'superadmin'
+      ? '/api/contactos'
+      : `/api/contactos?vendedor=${encodeURIComponent(vendedor)}`
+
+    setLoading(true)
+    try {
+      const r = await fetch(url)
+      setContactos(r.ok ? await r.json() : [])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!open) return
-    // Refetch cada vez que se abre el selector para traer contactos agregados recientemente
-    setLoading(true)
-    fetch('/api/contactos')
-      .then(r => r.ok ? r.json() : [])
-      .then((rows: ContactoMini[]) => setContactos(rows))
-      .finally(() => setLoading(false))
-  }, [open])
+    void loadContactos()
+  }, [open, loadContactos])
 
   const filtrados = search.trim() === ''
     ? contactos.slice(0, 20)
@@ -1096,7 +1571,7 @@ function ContactoSelector({ onSelect }: { onSelect: (c: ContactoMini) => void })
                 </span>
               : <span className="text-slate-500">Elegir contacto existente o crear nuevo…</span>}
           </button>
-          <span className="text-[10px] text-slate-500">o escribí los datos abajo manualmente</span>
+          <span className="text-[10px] text-slate-500">o escribe los datos abajo manualmente</span>
         </div>
       ) : (
         <div>
@@ -1154,16 +1629,17 @@ function ContactoSelector({ onSelect }: { onSelect: (c: ContactoMini) => void })
 }
 
 // ── Calculadora Perforación ──────────────────────────────────────────────────
-function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rubro3PrecioPorPie }: {
+function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, preciosVentaOverride }: {
   ip: InputsPerforacion; patchIp: (k: keyof InputsPerforacion, v: number | boolean | string) => void
   showCostos: boolean; setShowCostos: (v: boolean) => void
   res: ReturnType<typeof calcularPerforacion>
   rol: 'admin' | 'superadmin'
-  rubro3PrecioPorPie: number
+  preciosVentaOverride?: Record<string, number>
 }) {
+  const ovr = preciosVentaOverride ?? {}
   const sacos = sacosDebentonita(ip.diametro, ip.profundidad)
-  const espLisa  = getEspesoresDisponibles('lisa',     ip.diametroTuberia)
-  const espRan   = getEspesoresDisponibles('ranurada', ip.diametroTuberia)
+  const espLisa  = getEspesoresDisponibles('lisa',     ip.diametroTuberia, ip.tuberiasExtra ?? [])
+  const espRan   = getEspesoresDisponibles('ranurada', ip.diametroTuberia, ip.tuberiasExtra ?? [])
   const pLisa    = res.precioTubLisa
   const pRan     = res.precioTubRanurada
   const totalTub = ip.tubosLisos + ip.tubosRanurados
@@ -1184,15 +1660,15 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
 
   function changeDiamTub(d: number) {
     patchIp('diametroTuberia', d)
-    const eLisa = getEspesoresDisponibles('lisa', d)
-    const eRan  = getEspesoresDisponibles('ranurada', d)
+    const eLisa = getEspesoresDisponibles('lisa', d, ip.tuberiasExtra ?? [])
+    const eRan  = getEspesoresDisponibles('ranurada', d, ip.tuberiasExtra ?? [])
     if (!eLisa.includes(ip.espesorLisa))     patchIp('espesorLisa', eLisa[eLisa.length - 1] ?? 0.25)
     if (!eRan.includes(ip.espesorRanurada))  patchIp('espesorRanurada', eRan[eRan.length - 1] ?? 0.25)
   }
 
   const SERVICIOS: { key: keyof InputsPerforacion; label: string }[] = [
     { key: 'incluirRegistroElectrico', label: 'Registro eléctrico' },
-    { key: 'incluirSelloSanitario',    label: 'Sello sanitario (Q7/pie)' },
+    { key: 'incluirSelloSanitario',    label: 'Sello sanitario (Q75/pie × pies)' },
     { key: 'incluirExtraccionLodos',   label: 'Extracción de lodos' },
     { key: 'incluirSeguridad',         label: 'Tubería de seguridad' },
     { key: 'incluirSanitario',         label: 'Sanitario' },
@@ -1212,32 +1688,33 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
         </div>
       </div>
 
-      {/* 0. VALOR POR PIE — input principal destacado al inicio */}
-      {ip.profundidad > 0 && (
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div>
-              <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Valor por pie (al cliente)</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">Precio de venta unitario — con IVA e ISR incluidos</p>
-            </div>
+      {/* 0. VALOR POR PIE — input principal destacado al inicio (SIEMPRE visible) */}
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div>
+            <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Valor por pie (al cliente)</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Precio de venta unitario — con IVA e ISR incluidos</p>
+          </div>
+          {ip.profundidad > 0 && (
             <span className="text-[10px] text-slate-500 hidden sm:inline">× {ip.profundidad} pies</span>
-          </div>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
-            <input
-              type="number" step="1" min={0}
-              value={ip.precioPorPieVenta}
-              onFocus={e => e.target.select()}
-              onChange={e => patchIp('precioPorPieVenta', parseInt(e.target.value) || 0)}
-              inputMode="decimal"
-              className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-3 text-lg font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
-            />
-          </div>
-          <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-            Apagá los toggles IVA/ISR en el panel derecho y ese impuesto se <b>resta</b> del total final.
-          </p>
+          )}
         </div>
-      )}
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
+          <input
+            type="number" step="1" min={0}
+            value={ip.precioPorPieVenta}
+            onChange={e => patchIp('precioPorPieVenta', parseInt(e.target.value) || 0)}
+            inputMode="decimal"
+            className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-3 text-lg font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
+          />
+        </div>
+        <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+          {ip.profundidad > 0
+            ? <>Apagá los toggles IVA/ISR en el panel derecho y ese impuesto se <b>resta</b> del total final.</>
+            : <>Meté primero la profundidad del pozo abajo para ver el cálculo total.</>}
+        </p>
+      </div>
 
       {/* 1. Parámetros del pozo */}
       <div>
@@ -1269,22 +1746,50 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
           </div>
           <NumInput label="Profundidad (pies)" value={ip.profundidad} onChange={v => patchIp('profundidad', v)}
             hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`} />
-          {/* Precio/pie del Rubro 3 — READONLY: se calcula solo como residual
-              (total cotización − otros rubros) / profundidad. NO editable. */}
+          {/* Precio/pie venta al cliente — editable directo aquí (sincronizado con
+              el Valor por pie destacado del panel derecho). Cambia el total final. */}
           <div>
             <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-              Precio/pie rubro 3
-              <span className="text-[9px] text-blue-400 ml-auto">auto</span>
+              Precio/pie venta (Q)
+              <span className="text-[9px] text-blue-400 ml-auto">editable</span>
             </label>
-            <div className="w-full bg-white/3 border border-white/8 rounded-lg px-3 py-2.5 text-sm text-white outline-none transition-colors tabular-nums font-semibold">
-              Q {Math.round(rubro3PrecioPorPie).toLocaleString('es-GT')}
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-medium">Q</span>
+              <input
+                type="number" step="1" min={0}
+                value={ip.precioPorPieVenta}
+                onChange={e => patchIp('precioPorPieVenta', parseInt(e.target.value) || 0)}
+                inputMode="decimal"
+                className="w-full bg-white/5 border border-blue-500/30 rounded-lg pl-7 pr-3 py-2.5 text-sm font-semibold text-white outline-none focus:border-blue-500/60 transition-colors tabular-nums"
+              />
             </div>
             <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-              Se calcula solo. Editá el <span className="text-blue-400">Valor por pie al cliente</span> en el panel derecho para cambiar el total.
+              Precio al cliente con IVA+ISR · auto-sugerido {formatQ(res.precioPorPieCalculado)}
             </p>
           </div>
         </div>
       </div>
+
+      {/* Widget interno — Split 70/30 (solo superadmin, solo perforación) */}
+      {rol === 'superadmin' && ip.profundidad > 0 && (
+        <SplitInternoCotizacion
+          sacosTotales={res.sacosBentonita}
+          sacosCliente={res.sacosEntregaCliente}
+          sacosReserva={res.sacosReserva}
+          valorReservaBentonita={res.valorReservaBentonita}
+          precioBentonitaCosto={ip.precioBentonitaSaco}
+          precioBentonitaVenta={ovr['bentonita'] ?? 535.71}
+          fleteCliente={res.costoFleteGrava}
+          fleteCostoReal={res.costoFleteReal}
+          fleteReserva={res.reservaFlete}
+          camionesFlete={res.camionesFlete}
+          m3Grava={res.m3Grava}
+          pctEntregaBentonita={ip.pctEntregaBentonita ?? 0.70}
+          pipasInternasTotal={pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20)}
+          pipasCliente={pipasClienteCantidad(ip.profundidad, ip.rendimientoPorDia ?? 20)}
+          precioPipaVenta={ovr['pipas-agua'] ?? 700}
+        />
+      )}
 
       {/* 1.5 Logística del proyecto (km + horas aforo + horas limpieza) */}
       <div>
@@ -1315,6 +1820,9 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
       <div>
         <p className="text-xs text-slate-500 mb-3 font-medium">Tubería</p>
         <div className="bg-white/3 rounded-xl border border-white/8 p-4 space-y-4">
+          <p className="text-[11px] text-slate-500 bg-white/4 border border-white/8 rounded-lg px-3 py-2 leading-relaxed">
+            Los valores por tubo son <b className="text-slate-300">costo interno del proveedor</b>. El precio al cliente se calcula despues con la formula de la cotizacion; si una medida queda en Q0, el sistema bloquea guardar para no cotizar con costo faltante.
+          </p>
           {/* Diámetro + tipo ranura + espesores */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
@@ -1324,7 +1832,7 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
                 onChange={e => changeDiamTub(Number(e.target.value))}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 appearance-none cursor-pointer"
               >
-                {[...new Set([...getDiametrosTuberia('lisa'), ...getDiametrosTuberia('ranurada')])].sort((a,b)=>a-b).map(d => (
+                {[...new Set([...getDiametrosTuberia('lisa', ip.tuberiasExtra ?? []), ...getDiametrosTuberia('ranurada', ip.tuberiasExtra ?? [])])].sort((a,b)=>a-b).map(d => (
                   <option key={d} value={d} className="bg-[#0d1526]">{d} pulgadas</option>
                 ))}
               </select>
@@ -1400,7 +1908,7 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-blue-500/50" />
               </div>
               <span className="text-slate-600 text-xs mt-4">×</span>
-              <span className="text-slate-400 text-xs mt-4 w-24 shrink-0">{formatQ(pLisa)}/tubo</span>
+              <span className="text-slate-400 text-xs mt-4 w-32 shrink-0">{formatQ(pLisa)}/tubo costo</span>
               <span className="text-slate-600 text-xs mt-4">=</span>
               <span className="text-white text-sm font-medium mt-4 flex-1 text-right">{formatQ(pLisa * ip.tubosLisos)}</span>
             </div>
@@ -1413,7 +1921,7 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-blue-500/50" />
               </div>
               <span className="text-slate-600 text-xs mt-4">×</span>
-              <span className="text-slate-400 text-xs mt-4 w-24 shrink-0">{formatQ(pRan)}/tubo</span>
+              <span className="text-slate-400 text-xs mt-4 w-32 shrink-0">{formatQ(pRan)}/tubo costo</span>
               <span className="text-slate-600 text-xs mt-4">=</span>
               <span className="text-white text-sm font-medium mt-4 flex-1 text-right">{formatQ(pRan * ip.tubosRanurados)}</span>
             </div>
@@ -1431,11 +1939,14 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
               )}>
                 {coincideConProfundidad
                   ? `Cubre ${ip.profundidad} pies ✓`
-                  : `Para ${ip.profundidad} pies necesitás ${tubosSugeridos} tubos`}
+                  : `Para ${ip.profundidad} pies necesitas ${tubosSugeridos} tubos`}
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-white tabular-nums">{formatQ(costoTub)}</span>
+              <span className="text-right">
+                <span className="block text-[10px] text-slate-500">Costo interno tuberia</span>
+                <span className="block text-sm font-medium text-white tabular-nums">{formatQ(costoTub)}</span>
+              </span>
               <button onClick={autoSplit70_30}
                 title={`Auto: ${lisosSugeridos} lisos + ${ranuradosSugeridos} ranurados (70/30 desde ${ip.profundidad} pies)`}
                 className="text-[10px] border border-blue-500/30 text-blue-400 hover:text-blue-300 hover:border-blue-500/50 px-2 py-1 rounded transition-colors">
@@ -1484,6 +1995,35 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
             </button>
           ))}
         </div>
+
+        {/* Input pies de sello sanitario — aparece solo si el toggle está activo */}
+        {ip.incluirSelloSanitario && (
+          <div className="mt-3 pl-6 border-l-2 border-blue-500/30">
+            <label className="text-[10px] text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-1">
+              Pies de sello sanitario
+              <span className="text-slate-600 normal-case text-[9px] tracking-normal ml-1">(10–40 según terreno, NO la profundidad total)</span>
+            </label>
+            <div className="flex items-center gap-2 max-w-[260px]">
+              <input
+                type="number"
+                min={10}
+                max={40}
+                step={1}
+                value={ip.piesSelloSanitario ?? 20}
+                onChange={e => patchIp('piesSelloSanitario', parseInt(e.target.value) || 0)}
+                onBlur={e => {
+                  const n = parseInt(e.target.value) || 20
+                  patchIp('piesSelloSanitario', Math.max(10, Math.min(40, n)))
+                }}
+                className="w-20 bg-white/5 border border-blue-500/30 rounded-lg px-2 py-1.5 text-sm text-white tabular-nums text-center outline-none focus:border-blue-500/60"
+              />
+              <span className="text-xs text-slate-500">pies × Q 75 =</span>
+              <span className="text-sm text-blue-300 font-bold tabular-nums">
+                {formatQ((ip.piesSelloSanitario ?? 20) * 75)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 5. Costos avanzados */}
@@ -1495,6 +2035,16 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
 
       {showCostos && (
         <div className="space-y-4 pt-2 border-t border-white/5">
+          {/* Heads-up: estos costos afectan tu margen, NO el precio al cliente */}
+          <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-slate-400 leading-relaxed">
+              <b className="text-blue-300">Estos costos afectan tu margen interno, NO el precio final al cliente.</b>
+              <br />
+              El cliente sigue pagando <b>profundidad × precio/pie</b> que ya definiste arriba. Si cambiás estos valores, lo único que cambia es tu <b>ganancia neta</b> (lo que te queda en el bolsillo) — el rubro &quot;Perforación&quot; en el PDF se ajusta solo para mantener el mismo total.
+            </div>
+          </div>
+
           <div>
             <p className="text-xs text-slate-500 mb-3 font-medium">Maquinaria y Operación</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -1534,7 +2084,8 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
               {rol === 'superadmin' && (
                 <NumInput label="% entrega bentonita (cliente)"
                   value={(ip.pctEntregaBentonita ?? 0.70) * 100}
-                  onChange={v => patchIp('pctEntregaBentonita', Math.max(0, Math.min(100, v)) / 100)}
+                  onChange={v => patchIp('pctEntregaBentonita', v / 100)}
+                  onBlur={v => patchIp('pctEntregaBentonita', Math.max(0, Math.min(100, v)) / 100)}
                   hint={`Cliente: ${res.sacosEntregaCliente} sacos · Reserva interna: ${res.sacosReserva} sacos (${formatQ(res.valorReservaBentonita)})`}
                   accent />
               )}
@@ -1560,7 +2111,6 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
                 hint={`+${Math.round(ip.imprevistoPctAforo * 100)}% impr. → ${formatQ(res.costoAforo)} c/imp.`} />
               <NumInput label="Imprevisto aforo (%)" value={ip.imprevistoPctAforo * 100}
                 onChange={v => patchIp('imprevistoPctAforo', v / 100)} />
-              <NumInput label="Bomba sumergible (Q)" value={ip.costoBomba} onChange={v => patchIp('costoBomba', v)} />
               <NumInput label="Comisión vendedor (%)" value={ip.comisionVendedorPct} onChange={v => patchIp('comisionVendedorPct', v)} />
               <NumInput label="Imprevistos proyecto (Q)"
                 value={ip.imprevistoGlobal ?? 20000}
@@ -1575,7 +2125,27 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
           <div>
             <p className="text-xs text-slate-500 mb-3 font-medium">Costos Adicionales de Campo</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              <NumInput label="Pipas de agua (Q)" value={ip.costoPipasAgua} onChange={v => patchIp('costoPipasAgua', v)} />
+              {/* Pipas de agua: auto-calcula pipasInternas × Q500 si está en 0. Si admin edita a >0, respeta. */}
+              <div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <NumInput
+                      label="Pipas de agua (Q)"
+                      value={ip.costoPipasAgua}
+                      onChange={v => patchIp('costoPipasAgua', v)}
+                      hint={ip.costoPipasAgua === 0
+                        ? `Auto: ${pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20)} pipas × Q500 = ${formatQ(pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20) * 500)}`
+                        : `Manual (auto sería ${formatQ(pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20) * 500)})`}
+                    />
+                  </div>
+                  <button
+                    onClick={() => patchIp('costoPipasAgua', 0)}
+                    className="mb-0.5 text-[10px] border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 px-2 py-1.5 rounded transition-colors whitespace-nowrap"
+                    title="Volver a auto-calcular por profundidad">
+                    Auto
+                  </button>
+                </div>
+              </div>
               <NumInput label="Soldador en obra (Q)" value={ip.costoSoldador} onChange={v => patchIp('costoSoldador', v)} />
               <NumInput label="Tapón de tubería (Q)" value={ip.costoTaponTuberia} onChange={v => patchIp('costoTaponTuberia', v)} />
               {ip.comprarBroca && (
@@ -1599,47 +2169,211 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, rub
   )
 }
 
-// ── Calculadora Limpieza ─────────────────────────────────────────────────────
-function CalcLimpieza({ il, patchIl, res }: {
-  il: InputsLimpieza; patchIl: (k: keyof InputsLimpieza, v: number) => void
+// ── Panel Financiero Perforación ─────────────────────────────────────────────
+function CalcServicios({ il, patchIl, res }: {
+  il: InputsLimpieza
+  patchIl: (k: keyof InputsLimpieza, v: number | boolean | string) => void
   res: ReturnType<typeof calcularLimpieza>
 }) {
+  const subtipo = il.servicioSubtipo ?? 'basico'
+  const diametrosServicio = ['Ninguna', '1"', '1-1/4"', '1-1/2"', '2"', '2-1/2"', '3"', '4"', '5"', '6"', '8"', '10"', '12"']
+  const usaLimpieza = subtipo === 'basico' || subtipo === 'completo'
+  const usaHorasLimpieza = usaLimpieza || subtipo === 'item'
+  const usaAforo = subtipo === 'aforo' || subtipo === 'completo'
+  const usaTuberiaServicio = subtipo === 'basico' || subtipo === 'aforo' || subtipo === 'completo'
+  const inputClass = 'w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
+  const selectClass = cn(inputClass, 'bg-[#111827] text-white [color-scheme:dark]')
+  const toggleClass = (active: boolean) => cn(
+    'h-[42px] rounded-lg border px-3 text-sm font-medium transition-colors text-left',
+    active ? 'bg-blue-500/15 border-blue-500/40 text-blue-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+  )
+  const round2 = (value: number) => Math.round(value * 100) / 100
+  const tuboMargenPct = il.margenTuboServicioPct ?? 30
+  const tuboCosto = il.costoTuboServicioUnitario ?? 0
+  const tuboPrecioAuto = round2(tuboCosto * (1 + tuboMargenPct / 100))
+  const setCostoTuboServicio = (costo: number) => {
+    patchIl('costoTuboServicioUnitario', costo)
+    patchIl('precioVentaTuboServicioUnitario', round2(costo * (1 + tuboMargenPct / 100)))
+  }
+  const setMargenTuboServicio = (margen: number) => {
+    patchIl('margenTuboServicioPct', margen)
+    patchIl('precioVentaTuboServicioUnitario', round2(tuboCosto * (1 + margen / 100)))
+  }
+  const setServicio = (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => {
+    patchIl('servicioSubtipo', next)
+    if (next === 'basico') {
+      patchIl('trabajoEjecutar', 'Limpieza mecanica')
+      patchIl('personal', il.personal > 0 ? il.personal : 2)
+    }
+    if (next === 'aforo') {
+      patchIl('trabajoEjecutar', 'Aforo')
+      patchIl('horasAforo', (il.horasAforo ?? 0) > 0 ? (il.horasAforo ?? 24) : 24)
+      patchIl('personal', 0)
+    }
+    if (next === 'completo') patchIl('trabajoEjecutar', 'Servicio completo')
+    if (next === 'item') {
+      patchIl('trabajoEjecutar', 'Servicio por item')
+      patchIl('personal', 0)
+    }
+  }
+
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Calculadora — Limpieza Mecánica</p>
-        <div className="flex gap-4 text-xs text-slate-500">
-          <span>Días total: <b className="text-white">{res.diasTotales}</b></span>
-          <span>Costo neto/hora: <b className={res.costoNetoHora > il.precioVentaHora ? 'text-red-400' : 'text-emerald-400'}>{formatQ(res.costoNetoHora)}</b></span>
-          <span className="hidden sm:inline">Precio/hora: <b className="text-white">{formatQ(il.precioVentaHora)}</b></span>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Calculadora - Servicios</p>
+        <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+          <span>Dias total: <b className="text-white">{res.diasTotales}</b></span>
+          <span>Traslado: <b className="text-white">{formatQ(res.costoTraslado)}</b></span>
+          <span>Galones: <b className="text-white">{res.galonesTraslado.toFixed(2)}</b></span>
+          <span>Costo neto/h: <b className={res.costoNetoHora > il.precioVentaHora ? 'text-red-400' : 'text-emerald-400'}>{formatQ(res.costoNetoHora)}</b></span>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+        {([
+          ['basico', 'Nuevo Presupuesto Servicio Basico', 'Limpieza mecanica'],
+          ['aforo', 'Nuevo Presupuesto Servicio Aforo', 'Aforo'],
+          ['completo', 'Nuevo Presupuesto Servicio Completo', 'Limpieza + aforo'],
+          ['item', 'Nuevo Presupuesto Servicio por Item', 'Lineas libres'],
+        ] as const).map(([key, title, desc]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setServicio(key)}
+            className={cn(
+              'rounded-lg border px-3 py-2 text-left transition-colors',
+              subtipo === key ? 'bg-blue-500/15 border-blue-500/40' : 'bg-white/5 border-white/10 hover:bg-white/8'
+            )}
+          >
+            <p className={cn('text-sm font-semibold', subtipo === key ? 'text-blue-200' : 'text-white')}>{title}</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{desc}</p>
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        <NumInput label="Horas de limpieza" value={il.horasLimpieza} onChange={v => patchIl('horasLimpieza', v)} />
-        <NumInput label="Precio venta/hora (Q)" value={il.precioVentaHora} onChange={v => patchIl('precioVentaHora', v)}
-          accent hint={`Total: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`} />
-        <NumInput label="Kilómetros al sitio" value={il.kilometros} onChange={v => patchIl('kilometros', v)} />
-        <NumInput label="Días de trabajo (auto)" value={il.diasTrabajo} onChange={v => patchIl('diasTrabajo', v)}
-          hint={`Auto: ⌈${il.horasLimpieza}h ÷ ${il.horasDia}h⌉ = ${il.horasDia > 0 ? Math.ceil(il.horasLimpieza / il.horasDia) : 0} días. Editable.`} />
-        <NumInput label="Personal" value={il.personal} onChange={v => patchIl('personal', v)} />
-        <NumInput label="Canecas de químicos" value={il.canecasQuimicos} onChange={v => patchIl('canecasQuimicos', v)} />
-        <NumInput label="Horas al día" value={il.horasDia} onChange={v => patchIl('horasDia', v)}
-          hint={`Define el ritmo diario (cambia días automáticamente)`} />
-        <NumInput label="Precio diésel (Q/gal)" value={il.precioDiesel} onChange={v => patchIl('precioDiesel', v)} />
-        <NumInput label="Viáticos/día (Q)" value={il.viaticosDiarios} onChange={v => patchIl('viaticosDiarios', v)} />
-        <NumInput label="Hospedaje/noche (Q)" value={il.hospedajeDiario} onChange={v => patchIl('hospedajeDiario', v)}
-          hint={`${res.diasTotales} noches = ${formatQ(res.costoHospedaje)}`} />
-        <NumInput label="Salario mensual (Q)" value={il.salarioMensual} onChange={v => patchIl('salarioMensual', v)} />
-        <NumInput label="Precio/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
-        <NumInput label="Imprevisto limp. (%)" value={il.imprevistoPctLimpieza * 100}
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block font-medium">Trabajo a ejecutar</label>
+          <input value={il.trabajoEjecutar ?? ''} onChange={e => patchIl('trabajoEjecutar', e.target.value)} className={inputClass} />
+        </div>
+        <NumInput label="Impuestos (%)" value={il.impuestosPct ?? 17} onChange={v => patchIl('impuestosPct', v)} />
+        <NumInput label="Comision venta (%)" value={il.comisionVentaPct ?? 0} onChange={v => patchIl('comisionVentaPct', v)} />
+        <NumInput label="Dias de trabajo servicio" value={il.diasTrabajo} onChange={v => patchIl('diasTrabajo', v)}
+          hint={usaLimpieza ? `Auto: ceil(${il.horasLimpieza}h / ${il.horasDia}h) = ${il.horasDia > 0 ? Math.max(1, Math.ceil(il.horasLimpieza / il.horasDia)) : 1} dias. Editable.` : 'Editable.'} />
+        <NumInput label="Km al sitio" value={il.kilometros} onChange={v => patchIl('kilometros', v)}
+          hint={`Ida/vuelta con aumento: ${res.kmIdaVuelta.toFixed(1)} km`} />
+        <NumInput label="% aumento km" value={il.aumentoKmPct ?? 0} onChange={v => patchIl('aumentoKmPct', v)} />
+        <NumInput label="Precio diesel (Q/gal)" value={il.precioDiesel} onChange={v => patchIl('precioDiesel', v)}
+          hint={`${res.galonesTraslado.toFixed(2)} galones a 7 km/gal = ${formatQ(res.costoTraslado)}`} />
+        <NumInput label="Precio gasolina (Q/gal)" value={il.precioGasolina ?? 33} onChange={v => patchIl('precioGasolina', v)} />
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block font-medium">Moneda</label>
+          <select value={il.moneda ?? 'Quetzal'} onChange={e => patchIl('moneda', e.target.value)} className={selectClass}>
+            <option className="bg-[#111827] text-white" value="Quetzal">Quetzal</option>
+            <option className="bg-[#111827] text-white" value="Dolar">Dolar</option>
+          </select>
+        </div>
+        <NumInput label="Tipo de cambio" value={il.tipoCambio ?? 1} onChange={v => patchIl('tipoCambio', v)} />
+        <button type="button" onClick={() => patchIl('dobleTurno', !(il.dobleTurno ?? false))} className={toggleClass(!!il.dobleTurno)}>
+          Doble turno: {il.dobleTurno ? 'Si' : 'No'}
+        </button>
+        <button type="button" onClick={() => patchIl('agregarCondicionesPerforacion', !(il.agregarCondicionesPerforacion ?? false))} className={toggleClass(!!il.agregarCondicionesPerforacion)}>
+          Condiciones perforacion: {il.agregarCondicionesPerforacion ? 'Si' : 'No'}
+        </button>
+
+        {usaHorasLimpieza && (
+          <>
+            {usaLimpieza && (
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block font-medium">Equipo de servicio</label>
+                <input value="10T1" readOnly className={cn(inputClass, 'cursor-not-allowed text-slate-300')} />
+              </div>
+            )}
+            <NumInput label="Horas limpieza mecanica" value={il.horasLimpieza} onChange={v => patchIl('horasLimpieza', v)} />
+            {usaLimpieza && (
+              <NumInput label="Precio venta/hora (Q)" value={il.precioVentaHora} onChange={v => patchIl('precioVentaHora', v)}
+                accent hint={`Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`} />
+            )}
+          </>
+        )}
+
+        {usaAforo && (
+          <>
+            <NumInput label="Horas aforo" value={il.horasAforo ?? 0} onChange={v => patchIl('horasAforo', v)} />
+            <NumInput label="Precio venta aforo total (Q)" value={il.precioVentaAforoTotal ?? 23000} onChange={v => patchIl('precioVentaAforoTotal', v)}
+              accent hint={`Costo diesel aforo: ${formatQ(res.costoDieselAforo)}`} />
+          </>
+        )}
+
+        {usaTuberiaServicio && (
+          <>
+            <NumInput label="Empleados" value={il.personal} onChange={v => patchIl('personal', v)} />
+            <NumInput label="Cantidad tubos extraccion" value={il.tubosExtraccion ?? 0} onChange={v => patchIl('tubosExtraccion', v)} />
+            <NumInput label="Cantidad tubos instalacion" value={il.tubosInstalacion ?? 0} onChange={v => patchIl('tubosInstalacion', v)} />
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block font-medium">Diametro tuberia extraccion / instalacion</label>
+              <select value={il.diametroTuberiaServicio ?? 'Ninguna'} onChange={e => patchIl('diametroTuberiaServicio', e.target.value)} className={selectClass}>
+                {diametrosServicio.map(diametro => (
+                  <option className="bg-[#111827] text-white" key={diametro} value={diametro}>{diametro}</option>
+                ))}
+              </select>
+            </div>
+            <NumInput label="Costo tubo unitario (Q)" value={il.costoTuboServicioUnitario ?? 0} onChange={setCostoTuboServicio}
+              hint="Tu costo interno por tubo segun diametro" />
+            <NumInput label="Margen tubo (%)" value={tuboMargenPct} onChange={setMargenTuboServicio}
+              hint={`Auto cliente +${tuboMargenPct}% = ${formatQ(tuboPrecioAuto)}`} />
+            <NumInput label="Precio cliente tubo (Q)" value={(il.precioVentaTuboServicioUnitario ?? 0) > 0 ? (il.precioVentaTuboServicioUnitario ?? 0) : tuboPrecioAuto} onChange={v => patchIl('precioVentaTuboServicioUnitario', v)}
+              accent hint={`Editable. Total tubos: ${formatQ(res.precioVentaTuberiaServicio)}`} />
+            <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
+              hint="Linea global del presupuesto de servicio" />
+            <NumInput label="Tecnico chequeo equipo (Q)" value={il.precioTecnicoChequeoServicio ?? 0} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
+              hint="Linea global del presupuesto de servicio" />
+          </>
+        )}
+
+        {usaLimpieza && (
+          <>
+            <NumInput label="Canecas de quimicos" value={il.canecasQuimicos} onChange={v => patchIl('canecasQuimicos', v)} />
+            <NumInput label="Horas al dia" value={il.horasDia} onChange={v => patchIl('horasDia', v)}
+              hint="Define el ritmo diario del servicio" />
+            <NumInput label="Precio/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
+          </>
+        )}
+
+        {subtipo === 'completo' && (
+          <>
+            <button type="button" onClick={() => patchIl('inspeccionCamara', !(il.inspeccionCamara ?? false))} className={toggleClass(!!il.inspeccionCamara)}>
+              Inspeccion con camara: {il.inspeccionCamara ? 'Si' : 'No'}
+            </button>
+            {il.inspeccionCamara && (
+              <NumInput label="Precio inspeccion camara (Q)" value={il.precioInspeccionCamara ?? 0} onChange={v => patchIl('precioInspeccionCamara', v)} />
+            )}
+          </>
+        )}
+
+        {subtipo !== 'item' && (
+          <>
+            <NumInput label="Viaticos/dia (Q)" value={il.viaticosDiarios} onChange={v => patchIl('viaticosDiarios', v)} />
+            <NumInput label="Hospedaje/noche (Q)" value={il.hospedajeDiario} onChange={v => patchIl('hospedajeDiario', v)}
+              hint={`${Math.max(0, res.diasTotales - 1)} noches = ${formatQ(res.costoHospedaje)}`} />
+            <NumInput label="Salario mensual (Q)" value={il.salarioMensual} onChange={v => patchIl('salarioMensual', v)} />
+          </>
+        )}
+
+        <NumInput label="Imprevisto servicio (%)" value={il.imprevistoPctLimpieza * 100}
           onChange={v => patchIl('imprevistoPctLimpieza', v / 100)}
           hint={`+${formatQ(res.imprevistoPorHora)}/hora`} />
       </div>
+
+      {subtipo === 'item' && (
+        <p className="text-xs text-slate-500 border-t border-white/5 pt-3">
+          En Servicio por Item, el precio al cliente se arma desde Lineas Libres. El calculo de km queda disponible para justificar traslado si se ingresa distancia.
+        </p>
+      )}
     </div>
   )
 }
 
-// ── Panel Financiero Perforación ─────────────────────────────────────────────
 function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananciaNeta, margenNeto, rol }: {
   res: ReturnType<typeof calcularPerforacion>
   subtotal: number; iva: number; total: number
@@ -1699,8 +2433,8 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
           ['Pipas de agua',          res.costoPipasAgua],
           ['Aforo',                  res.costoAforo],
           ['Soldador',               res.costoSoldador],
-          ['Tubería lisa',           res.costoTuberia],
-          ['Tubería ranurada',       res.costoFiltros],
+          ['Tubería lisa (costo interno)',           res.costoTuberia],
+          ['Tubería ranurada (costo interno)',       res.costoFiltros],
           ['Salarios + viáticos',    res.costoSalarios + res.costoViaticos + res.costoHospedaje],
           ['Limpieza mecánica',      res.costoLimpieza],
           ...(res.costoBrocaCompra > 0         ? [['Broca (compra)',       res.costoBrocaCompra]]          : []),
@@ -1721,7 +2455,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
         })}
       </div>
       {/* Indicadores */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <IC label="Días perf." v={`${res.diasPerforacion}d`} />
         <IC label="Costo/pie" v={formatQ(res.costoPorPie)} />
         <IC label="Bentonita" v={`${res.sacosBentonita} sac.`} />
@@ -1804,7 +2538,7 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <IC label="Costo/hora" v={formatQ(res.costoPorHora)} />
         <IC label="Utilidad/hora" v={formatQ(res.utilidadPorHora)} />
         <IC label="Días totales" v={`${res.diasTotales}d`} />
@@ -1845,8 +2579,9 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
 // ── Helpers UI ───────────────────────────────────────────────────────────────
 // NumInput: input numérico con label + hint opcional.
 // Mobile-first: text-base (16px) evita el zoom automático en iOS; tap target cómodo (py-2.5)
-function NumInput({ label, value, onChange, hint, accent }: {
+function NumInput({ label, value, onChange, onBlur, hint, accent }: {
   label: string; value: number; onChange: (v: number) => void
+  onBlur?: (v: number) => void
   hint?: string; accent?: boolean
 }) {
   const id = useId()
@@ -1860,8 +2595,8 @@ function NumInput({ label, value, onChange, hint, accent }: {
         inputMode="decimal"
         value={value}
         aria-describedby={hintId}
-        onFocus={e => e.target.select()}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        onBlur={onBlur ? e => onBlur(parseFloat(e.target.value) || 0) : undefined}
         className={cn('w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors',
           accent
             ? 'bg-blue-500/10 border border-blue-500/30 text-blue-300 focus:border-blue-400'
@@ -2006,8 +2741,6 @@ function buildLineasPerf(
   mostrarEspesor = false,
   descripcionSimple = false,
   preciosVentaOverride: Record<string, number> = {},
-  aplicarIva = true,
-  aplicarIsr = false,
   opcionesVenta: { pipaPrecioVentaUnitario?: number; camionadaGravaPrecioVentaUnitario?: number; capacidadCamionM3?: number } = {},
 ): LineaCot[] {
   const pipaPrecioVenta     = opcionesVenta.pipaPrecioVentaUnitario ?? 700
@@ -2129,8 +2862,14 @@ function buildLineasPerf(
       unidad: 'Und', cant: 1, precio: pl.analisisCombinado },
   ]
 
+  const linesConOverride = lines.map(l => {
+    if (l.key === 'perforacion') return l
+    const nuevoPrecio = preciosVentaOverride[l.key]
+    return typeof nuevoPrecio === 'number' ? { ...l, precio: nuevoPrecio } : l
+  })
+
   // Construir totales iniciales
-  const built = lines.map(l => ({ ...l, total: l.cant * l.precio }))
+  const built = linesConOverride.map(l => ({ ...l, total: l.cant * l.precio }))
 
   // Rubro 3 residual: el precio/pie representa "precio con IVA + ISR incluidos".
   // Subtotal base FIJO = (profundidad × precio/pie) / 1.17, independiente de los toggles.
@@ -2158,6 +2897,118 @@ function buildLineasPerf(
 }
 
 function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimpieza>, pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS): LineaCot[] {
+  const subtipo = il.servicioSubtipo ?? 'basico'
+  const rows: LineaCot[] = []
+
+  if (res.costoTraslado > 0) {
+    rows.push({
+      key: 'traslado-limp',
+      nombre: `Traslado de equipo de servicio (${res.kmIdaVuelta.toFixed(1)} km / 7 km gal)`,
+      unidad: 'Global',
+      cant: 1,
+      precio: Math.round(res.costoTraslado),
+      total: 0,
+    })
+  }
+
+  const diametroServicio = il.diametroTuberiaServicio && il.diametroTuberiaServicio !== 'Ninguna'
+    ? `, diametro ${il.diametroTuberiaServicio}`
+    : ''
+
+  if ((il.tubosExtraccion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+    rows.push({
+      key: 'extraccion-tuberia-servicio',
+      nombre: `Extraccion de tuberia de descarga y equipo sumergible${diametroServicio}`,
+      unidad: 'Unidad',
+      cant: il.tubosExtraccion ?? 0,
+      precio: res.precioVentaTuboServicioUnitario,
+      total: 0,
+    })
+  }
+
+  if ((il.tubosInstalacion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+    rows.push({
+      key: 'instalacion-tuberia-servicio',
+      nombre: `Instalacion de tuberia de descarga y equipo sumergible${diametroServicio}`,
+      unidad: 'Unidad',
+      cant: il.tubosInstalacion ?? 0,
+      precio: res.precioVentaTuboServicioUnitario,
+      total: 0,
+    })
+  }
+
+  if ((subtipo === 'basico' || subtipo === 'completo') && il.horasLimpieza > 0) {
+    rows.push({
+      key: 'limpieza-horas',
+      nombre: `Limpieza mecanica de pozo (${il.horasLimpieza} horas)`,
+      unidad: 'Hora',
+      cant: il.horasLimpieza,
+      precio: il.precioVentaHora,
+      total: 0,
+    })
+  }
+
+  if ((subtipo === 'basico' || subtipo === 'completo') && il.canecasQuimicos > 0) {
+    rows.push({
+      key: 'quimicos-limp',
+      nombre: 'Canecas de aditivo para limpieza',
+      unidad: 'Caneca',
+      cant: il.canecasQuimicos,
+      precio: Math.round(il.precioQuimicoCaneca * (il.markupQuimicos ?? 1.5)),
+      total: 0,
+    })
+  }
+
+  if (subtipo !== 'item' && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
+    rows.push({
+      key: 'material-instalacion-servicio',
+      nombre: 'Material de instalacion y mano de obra',
+      unidad: 'Global',
+      cant: 1,
+      precio: il.precioMaterialInstalacionServicio ?? 0,
+      total: 0,
+    })
+  }
+
+  if (subtipo !== 'item' && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
+    rows.push({
+      key: 'tecnico-chequeo-servicio',
+      nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
+      unidad: 'Global',
+      cant: 1,
+      precio: il.precioTecnicoChequeoServicio ?? 0,
+      total: 0,
+    })
+  }
+
+  if ((subtipo === 'aforo' || subtipo === 'completo') && (il.horasAforo ?? 0) > 0) {
+    const horas = il.horasAforo ?? 0
+    const totalAforo = il.precioVentaAforoTotal ?? 23000
+    rows.push({
+      key: 'aforo-servicio',
+      nombre: `Aforo (${horas} horas)`,
+      unidad: 'Hora',
+      cant: horas,
+      precio: Math.round((totalAforo / Math.max(1, horas)) * 100) / 100,
+      total: 0,
+    })
+  }
+
+  if (subtipo === 'completo' && il.inspeccionCamara && (il.precioInspeccionCamara ?? 0) > 0) {
+    rows.push({
+      key: 'inspeccion-camara',
+      nombre: 'Inspeccion con camara',
+      unidad: 'Global',
+      cant: 1,
+      precio: il.precioInspeccionCamara ?? 0,
+      total: 0,
+    })
+  }
+
+  return rows
+    .map(l => ({ ...l, total: l.cant * l.precio }))
+    .filter(l => l.total > 0)
+
   return [
     { key: 'traslado-limp',    nombre: 'Traslado de equipo de limpieza',               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 1.2) },
     { key: 'instalacion-limp', nombre: 'Instalación de equipo de limpieza',            unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
@@ -2227,7 +3078,7 @@ function PanelMargenRubros({
     .filter(r => r.rubroKey && costosBase[r.rubroKey])
     .map(r => {
       const base = costosBase[r.rubroKey]
-      const venta = preciosVentaOverride[r.rubroKey] ?? base.precioVentaUnitario
+      const venta = preciosVentaOverride[r.linea.key] ?? r.linea.precio ?? base.precioVentaUnitario
       const costoBaseOGlobal = base.costoUnitario
       const costo = costosCotizacionOverride[r.rubroKey] ?? costoBaseOGlobal
       const costoEditadoEnCotizacion = costosCotizacionOverride[r.rubroKey] !== undefined
@@ -2255,12 +3106,12 @@ function PanelMargenRubros({
   const totUtil  = totVenta - totCosto
   const totMarkup = totCosto > 0 ? ((totVenta - totCosto) / totCosto) * 100 : 0
 
-  const actualizarVenta = (key: string, nuevaVenta: number) => {
-    setPreciosVentaOverride(prev => ({ ...prev, [key]: nuevaVenta }))
+  const actualizarVenta = (lineaKey: string, nuevaVenta: number) => {
+    setPreciosVentaOverride(prev => ({ ...prev, [lineaKey]: nuevaVenta }))
   }
-  const actualizarMarkup = (rubroKey: string, costo: number, nuevoMarkup: number) => {
+  const actualizarMarkup = (lineaKey: string, costo: number, nuevoMarkup: number) => {
     const nuevaVenta = calcVentaDesdeMarkup(costo, nuevoMarkup)
-    setPreciosVentaOverride(prev => ({ ...prev, [rubroKey]: Math.round(nuevaVenta * 100) / 100 }))
+    setPreciosVentaOverride(prev => ({ ...prev, [lineaKey]: Math.round(nuevaVenta * 100) / 100 }))
   }
 
   const colorMargen = (pct: number) =>
@@ -2289,7 +3140,7 @@ function PanelMargenRubros({
       {abierto && (
         <div className="px-5 pb-5 border-t border-white/5">
           <p className="text-[10px] text-slate-500 mb-3 mt-3">
-            Costo interno vs precio al cliente. Editás el costo, la venta o el %, los otros se recalculan.
+            Costo interno vs precio al cliente. Editas el costo, la venta o el %, los otros se recalculan.
           </p>
 
           <div className="space-y-2">
@@ -2318,7 +3169,7 @@ function PanelMargenRubros({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {/* Costo editable POR COTIZACIÓN (no afecta el catálogo global) */}
                   <div>
                     <label className="text-[9px] text-slate-500 uppercase tracking-wide flex items-center gap-1">
@@ -2366,7 +3217,7 @@ function PanelMargenRubros({
                       type="number"
                       step="0.01"
                       value={r.venta.toFixed(2)}
-                      onChange={(e) => actualizarVenta(r.rubroKey, parseFloat(e.target.value) || 0)}
+                      onChange={(e) => actualizarVenta(r.linea.key, parseFloat(e.target.value) || 0)}
                       className="w-full bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white tabular-nums focus:border-blue-400/50 focus:outline-none"
                     />
                   </div>
@@ -2378,7 +3229,7 @@ function PanelMargenRubros({
                       type="number"
                       step="1"
                       value={r.markup.toFixed(1)}
-                      onChange={(e) => actualizarMarkup(r.rubroKey, r.costo, parseFloat(e.target.value) || 0)}
+                      onChange={(e) => actualizarMarkup(r.linea.key, r.costo, parseFloat(e.target.value) || 0)}
                       className={cn('w-full bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs tabular-nums focus:border-blue-400/50 focus:outline-none',
                         colorMargen(r.markup))}
                     />
@@ -2628,7 +3479,7 @@ function CondicionesPerfEditor({
                   onChange={e => patchExtra(extra.id, 'texto', e.target.value)}
                   rows={4}
                   lang="es" spellCheck
-                  placeholder="Escribí el texto completo de la condición..."
+                  placeholder="Escribe el texto completo de la condición..."
                   className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-2 text-[11px] text-slate-300 outline-none focus:border-emerald-500/50 resize-y leading-relaxed"
                 />
               </div>
@@ -2762,7 +3613,7 @@ function LineasExtrasEditor({
                   />
                 </div>
 
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                   <div>
                     <label className="text-[9px] text-slate-500 uppercase tracking-wide">Cant.</label>
                     <input
@@ -2976,7 +3827,7 @@ function AforoDetalladoEditor({
                 {(aforo.imprevistoPct * 100).toFixed(0)}% · ISR {(aforo.isrPct * 100).toFixed(0)}% · IVA {(aforo.ivaPct * 100).toFixed(0)}%
               </span>
             </summary>
-            <div className="px-3 pb-3 pt-1 grid grid-cols-3 gap-2">
+            <div className="px-3 pb-3 pt-1 grid grid-cols-3 gap-1.5 sm:gap-2">
               <MiniInput label="Imprevisto %" value={aforo.imprevistoPct * 100} step={1} onChange={v => patch('imprevistoPct', v / 100)} />
               <MiniInput label="ISR %" value={aforo.isrPct * 100} step={1} onChange={v => patch('isrPct', v / 100)} />
               <MiniInput label="IVA %" value={aforo.ivaPct * 100} step={1} onChange={v => patch('ivaPct', v / 100)} />
@@ -2992,7 +3843,7 @@ function AforoDetalladoEditor({
               <DollarSign className="w-4 h-4 text-emerald-400" />
               <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider">Precio de Venta</span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wide">Total (Q)</label>
                 <input
@@ -3020,7 +3871,7 @@ function AforoDetalladoEditor({
               </div>
             </div>
             <p className="text-[10px] text-slate-500 mt-2">
-              Editá cualquiera de los dos — el otro se recalcula ({aforo.horasAforo} horas)
+              Edita cualquiera de los dos — el otro se recalcula ({aforo.horasAforo} horas)
             </p>
           </div>
 
@@ -3085,6 +3936,157 @@ function MiniInput({
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
         className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white tabular-nums focus:border-cyan-400/50 focus:outline-none"
       />
+    </div>
+  )
+}
+
+// ── Widget interno: Split 70/30 (solo superadmin) ──────────────────────────
+// Muestra el desglose claro y el balance financiero real:
+//   - Lo que compras al proveedor (tu costo)
+//   - Lo que el cliente paga (lo que sale en su PDF, ya con markup)
+//   - Lo que te queda como reserva física (sacos sobrantes en inventario)
+//   - El margen real del proyecto sobre estos rubros
+function SplitInternoCotizacion({
+  sacosTotales, sacosCliente, sacosReserva, valorReservaBentonita,
+  precioBentonitaCosto, precioBentonitaVenta,
+  fleteCliente, fleteCostoReal, fleteReserva, camionesFlete, m3Grava,
+  pctEntregaBentonita,
+  pipasInternasTotal, pipasCliente, precioPipaVenta,
+}: {
+  sacosTotales: number
+  sacosCliente: number
+  sacosReserva: number
+  valorReservaBentonita: number
+  precioBentonitaCosto: number
+  precioBentonitaVenta: number
+  fleteCliente: number
+  fleteCostoReal: number
+  fleteReserva: number
+  camionesFlete: number
+  m3Grava: number
+  pctEntregaBentonita: number
+  pipasInternasTotal: number
+  pipasCliente: number
+  precioPipaVenta: number
+}) {
+  const pctClienteBent = Math.round(pctEntregaBentonita * 100)
+  const pctReservaBent = 100 - pctClienteBent
+
+  // Balance financiero
+  const costoCompraBent       = sacosTotales * precioBentonitaCosto
+  const cobroBentonitaCliente = sacosCliente * precioBentonitaVenta
+  const margenBent            = cobroBentonitaCliente - costoCompraBent
+  // Pipas: sólo informativo, no es split de inventario.
+  const pipasMias       = Math.max(0, pipasInternasTotal - pipasCliente)
+  const cobroPipas      = pipasCliente * precioPipaVenta
+
+  return (
+    <div className="bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/25 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-amber-500/15 flex items-center gap-2 flex-wrap">
+        <ShieldCheck className="w-4 h-4 text-amber-400" />
+        <h3 className="text-sm font-semibold text-white">Reparto interno (solo tú lo ves)</h3>
+        <span className="text-[10px] text-slate-500">NO sale en el PDF del cliente</span>
+        <span className="ml-auto text-xs text-amber-300 font-bold tabular-nums">
+          Margen bentonita: {formatQ(margenBent)}
+        </span>
+      </div>
+      <div className="p-4 space-y-3">
+        {/* Bentonita */}
+        <div className="bg-white/3 rounded-xl p-3 border border-white/5">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <FlaskConical className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-xs font-semibold text-amber-300">Bentonita</span>
+            <span className="text-[10px] text-slate-500">costo Q{precioBentonitaCosto}/saco · venta Q{Math.round(precioBentonitaVenta)}/saco</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
+            <div className="bg-slate-500/10 rounded-lg p-2">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider">Comprás al proveedor</p>
+              <p className="text-base font-black text-white tabular-nums">{sacosTotales}</p>
+              <p className="text-[9px] text-slate-600">sacos · cuesta {formatQ(costoCompraBent)}</p>
+            </div>
+            <div className="bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
+              <p className="text-[9px] text-blue-400 uppercase tracking-wider">Sale en PDF al cliente ({pctClienteBent}%)</p>
+              <p className="text-base font-black text-blue-300 tabular-nums">{sacosCliente}</p>
+              <p className="text-[9px] text-blue-400/70">cliente paga {formatQ(cobroBentonitaCliente)}</p>
+            </div>
+            <div className="bg-amber-500/10 rounded-lg p-2 border border-amber-500/30 ring-1 ring-amber-500/20">
+              <p className="text-[9px] text-amber-400 uppercase tracking-wider">Tu inventario físico ({pctReservaBent}%)</p>
+              <p className="text-base font-black text-amber-300 tabular-nums">{sacosReserva}</p>
+              <p className="text-[9px] text-amber-400/80">sacos sobran · valor {formatQ(valorReservaBentonita)}</p>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+            💰 Cliente paga {formatQ(cobroBentonitaCliente)} ↔ tu costo {formatQ(costoCompraBent)} → <b className={cn(margenBent >= 0 ? 'text-emerald-400' : 'text-red-400')}>margen {formatQ(margenBent)}</b>.
+            Además te quedan {sacosReserva} sacos físicos para reusar/vender.
+          </p>
+        </div>
+
+        {/* Pipas de agua — 50/50 */}
+        {pipasInternasTotal > 0 && (
+          <div className="bg-white/3 rounded-xl p-3 border border-white/5">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <Droplets className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-xs font-semibold text-cyan-300">Pipas de agua</span>
+              <span className="text-[10px] text-slate-500">venta Q{Math.round(precioPipaVenta)}/pipa</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-500/10 rounded-lg p-2">
+                <p className="text-[9px] text-slate-500 uppercase tracking-wider">Necesitas en obra</p>
+                <p className="text-base font-black text-white tabular-nums">{pipasInternasTotal}</p>
+                <p className="text-[9px] text-slate-600">pipas (pago interno diario)</p>
+              </div>
+              <div className="bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
+                <p className="text-[9px] text-blue-400 uppercase tracking-wider">Sale en PDF (50%)</p>
+                <p className="text-base font-black text-blue-300 tabular-nums">{pipasCliente}</p>
+                <p className="text-[9px] text-blue-400/70">cliente paga {formatQ(cobroPipas)}</p>
+              </div>
+              <div className="bg-amber-500/10 rounded-lg p-2 border border-amber-500/30">
+                <p className="text-[9px] text-amber-400 uppercase tracking-wider">Las pagas internamente (50%)</p>
+                <p className="text-base font-black text-amber-300 tabular-nums">{pipasMias}</p>
+                <p className="text-[9px] text-amber-400/80">cliente paga 1 cada 2 días</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Flete grava */}
+        {camionesFlete > 0 && (
+          <div className="bg-white/3 rounded-xl p-3 border border-white/5">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <Truck className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-xs font-semibold text-cyan-300">Flete de Grava</span>
+              <span className="text-[10px] text-slate-500">{camionesFlete} camión{camionesFlete > 1 ? 'es' : ''} · {m3Grava.toFixed(1)} m³</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-500/10 rounded-lg p-2">
+                <p className="text-[9px] text-slate-500 uppercase tracking-wider">Cliente paga</p>
+                <p className="text-base font-black text-white tabular-nums">{formatQ(fleteCliente)}</p>
+                <p className="text-[9px] text-slate-600">total cobrado en PDF</p>
+              </div>
+              <div className="bg-orange-500/10 rounded-lg p-2 border border-orange-500/20">
+                <p className="text-[9px] text-orange-400 uppercase tracking-wider">Pagás al transportista (70%)</p>
+                <p className="text-base font-black text-orange-300 tabular-nums">{formatQ(fleteCostoReal)}</p>
+                <p className="text-[9px] text-orange-400/70">costo real del flete</p>
+              </div>
+              <div className="bg-amber-500/10 rounded-lg p-2 border border-amber-500/30 ring-1 ring-amber-500/20">
+                <p className="text-[9px] text-amber-400 uppercase tracking-wider">Tu margen (30%)</p>
+                <p className="text-base font-black text-amber-300 tabular-nums">{formatQ(fleteReserva)}</p>
+                <p className="text-[9px] text-amber-400/80">queda en tu bolsillo</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg p-3">
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            <b className="text-amber-300">Cómo se monetiza tu reserva:</b><br />
+            • <b className="text-blue-300">Bentonita</b>: cuando vendas/uses los {sacosReserva} sacos sobrantes en otro proyecto = ganancia adicional.{' '}
+            <span className="text-emerald-400">Vendelos desde /gastos/&lt;proyecto&gt; cuando tengas comprador externo.</span><br />
+            • <b className="text-cyan-300">Flete</b>: el {formatQ(fleteReserva)} ya es ganancia neta (la diferencia entre lo que le cobras al cliente y lo que pagas al camión).<br />
+            • <b className="text-cyan-300">Pipas</b>: cliente paga 1 cada 2 días que compraste. La diferencia es absorbida por el costo operativo (no es split estricto).
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { movimientoInventarioSchema, formatZodError } from '@/lib/validators'
+import { requireSuperAdmin } from '@/lib/auth'
 
 // GET /api/inventario/movimientos — lista movimientos (puede filtrar por reservaId)
 export async function GET(req: NextRequest) {
+  const auth = await requireSuperAdmin(req)
+  if (!auth.ok) return auth.response
+
   const { searchParams } = new URL(req.url)
   const reservaId = searchParams.get('reservaId')
   const where = reservaId ? { reservaId } : {}
@@ -17,6 +21,9 @@ export async function GET(req: NextRequest) {
 // POST /api/inventario/movimientos — registrar movimiento (venta externa, ajuste, etc.)
 // Actualiza la cantidadActual de la reserva asociada.
 export async function POST(req: NextRequest) {
+  const auth = await requireSuperAdmin(req)
+  if (!auth.ok) return auth.response
+
   const raw = await req.json().catch(() => null)
   const parsed = movimientoInventarioSchema.safeParse(raw)
   if (!parsed.success) {

@@ -4,8 +4,11 @@ import { z } from 'zod'
 export const ESTADOS_COTIZACION = ['borrador', 'enviada', 'confirmada', 'cancelada'] as const
 
 export const patchCotizacionSchema = z.object({
-  estado: z.enum(ESTADOS_COTIZACION),
-  usuario: z.string().max(100).optional(),
+  estado:   z.enum(ESTADOS_COTIZACION).optional(),
+  vendedor: z.string().min(1).max(100).optional(),  // reasignación — sólo superadmin
+  usuario:  z.string().max(100).optional(),
+}).refine(d => d.estado !== undefined || d.vendedor !== undefined, {
+  message: 'Falta al menos estado o vendedor para actualizar',
 })
 
 export const bitacoraEntrySchema = z.object({
@@ -48,6 +51,7 @@ export const movimientoInventarioSchema = z.object({
 export const loginSchema = z.object({
   username: z.string().min(1).max(50).trim(),
   password: z.string().min(1).max(200),
+  totpCode: z.string().max(20).optional(),
 })
 
 export function formatZodError(err: z.ZodError): { error: string; detalles: Array<{ campo: string; mensaje: string }> } {

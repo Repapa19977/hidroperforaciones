@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import {
   FileText, CheckCircle, ClipboardList, Package, DollarSign, Wallet,
-  ArrowRight, ArrowDown, User, Cog, Truck, Droplets, TrendingUp,
+  ArrowRight, ArrowDown, User, Cog, Droplets, TrendingUp,
   Eye, EyeOff, Lock, Calendar
 } from 'lucide-react'
 
@@ -300,11 +300,11 @@ function Paso4() {
           <Row label="Tubos instalados" value="2 (diám 8″)" />
           <div className="pt-2 border-t border-cyan-500/10 flex items-center gap-2">
             <Eye className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-[10px] text-slate-400">Nota al cliente: "Avance normal"</span>
+            <span className="text-[10px] text-slate-400">Nota al cliente: &quot;Avance normal&quot;</span>
           </div>
           <div className="flex items-center gap-2">
             <EyeOff className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[10px] text-slate-400">Nota interna: "Terreno más duro de lo esperado"</span>
+            <span className="text-[10px] text-slate-400">Nota interna: &quot;Terreno más duro de lo esperado&quot;</span>
           </div>
         </div>
       </div>
@@ -323,7 +323,7 @@ function Paso5() {
           En ese momento:
         </p>
         <ul className="space-y-2 text-sm text-slate-300">
-          <Bullet>La reserva pasa de <b>"reservado"</b> a <b>"disponible"</b></Bullet>
+          <Bullet>La reserva pasa de <b>&quot;reservado&quot;</b> a <b>&quot;disponible&quot;</b></Bullet>
           <Bullet>Los 54 sacos pasan a tu <b>inventario vendible</b></Bullet>
           <Bullet>Se calcula el <b>profit real</b> del proyecto</Bullet>
           <Bullet>La bitácora queda <b>cerrada</b> como historial</Bullet>
@@ -401,7 +401,7 @@ function Row({ label, value, highlight, bold }: { label: string; value: string; 
   )
 }
 
-function DiagramNode({ icon, label, color, secret, highlight }: {
+function DiagramNode({ icon, label, secret, highlight }: {
   icon: React.ReactNode; label: string; color: string; secret?: boolean; highlight?: boolean
 }) {
   return (

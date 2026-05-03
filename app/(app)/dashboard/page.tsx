@@ -11,21 +11,23 @@ import {
 } from 'lucide-react'
 import type { QuotationData } from '@/lib/quotation-store'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+  AreaChart, Area
 } from 'recharts'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { KPICard } from '@/components/kpi-card'
+import { parseFechaFlexible } from '@/lib/date-format'
 import {
   startOfDay, endOfDay, startOfWeek, endOfWeek,
   startOfMonth, endOfMonth, startOfQuarter, endOfQuarter,
   startOfYear, subMonths, format
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import * as XLSX from 'xlsx'
+import { exportXlsx } from '@/lib/export-xlsx'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Periodo = 'hoy' | 'semana' | 'mes' | 'trimestre' | 'anio' | 'personalizado'
+type Periodo = 'historial' | 'hoy' | 'semana' | 'mes' | 'trimestre' | 'anio' | 'personalizado'
 
 interface VendedorStats {
   vendedor: string; total: number; monto: number
@@ -46,7 +48,8 @@ interface ReportData {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
-  return document.cookie.match(new RegExp(`${name}=([^;]+)`))?.[1] ?? ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
 }
 
 const fmtQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
@@ -55,8 +58,7 @@ const fmtQk = (n: number) =>
   n >= 1_000     ? `Q${(n/1_000).toFixed(0)}k`     : `Q${n}`
 
 function parseFecha(f: string): Date {
-  const p = f.split('/')
-  return p.length === 3 ? new Date(+p[2], +p[1]-1, +p[0]) : new Date()
+  return parseFechaFlexible(f) ?? new Date()
 }
 
 function diasDesde(f: string) {
@@ -69,6 +71,8 @@ const D = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']
 function getPeriodRange(p: Periodo, from: string, to: string) {
   const now = new Date()
   switch (p) {
+    case 'historial':
+      return { from: null, to: endOfDay(now), label: 'Historial hasta hoy' }
     case 'hoy':
       return { from: startOfDay(now), to: endOfDay(now), label: format(now, "dd 'de' MMMM yyyy", { locale: es }) }
     case 'semana':
@@ -86,11 +90,6 @@ function getPeriodRange(p: Periodo, from: string, to: string) {
     }
   }
 }
-
-const ESTADO_COLORS: Record<string, string> = {
-  borrador: '#64748b', enviada: '#3b82f6', confirmada: '#10b981', cancelada: '#ef4444',
-}
-const TIPO_COLORS = ['#3b82f6', '#06b6d4']
 
 // ── Period-aware trend chart builder ───────────────────────────────────────────
 type TrendPoint = { label: string; monto: number; count: number }
@@ -110,6 +109,34 @@ function buildTrend(cots: CotizacionRecord[], periodo: Periodo, customFrom: stri
     const items = cots.filter(c => { const f = parseFecha(c.fecha); return f >= start && f <= end })
     return { label: '', monto: Math.round(items.reduce((a,b) => a+b.monto,0)/1000), count: items.length }
   }
+
+  if (periodo === 'historial') {
+    const fechas = cots
+      .map(c => parseFechaFlexible(c.fecha))
+      .filter((d): d is Date => Boolean(d))
+      .sort((a, b) => a.getTime() - b.getTime())
+    if (!fechas.length) return null
+
+    const result: TrendPoint[] = []
+    const cur = new Date(fechas[0].getFullYear(), fechas[0].getMonth(), 1)
+    const end = new Date(to.getFullYear(), to.getMonth(), 1)
+    while (cur <= end) {
+      const yr = cur.getFullYear()
+      const mo = cur.getMonth()
+      const items = cots.filter(c => sameMonth(parseFecha(c.fecha), yr, mo))
+      if (items.length > 0) {
+        result.push({
+          label: `${M[mo]} ${String(yr).slice(-2)}`,
+          monto: Math.round(items.reduce((a,b)=>a+b.monto,0)/1000),
+          count: items.length,
+        })
+      }
+      cur.setMonth(cur.getMonth() + 1)
+    }
+    return result
+  }
+
+  if (!from) return null
 
   if (periodo === 'semana') {
     return Array.from({ length: 7 }, (_, i) => {
@@ -186,6 +213,7 @@ function buildTrend(cots: CotizacionRecord[], periodo: Periodo, customFrom: stri
 }
 
 const TREND_TITLE: Record<Periodo, string> = {
+  historial:    'Historial por mes (Q miles)',
   hoy:          '',
   semana:       'Monto por día esta semana (Q miles)',
   mes:          'Monto por semana este mes (Q miles)',
@@ -196,7 +224,7 @@ const TREND_TITLE: Record<Periodo, string> = {
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [periodo, setPeriodo]       = useState<Periodo>('mes')
+  const [periodo, setPeriodo]       = useState<Periodo>('historial')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo]     = useState('')
   const [loading, setLoading]       = useState(true)
@@ -217,11 +245,25 @@ export default function DashboardPage() {
   }[]>([])
   const [operaciones, setOperaciones] = useState<{
     proyectosActivos: number
+    porProyecto: {
+      id: string; correlativo: string; cliente: string; empresa: string
+      bentonita: { real: number; plan: number; clientePago: number; clienteQ: number; costoRealQ: number; pctUsado: number }
+      pies:      { real: number; plan: number; pctUsado: number }
+      pipas:     { real: number; clienteQ: number }
+    }[]
     bentonita: { real: number; plan: number; clientePago: number; clienteQ: number; costoRealQ: number; pctUsado: number }
     pies:      { real: number; plan: number; pctUsado: number }
     pipas:     { real: number; clienteQ: number }
     alertas:   { gastosVencidos: number; gastosPorVencer: number }
   } | null>(null)
+
+  // Resumen de Cuentas por Pagar / Cobrar (solo superadmin — el middleware bloquea el endpoint para admin)
+  const [cuentas, setCuentas] = useState<{
+    pagar:  { totalPendiente: number; countPendientes: number; countVencidas: number; montoVencidas: number; countPorVencer: number }
+    cobrar: { totalPendiente: number; countPendientes: number; countVencidas: number; montoVencidas: number; countPorVencer: number }
+  } | null>(null)
+
+  const [refreshTick, setRefreshTick] = useState(0)
 
   // Read auth cookies once
   useEffect(() => {
@@ -230,35 +272,61 @@ export default function DashboardPage() {
     setRole(r); setVendedor(v); setInit(true)
   }, [])
 
+  // Auto-refresh: revalida cuando el tab vuelve a estar visible o recupera foco
+  // (ej. el user aprobó una cotización en otra pestaña y vuelve al dashboard).
+  useEffect(() => {
+    const bump = () => setRefreshTick(n => n + 1)
+    const onVisibility = () => { if (document.visibilityState === 'visible') bump() }
+    window.addEventListener('focus', bump)
+    document.addEventListener('visibilitychange', onVisibility)
+    // Además polling cada 30s como fallback
+    const iv = setInterval(bump, 30000)
+    return () => {
+      window.removeEventListener('focus', bump)
+      document.removeEventListener('visibilitychange', onVisibility)
+      clearInterval(iv)
+    }
+  }, [])
+
   // Fetch proyectos sin bitácora hoy
   useEffect(() => {
     if (!init) return
     const q = role === 'superadmin' ? '' : `?vendedor=${encodeURIComponent(vendedor)}`
-    fetch(`/api/proyectos/sin-actualizar${q}`)
+    fetch(`/api/proyectos/sin-actualizar${q}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(setSinBitacora)
       .catch(() => {})
-  }, [init, role, vendedor])
+  }, [init, role, vendedor, refreshTick])
 
   // Fetch proyectos activos para widget en campo
   useEffect(() => {
     if (!init) return
     const params = new URLSearchParams({ estado: 'activo' })
     if (role !== 'superadmin' && vendedor) params.set('vendedor', vendedor)
-    fetch(`/api/proyectos?${params}`)
+    fetch(`/api/proyectos?${params}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(setProyectosActivos)
       .catch(() => {})
-  }, [init, role, vendedor])
+  }, [init, role, vendedor, refreshTick])
 
   // Fetch métricas operativas agregadas (bentonita, pies, alertas)
   useEffect(() => {
     if (!init) return
-    fetch('/api/dashboard/operaciones')
+    const q = role === 'superadmin' ? '' : `?vendedor=${encodeURIComponent(vendedor)}`
+    fetch(`/api/dashboard/operaciones${q}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(setOperaciones)
       .catch(() => {})
-  }, [init])
+  }, [init, role, vendedor, refreshTick])
+
+  // Fetch resumen contable (solo superadmin tiene acceso por middleware)
+  useEffect(() => {
+    if (!init || role !== 'superadmin') { setCuentas(null); return }
+    fetch('/api/dashboard/cuentas', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(setCuentas)
+      .catch(() => {})
+  }, [init, role, refreshTick])
 
   // Fetch period-filtered report (re-runs whenever period or auth changes)
   useEffect(() => {
@@ -266,30 +334,19 @@ export default function DashboardPage() {
     const load = async () => {
       setLoading(true)
       const { from, to } = getPeriodRange(periodo, customFrom, customTo)
-      const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })
+      const params = new URLSearchParams()
+      if (from) params.set('from', from.toISOString())
+      params.set('to', to.toISOString())
       if (role !== 'superadmin' && vendedor) params.set('vendedor', vendedor)
-      const res = await fetch(`/api/reportes?${params}`)
+      const res = await fetch(`/api/reportes?${params}`, { cache: 'no-store' })
       if (res.ok) setData(await res.json())
       setLoading(false)
     }
     load()
-  }, [init, periodo, customFrom, customTo, role, vendedor])
+  }, [init, periodo, customFrom, customTo, role, vendedor, refreshTick])
 
   const isSuperAdmin = role === 'superadmin'
   const periodLabel  = getPeriodRange(periodo, customFrom, customTo).label
-
-  // ── Derived chart data (all computed from the same period-filtered data) ────
-  const estadoData = (['borrador','enviada','confirmada','cancelada'] as const).map(key => ({
-    name:  key === 'borrador' ? 'Borrador' : key === 'enviada' ? 'Enviada' : key === 'confirmada' ? 'Confirmada' : 'Cancelada',
-    monto: Math.round((data?.cotizaciones.filter(c => c.estado === key).reduce((a,b)=>a+b.monto,0) ?? 0) / 1000),
-    count: data?.cotizaciones.filter(c => c.estado === key).length ?? 0,
-    color: ESTADO_COLORS[key],
-  }))
-
-  const tipoData = [
-    { name: 'Perforación', value: data?.resumen.perforacion ?? 0 },
-    { name: 'Limpieza',    value: data?.resumen.limpieza    ?? 0 },
-  ].filter(d => d.value > 0)
 
   // Trend: computed from the same period data, grouped by the right interval
   const trendData = data ? buildTrend(data.cotizaciones, periodo, customFrom, customTo) : null
@@ -297,52 +354,67 @@ export default function DashboardPage() {
   const pendientes = [...(data?.cotizaciones.filter(c => c.estado === 'enviada') ?? [])]
     .sort((a, b) => parseFecha(a.fecha).getTime() - parseFecha(b.fecha).getTime())
     .slice(0, 5)
+  const kpiScope = periodo === 'historial' ? 'hasta hoy' : 'en el periodo'
+  const conversionBase = data
+    ? data.resumen.confirmadas + data.resumen.enviadas + data.resumen.canceladas
+    : 0
 
   // ── Excel export ───────────────────────────────────────────────────────────
-  function exportExcel() {
+  async function exportExcel() {
     if (!data) return
-    const wb = XLSX.utils.book_new()
 
-    const wsRes = XLSX.utils.aoa_to_sheet([
+    const resumenRows = [
       ['REPORTE HIDROPERFORACIONES GUATEMALA'],
-      [`Período: ${periodLabel}`],
-      [`Generado: ${format(new Date(),'dd/MM/yyyy HH:mm')}`],
+      [`Periodo: ${periodLabel}`],
+      [`Generado: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`],
       [],
-      ['Vendedor','Cotizaciones','Monto Total (Q)','Confirmadas','Monto Confirmado (Q)','Enviadas','Canceladas','% Conv.'],
-      ...data.porVendedor.map(v => [v.vendedor, v.total, v.monto, v.confirmadas, v.confirmadoMonto, v.enviadas, v.canceladas, `${v.conversionPct}%`]),
-      [], ['TOTALES', data.resumen.total, data.resumen.monto, data.resumen.confirmadas, data.resumen.confirmadoMonto, data.resumen.enviadas, data.resumen.canceladas, `${data.resumen.conversionPct}%`],
-      [], ['--- POR TIPO ---'],
-      ['Tipo','Cotizaciones','Monto (Q)'],
-      ['Perforación', data.resumen.perforacion, data.resumen.montoPerforacion],
-      ['Limpieza',    data.resumen.limpieza,    data.resumen.montoLimpieza],
-    ])
-    wsRes['!cols'] = [{wch:28},{wch:14},{wch:20},{wch:14},{wch:22},{wch:10},{wch:12},{wch:14}]
-    XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen')
+      ['Vendedor', 'Cotizaciones', 'Monto Total (Q)', 'Confirmadas', 'Monto Confirmado (Q)', 'Enviadas', 'Canceladas', '% Conv.'],
+      ...data.porVendedor.map(v => [
+        v.vendedor, v.total, v.monto, v.confirmadas, v.confirmadoMonto, v.enviadas, v.canceladas, `${v.conversionPct}%`,
+      ]),
+      [],
+      ['TOTALES', data.resumen.total, data.resumen.monto, data.resumen.confirmadas, data.resumen.confirmadoMonto, data.resumen.enviadas, data.resumen.canceladas, `${data.resumen.conversionPct}%`],
+      [],
+      ['--- POR TIPO ---'],
+      ['Tipo', 'Cotizaciones', 'Monto (Q)'],
+      ['Perforacion', data.resumen.perforacion, data.resumen.montoPerforacion],
+      ['Limpieza', data.resumen.limpieza, data.resumen.montoLimpieza],
+    ]
 
-    const wsCot = XLSX.utils.aoa_to_sheet([
-      ['Correlativo','Fecha','Cliente','Empresa','Proyecto','Tipo','Monto (Q)','Estado','Vendedor'],
-      ...data.cotizaciones.map(c => [c.correlativo, c.fecha, c.cliente, c.empresa ?? '', c.proyecto, c.tipo === 'perforacion' ? 'Perforación' : 'Limpieza', c.monto, c.estado, c.vendedor]),
-    ])
-    wsCot['!cols'] = [{wch:14},{wch:12},{wch:24},{wch:24},{wch:32},{wch:18},{wch:14},{wch:12},{wch:22}]
-    XLSX.utils.book_append_sheet(wb, wsCot, 'Cotizaciones')
+    const cotizacionRows = [
+      ['Correlativo', 'Fecha', 'Cliente', 'Empresa', 'Proyecto', 'Tipo', 'Monto (Q)', 'Estado', 'Vendedor'],
+      ...data.cotizaciones.map(c => [
+        c.correlativo, c.fecha, c.cliente, c.empresa ?? '', c.proyecto,
+        c.tipo === 'perforacion' ? 'Perforacion' : 'Limpieza', c.monto, c.estado, c.vendedor,
+      ]),
+    ]
 
-    data.porVendedor.forEach(vs => {
-      const ws = XLSX.utils.aoa_to_sheet([
-        [`COTIZACIONES — ${vs.vendedor}`], [`Período: ${periodLabel}`], [],
-        ['Cotizaciones:', vs.total], ['Monto Total:', `Q ${vs.monto.toLocaleString('es-GT')}`],
-        ['Confirmadas:', vs.confirmadas], ['Monto Confirmado:', `Q ${vs.confirmadoMonto.toLocaleString('es-GT')}`],
-        ['% Conversión:', `${vs.conversionPct}%`], [],
-        ['Correlativo','Fecha','Cliente','Empresa','Tipo','Monto (Q)','Estado'],
+    const vendedorSheets = data.porVendedor.map(vs => ({
+      name: vs.vendedor.split(' ')[0].slice(0, 12) || 'Vendedor',
+      rows: [
+        [`COTIZACIONES - ${vs.vendedor}`],
+        [`Periodo: ${periodLabel}`],
+        [],
+        ['Cotizaciones:', vs.total],
+        ['Monto Total:', `Q ${vs.monto.toLocaleString('es-GT')}`],
+        ['Confirmadas:', vs.confirmadas],
+        ['Monto Confirmado:', `Q ${vs.confirmadoMonto.toLocaleString('es-GT')}`],
+        ['% Conversion:', `${vs.conversionPct}%`],
+        [],
+        ['Correlativo', 'Fecha', 'Cliente', 'Empresa', 'Tipo', 'Monto (Q)', 'Estado'],
         ...data.cotizaciones.filter(c => c.vendedor === vs.vendedor).map(c => [
           c.correlativo, c.fecha, c.cliente, c.empresa ?? '',
-          c.tipo === 'perforacion' ? 'Perforación' : 'Limpieza', c.monto, c.estado,
+          c.tipo === 'perforacion' ? 'Perforacion' : 'Limpieza', c.monto, c.estado,
         ]),
-      ])
-      ws['!cols'] = [{wch:14},{wch:12},{wch:24},{wch:24},{wch:14},{wch:14},{wch:12}]
-      XLSX.utils.book_append_sheet(wb, ws, vs.vendedor.split(' ')[0].slice(0,12))
-    })
+      ],
+      widths: [14, 12, 24, 24, 14, 14, 12],
+    }))
 
-    XLSX.writeFile(wb, `HidroCRM_${periodLabel.replace(/[^a-zA-Z0-9]/g,'_')}.xlsx`)
+    await exportXlsx(`HidroCRM_${periodLabel.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`, [
+      { name: 'Resumen', rows: resumenRows, widths: [28, 14, 20, 14, 22, 10, 12, 14] },
+      { name: 'Cotizaciones', rows: cotizacionRows, widths: [14, 12, 24, 24, 32, 18, 14, 12, 22] },
+      ...vendedorSheets,
+    ])
   }
 
   // ── ZIP de PDFs ────────────────────────────────────────────────────────────
@@ -399,7 +471,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#070d1a]">
+    <div className="flex flex-col md:h-full bg-[#070d1a]">
 
       {/* ── HEADER ──────────────────────────────────────────────────── */}
       <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-white/5 bg-[#0a1020] shrink-0 no-print">
@@ -429,6 +501,12 @@ export default function DashboardPage() {
                 : <><Archive className="w-4 h-4" /><span className="hidden sm:inline"> PDFs</span></>
               }
             </button>
+            <button
+              onClick={() => setRefreshTick(n => n + 1)}
+              title="Actualizar dashboard"
+              className="flex items-center gap-2 bg-white/5 border border-white/10 text-slate-300 hover:text-white hover:border-white/20 px-3 py-2 rounded-xl text-sm font-medium transition-all">
+              <RefreshCw className="w-4 h-4" />
+            </button>
             <Link href="/cotizaciones/nueva"
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg shadow-blue-500/20">
               <Plus className="w-4 h-4" /> Nueva
@@ -439,6 +517,7 @@ export default function DashboardPage() {
         {/* Period selector */}
         <div className="flex items-center gap-2 flex-wrap">
           {([
+            { id: 'historial',     label: 'Historial'     },
             { id: 'hoy',           label: 'Hoy'          },
             { id: 'semana',        label: 'Esta Semana'  },
             { id: 'mes',           label: 'Este Mes'     },
@@ -476,7 +555,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── CONTENT ─────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+      <div className="flex-1 md:overflow-auto p-4 sm:p-6 space-y-5">
         {loading ? (
           <div className="flex items-center justify-center py-32 gap-3 text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin" />
@@ -485,22 +564,75 @@ export default function DashboardPage() {
         ) : !data ? null : (
           <>
             {/* KPI cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-              <KPICard icon={<FileText    className="w-4 h-4 text-blue-400"    />} label="Cotizaciones" value={String(data.resumen.total)}          sub="en el período"                        color="blue"    />
-              <KPICard icon={<TrendingUp  className="w-4 h-4 text-slate-300"   />} label="Monto Total"  value={fmtQk(data.resumen.monto)}            sub={fmtQ(data.resumen.monto)}             color="slate"   />
-              <KPICard icon={<CheckCircle className="w-4 h-4 text-emerald-400" />} label="Confirmadas"  value={String(data.resumen.confirmadas)}      sub={fmtQ(data.resumen.confirmadoMonto)}   color="emerald" />
-              <KPICard icon={<Send        className="w-4 h-4 text-amber-400"   />} label="Enviadas"     value={String(data.resumen.enviadas)}          sub="sin respuesta"                        color="amber"   />
-              <KPICard icon={<XCircle     className="w-4 h-4 text-red-400"     />} label="Canceladas"   value={String(data.resumen.canceladas)}        sub="perdidas"                             color="red"     />
-              <KPICard icon={<Award       className="w-4 h-4 text-violet-400"  />} label="Conversión"   value={`${data.resumen.conversionPct}%`}       sub={`${data.resumen.confirmadas}/${data.resumen.total}`} color="violet" />
+            <div className={cn(
+              'grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3',
+              isSuperAdmin ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
+            )}>
+              <KPICard variant="stacked" icon={<FileText    className="w-4 h-4 text-blue-400"    />} label="Cotizaciones" value={String(data.resumen.total)}          sub={kpiScope}                        color="blue"    />
+              {isSuperAdmin && (
+                <KPICard variant="stacked" icon={<TrendingUp  className="w-4 h-4 text-slate-300"   />} label="Monto Total"  value={fmtQk(data.resumen.monto)}            sub={fmtQ(data.resumen.monto)}             color="slate"   />
+              )}
+              <KPICard variant="stacked" icon={<CheckCircle className="w-4 h-4 text-emerald-400" />} label="Confirmadas"  value={String(data.resumen.confirmadas)}      sub={isSuperAdmin ? fmtQ(data.resumen.confirmadoMonto) : 'cerradas'}   color="emerald" />
+              <KPICard variant="stacked" icon={<Send        className="w-4 h-4 text-amber-400"   />} label="Enviadas"     value={String(data.resumen.enviadas)}          sub="sin respuesta"                        color="amber"   />
+              <KPICard variant="stacked" icon={<XCircle     className="w-4 h-4 text-red-400"     />} label="Canceladas"   value={String(data.resumen.canceladas)}        sub="perdidas"                             color="red"     />
+              <KPICard variant="stacked" icon={<Award       className="w-4 h-4 text-violet-400"  />} label="Conversión"   value={`${data.resumen.conversionPct}%`}       sub={`${data.resumen.confirmadas}/${conversionBase}`} color="violet" />
             </div>
 
-            {/* Operaciones en campo — bentonita, pies, pipas consumidos vs plan */}
+            {/* Cuentas contables (solo superadmin) — Pagar / Cobrar */}
+            {isSuperAdmin && cuentas && (cuentas.pagar.countPendientes > 0 || cuentas.cobrar.countPendientes > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                <Link href="/cuentas-por-cobrar"
+                  className="bg-[#0d1526] rounded-2xl border border-emerald-500/15 hover:border-emerald-500/30 p-4 sm:p-5 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-400/80 uppercase tracking-wider">Por Cobrar</p>
+                      <p className="text-[10px] text-slate-600">Clientes / empresas que nos deben</p>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-emerald-400/60" />
+                  </div>
+                  <p className="text-2xl font-black text-emerald-300 tabular-nums">{fmtQ(cuentas.cobrar.totalPendiente)}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {cuentas.cobrar.countPendientes} pendiente(s)
+                    {cuentas.cobrar.countVencidas > 0 && (
+                      <span className="ml-2 text-red-400 font-semibold">· ⚠ {cuentas.cobrar.countVencidas} vencida(s) ({fmtQ(cuentas.cobrar.montoVencidas)})</span>
+                    )}
+                    {cuentas.cobrar.countPorVencer > 0 && (
+                      <span className="ml-2 text-amber-400">· {cuentas.cobrar.countPorVencer} por vencer</span>
+                    )}
+                  </p>
+                </Link>
+                <Link href="/cuentas-por-pagar"
+                  className="bg-[#0d1526] rounded-2xl border border-red-500/15 hover:border-red-500/30 p-4 sm:p-5 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-xs font-semibold text-red-400/80 uppercase tracking-wider">Por Pagar</p>
+                      <p className="text-[10px] text-slate-600">Proveedores a quienes debemos</p>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-red-400/60" />
+                  </div>
+                  <p className="text-2xl font-black text-red-300 tabular-nums">{fmtQ(cuentas.pagar.totalPendiente)}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {cuentas.pagar.countPendientes} pendiente(s)
+                    {cuentas.pagar.countVencidas > 0 && (
+                      <span className="ml-2 text-red-400 font-semibold">· ⚠ {cuentas.pagar.countVencidas} vencida(s) ({fmtQ(cuentas.pagar.montoVencidas)})</span>
+                    )}
+                    {cuentas.pagar.countPorVencer > 0 && (
+                      <span className="ml-2 text-amber-400">· {cuentas.pagar.countPorVencer} por vencer</span>
+                    )}
+                  </p>
+                </Link>
+              </div>
+            )}
+
+            {/* Operaciones en campo — desglose POR PROYECTO */}
             {operaciones && operaciones.proyectosActivos > 0 && (
               <div className="bg-[#0d1526] rounded-2xl border border-white/5 p-4 sm:p-5">
-                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <div>
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Operaciones en campo</p>
-                    <p className="text-[10px] text-slate-600">Agregado de los {operaciones.proyectosActivos} proyecto(s) activos</p>
+                    <p className="text-[10px] text-slate-600">
+                      Desglose de {operaciones.proyectosActivos} proyecto(s) activo(s)
+                    </p>
                   </div>
                   {(operaciones.alertas.gastosVencidos > 0 || operaciones.alertas.gastosPorVencer > 0) && (
                     <div className="flex items-center gap-2 text-[11px]">
@@ -517,42 +649,57 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {/* Pies perforados */}
-                  <OpCard
-                    icon={<Drill className="w-3.5 h-3.5" />}
-                    label="Pies perforados"
-                    real={operaciones.pies.real}
-                    plan={operaciones.pies.plan}
-                    pct={operaciones.pies.pctUsado}
-                    unidad="pies"
-                    colorBase="blue"
-                    subPagado={`${operaciones.pies.plan.toLocaleString('es-GT')} pies contratados`}
-                  />
-                  {/* Bentonita — con comparativa cliente pagó vs consumido */}
-                  <OpCard
-                    icon={<FlaskConical className="w-3.5 h-3.5" />}
-                    label="Bentonita"
-                    real={operaciones.bentonita.real}
-                    plan={operaciones.bentonita.clientePago}
-                    pct={operaciones.bentonita.pctUsado}
-                    unidad="sacos"
-                    colorBase="amber"
-                    subPagado={`Cliente pagó Q ${operaciones.bentonita.clienteQ.toLocaleString('es-GT')} · costo real Q ${operaciones.bentonita.costoRealQ.toLocaleString('es-GT')}`}
-                  />
-                  {/* Pipas — consumo real vs pago del cliente */}
-                  <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-semibold text-cyan-300 flex items-center gap-1.5"><Droplets className="w-3.5 h-3.5" /> Pipas de agua</span>
+
+                {/* Una tarjeta por proyecto con sus métricas individuales */}
+                <div className="space-y-4">
+                  {operaciones.porProyecto.map(p => (
+                    <div key={p.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                      <Link href={`/proyectos/${p.id}`}
+                        className="flex items-center justify-between mb-3 group">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors">
+                            {p.cliente}{p.empresa ? ` · ${p.empresa}` : ''}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono">{p.correlativo}</p>
+                        </div>
+                        <ArrowUpRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-blue-400 transition-colors" />
+                      </Link>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <OpCard
+                          icon={<Drill className="w-3.5 h-3.5" />}
+                          label="Pies perforados"
+                          real={p.pies.real}
+                          plan={p.pies.plan}
+                          pct={p.pies.pctUsado}
+                          unidad="pies"
+                          colorBase="blue"
+                          subPagado={`${p.pies.plan.toLocaleString('es-GT')} pies contratados`}
+                        />
+                        <OpCard
+                          icon={<FlaskConical className="w-3.5 h-3.5" />}
+                          label="Bentonita"
+                          real={p.bentonita.real}
+                          plan={p.bentonita.clientePago}
+                          pct={p.bentonita.pctUsado}
+                          unidad="sacos"
+                          colorBase="amber"
+                          subPagado={`Cliente pagó Q ${p.bentonita.clienteQ.toLocaleString('es-GT')} · costo real Q ${p.bentonita.costoRealQ.toLocaleString('es-GT')}`}
+                        />
+                        <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-semibold text-cyan-300 flex items-center gap-1.5"><Droplets className="w-3.5 h-3.5" /> Pipas de agua</span>
+                          </div>
+                          <p className="text-2xl font-bold text-white tabular-nums">
+                            {p.pipas.real.toLocaleString('es-GT')}
+                            <span className="text-sm font-normal text-slate-500"> pipas consumidas</span>
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Cliente pagó <b className="text-cyan-400">Q {p.pipas.clienteQ.toLocaleString('es-GT')}</b>
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-2xl font-bold text-white tabular-nums">
-                      {operaciones.pipas.real.toLocaleString('es-GT')}
-                      <span className="text-sm font-normal text-slate-500"> pipas consumidas</span>
-                    </p>
-                    <p className="text-[10px] text-slate-500">
-                      Cliente pagó <b className="text-cyan-400">Q {operaciones.pipas.clienteQ.toLocaleString('es-GT')}</b> (global)
-                    </p>
-                  </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -631,61 +778,8 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Bar + Pie */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2 bg-[#0d1526] rounded-xl border border-white/5 p-5">
-                <h2 className="text-sm font-semibold text-slate-300 mb-4">Monto por Estado (Q miles)</h2>
-                {estadoData.every(d => d.monto === 0) ? (
-                  <div className="flex items-center justify-center h-[200px] text-slate-600 text-sm">Sin cotizaciones en este período</div>
-                ) : (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={estadoData} barSize={40}>
-                      <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} unit="k" />
-                      <Tooltip
-                        contentStyle={{ background: '#0f1829', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12, color: '#e2e8f0', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
-                        labelStyle={{ color: '#94a3b8', marginBottom: 4, fontWeight: 600 }}
-                        itemStyle={{ color: '#e2e8f0' }}
-                        formatter={(v, _, p) => [`Q ${Number(v).toLocaleString('es-GT')}k  ·  ${(p.payload as {count:number}).count} cot.`, '']}
-                        cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                      />
-                      <Bar dataKey="monto" radius={[4,4,0,0]}>
-                        {estadoData.map((e, i) => <Cell key={i} fill={e.color} fillOpacity={0.85} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-
-              <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5">
-                <h2 className="text-sm font-semibold text-slate-300 mb-4">Por Tipo de Servicio</h2>
-                {tipoData.length === 0 ? (
-                  <div className="flex items-center justify-center h-[200px] text-slate-600 text-sm">Sin datos</div>
-                ) : (
-                  <div className="flex flex-col items-center">
-                    <PieChart width={160} height={160}>
-                      <Pie data={tipoData} cx={80} cy={80} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
-                        {tipoData.map((_, i) => <Cell key={i} fill={TIPO_COLORS[i]} />)}
-                      </Pie>
-                    </PieChart>
-                    <div className="space-y-2 w-full mt-2">
-                      {tipoData.map((d, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ background: TIPO_COLORS[i] }} />
-                            <span className="text-slate-400">{d.name}</span>
-                          </div>
-                          <span className="font-semibold text-white">{d.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Trend chart + Enviadas pendientes */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
               {trendData ? (
                 <div className="lg:col-span-2 bg-[#0d1526] rounded-xl border border-white/5 p-5">
                   <h2 className="text-sm font-semibold text-slate-300 mb-4">{TREND_TITLE[periodo]}</h2>
@@ -713,7 +807,10 @@ export default function DashboardPage() {
                 /* hoy: span 2 with a summary bar */
                 <div className="lg:col-span-2 bg-[#0d1526] rounded-xl border border-white/5 p-5 flex flex-col justify-center items-center gap-2">
                   <p className="text-sm font-semibold text-slate-300">Resumen del día</p>
-                  <p className="text-4xl font-black text-white">{fmtQk(data.resumen.monto)}</p>
+                  {isSuperAdmin
+                    ? <p className="text-4xl font-black text-white">{fmtQk(data.resumen.monto)}</p>
+                    : <p className="text-4xl font-black text-white">{data.resumen.total}</p>
+                  }
                   <p className="text-xs text-slate-500">{data.resumen.total} cotización{data.resumen.total !== 1 ? 'es' : ''} hoy</p>
                 </div>
               )}
@@ -756,8 +853,8 @@ export default function DashboardPage() {
                   <Users className="w-4 h-4 text-blue-400" />
                   <p className="text-sm font-semibold text-slate-300">Desglose por Vendedor</p>
                 </div>
-                <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <table className="w-full min-w-[560px] text-sm">
                   <thead className="border-b border-white/5">
                     <tr className="text-xs text-slate-500">
                       <th className="text-left px-5 py-3 font-medium">Vendedor</th>
@@ -799,8 +896,8 @@ export default function DashboardPage() {
                   <p className="text-sm">Sin cotizaciones en este período</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full min-w-[580px] text-sm">
                     <thead>
                       <tr className="text-xs text-slate-500 border-b border-white/5">
                         <th className="text-left pb-3 font-medium">Correlativo</th>
@@ -838,8 +935,8 @@ export default function DashboardPage() {
 
       {/* ── MODAL ZIP ───────────────────────────────────────────────── */}
       {zipOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0d1526] border border-white/10 rounded-2xl p-6 w-[380px] shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#0d1526] border border-white/10 rounded-2xl p-5 sm:p-6 w-full max-w-[380px] max-h-[85vh] overflow-y-auto shadow-2xl">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Archive className="w-4 h-4 text-violet-400" /> Descargar PDFs
@@ -994,25 +1091,6 @@ function OpCard({ icon, label, real, plan, pct, unidad, colorBase, subPagado }: 
   )
 }
 
-// ── KPICard ────────────────────────────────────────────────────────────────────
-function KPICard({ icon, label, value, sub, color }: {
-  icon: React.ReactNode; label: string; value: string; sub: string
-  color: 'blue' | 'slate' | 'emerald' | 'amber' | 'red' | 'violet'
-}) {
-  const cls = {
-    blue: 'border-blue-500/15 bg-blue-500/5', slate: 'border-white/5 bg-white/3',
-    emerald: 'border-emerald-500/15 bg-emerald-500/5', amber: 'border-amber-500/15 bg-amber-500/5',
-    red: 'border-red-500/15 bg-red-500/5', violet: 'border-violet-500/15 bg-violet-500/5',
-  }[color]
-  return (
-    <div className={cn('rounded-xl border px-4 py-3', cls)}>
-      <div className="mb-2">{icon}</div>
-      <p className="text-xl font-black text-white leading-none">{value}</p>
-      <p className="text-[11px] text-slate-500 mt-1">{label}</p>
-      <p className="text-[10px] text-slate-600">{sub}</p>
-    </div>
-  )
-}
 
 // ── StatusBadge ────────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {

@@ -1,8 +1,8 @@
 /**
  * generate-tokens.ts — Emite los 2 service tokens JWT para el bot Hidroperforaciones.
  *
- * UBICACIÓN EN EL VPS:  scripts/generate-tokens.ts  (o donde prefieras en tu Next.js project)
- * CORRER CON:           pnpm tsx scripts/generate-tokens.ts
+ * UBICACION EN EL VPS:  scripts/admin/generate-tokens.ts  (o donde prefieras en tu Next.js project)
+ * CORRER CON:           pnpm tsx scripts/admin/generate-tokens.ts
  *
  * Requiere:
  *   - Variable de entorno `JWT_SECRET` (si no existe, lo genera al vuelo y lo imprime)

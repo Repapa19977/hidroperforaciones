@@ -9,7 +9,7 @@ import {
   Loader2, Plus, DollarSign, CheckCircle2, Clock, AlertCircle, TrendingUp,
   Banknote, Receipt, Building, CreditCard, Trash2, Settings2, RotateCcw, X, Save,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatQ } from '@/lib/utils'
 import { ConfirmDialog } from './confirm-dialog'
 
 interface HitoCalculado {
@@ -49,8 +49,6 @@ interface Response {
   planSource: 'proyecto' | 'cotizacion' | 'default'
   totales: { proyecto: number; recibido: number; pendiente: number; pctCobrado: number }
 }
-
-const formatQ = (n: number) => `Q ${Math.round(n).toLocaleString('es-GT')}`
 
 const METODOS: { id: string; label: string; icon: typeof Banknote }[] = [
   { id: 'transferencia', label: 'Transferencia', icon: Building },

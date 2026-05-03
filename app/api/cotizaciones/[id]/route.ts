@@ -1,43 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { jwtVerify } from 'jose'
 import { prisma } from '@/lib/db'
 import { sacosDebentonita } from '@/lib/calculator'
 import { patchCotizacionSchema, formatZodError } from '@/lib/validators'
-import { getCurrentUser, getRequestInfo } from '@/lib/auth'
+import { requireAuth, getCurrentUser, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
 
+async function getJwtRole(request: NextRequest): Promise<string | null> {
+  const token = request.cookies.get('auth_token')?.value
+  if (!token) return null
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(process.env.JWT_SECRET!))
+    return String(payload.role ?? '')
+  } catch { return null }
+}
+
 // GET — obtener cotización con datos completos (para re-abrir/imprimir)
-export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const row = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (auth.user.role === 'admin' && row.vendedor !== auth.user.vendedor) {
+    return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
+  }
   return NextResponse.json(row)
 }
 
 // PATCH — cambiar estado (y auto-crear Proyecto al confirmar)
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const raw = await request.json().catch(() => null)
   const parsed = patchCotizacionSchema.safeParse(raw)
   if (!parsed.success) {
     return NextResponse.json(formatZodError(parsed.error), { status: 400 })
   }
-  const { estado, usuario } = parsed.data
+  const { estado, vendedor, usuario } = parsed.data
+
+  // Safeguard: solo superadmin puede reasignar vendedor
+  if (vendedor !== undefined) {
+    const role = await getJwtRole(request)
+    if (role !== 'superadmin') {
+      return NextResponse.json({ error: 'Solo superadmin puede reasignar el vendedor' }, { status: 403 })
+    }
+  }
 
   const before = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
+  if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+    return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
+  }
+
+  const data: Record<string, unknown> = {}
+  if (estado   !== undefined) data.estado = estado
+  if (vendedor !== undefined) data.vendedor = vendedor
 
   const row = await prisma.cotizacion.update({
     where: { correlativo: id },
-    data: { estado },
+    data,
   })
 
+  // Propagar reasignación al Proyecto asociado (si existe)
+  if (vendedor !== undefined) {
+    await prisma.proyecto.updateMany({
+      where: { correlativo: id },
+      data: { vendedor },
+    }).catch(() => {})
+  }
+
   // Log change history
-  if (before && before.estado !== estado) {
+  if (before && estado !== undefined && before.estado !== estado) {
     await prisma.cotizacionHistorial.create({
       data: {
         correlativo: id,
         campo: 'estado',
         valorAntes: before.estado,
         valorDespues: estado,
+        usuario: usuario ?? '',
+      },
+    })
+  }
+  if (before && vendedor !== undefined && before.vendedor !== vendedor) {
+    await prisma.cotizacionHistorial.create({
+      data: {
+        correlativo: id,
+        campo: 'vendedor',
+        valorAntes: before.vendedor,
+        valorDespues: vendedor,
         usuario: usuario ?? '',
       },
     })
@@ -60,6 +114,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           monto: row.monto,
           vendedor: row.vendedor,
           fechaInicio: today,
+          contactoId: row.contactoId,  // hereda FK al Contacto para que el portal del cliente lo vea
         },
       })
       proyectoCreado = { id: nuevo.id, correlativo: nuevo.correlativo }
@@ -131,6 +186,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 // DELETE — soft delete (marca como eliminada, conserva correlativo para no romper secuencia)
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
   const user = await getCurrentUser(request)
   const url = new URL(request.url)
@@ -138,6 +196,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   const before = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
   if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+    return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
+  }
   if (before.eliminadaEn) {
     return NextResponse.json({ error: 'Ya estaba eliminada' }, { status: 409 })
   }

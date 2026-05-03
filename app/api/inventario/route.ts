@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/auth'
 
 // GET /api/inventario — lista reservas con filtros opcionales
 //   ?estado=reservado|disponible|agotado
 //   ?producto=bentonita|pipas|...
 //   ?proyectoId=xxx
 export async function GET(req: NextRequest) {
+  const auth = await requireSuperAdmin(req)
+  if (!auth.ok) return auth.response
+
   const { searchParams } = new URL(req.url)
   const estado = searchParams.get('estado')
   const producto = searchParams.get('producto')
@@ -25,6 +29,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/inventario — crear reserva manualmente (superadmin)
 export async function POST(req: NextRequest) {
+  const auth = await requireSuperAdmin(req)
+  if (!auth.ok) return auth.response
+
   const body = await req.json()
   const reserva = await prisma.inventarioReserva.create({
     data: {

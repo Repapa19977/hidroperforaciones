@@ -1,36 +1,116 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HidroCRM
 
-## Getting Started
+Sistema interno para Hidroperforaciones, S.A. Guatemala.
 
-First, run the development server:
+HidroCRM centraliza contactos, cotizaciones, PDFs, proyectos, bitacora, gastos, inventario, cuentas por pagar, cuentas por cobrar, reportes, usuarios y portal de cliente.
+
+## Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript strict
+- Prisma 7
+- PostgreSQL
+- Tailwind CSS
+- jsPDF / jspdf-autotable
+- JWT en cookie httpOnly
+- Service tokens para integraciones
+- VPS con Nginx, PM2 y SSL
+
+## Comandos Principales
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run check:hygiene
+npm run lint
+npm run build
+npm run predeploy
+npm run verify
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Antes de cualquier despliegue se debe ejecutar:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run predeploy
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Ese comando valida higiene del repo, Prisma, genera cliente Prisma, ejecuta TypeScript y hace build de produccion.
 
-## Learn More
+Para smoke test local, levantar el servidor y correr:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run smoke:local
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Guia operativa: `docs/OPERACION_ADMIN.md`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Variables De Entorno
 
-## Deploy on Vercel
+Usar `.env.example` como plantilla.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Variables criticas:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `SUPERADMIN_USERNAME`
+- `SUPERADMIN_PASSWORD_HASH`
+- `SUPERADMIN_VENDEDOR`
+- `TOTP_ENCRYPTION_KEY`
+- `RESEND_API_KEY`
+- `CRON_SECRET`
+
+No subir `.env`, `.env.local` ni backups con secretos a repositorios publicos.
+
+## Seguridad Operativa
+
+- Las rutas principales se protegen por `proxy.ts`.
+- Los endpoints sensibles deben validar auth tambien en handler usando `requireAuth` o `requireSuperAdmin`.
+- Los modulos de proyectos, gastos, inventario, cuentas, usuarios y tokens son solo para `superadmin`.
+- El portal cliente usa rol `cliente_final` y rutas `/cliente/*`.
+- Los cron jobs deben validar `X-Cron-Secret`.
+- Los service tokens deben tener scopes especificos y revocarse cuando ya no se usen.
+
+## Reglas Para No Romper Formulas
+
+- No cambiar `lib/calculator.ts` sin prueba manual de cotizacion.
+- No cambiar `lib/control-gastos.ts` sin validar bitacora/gastos.
+- No cambiar `lib/pdf-cotizacion.ts` sin revisar visualmente el PDF.
+- No cambiar `prisma/schema.prisma` sin migracion y backup.
+- Siempre crear backup antes de cambios de produccion.
+
+## Backups
+
+Backups locales recomendados:
+
+```text
+C:\Users\Rodrigo\backups-hidrocrm\
+```
+
+Para cambios grandes:
+
+1. Backup de codigo local.
+2. Backup de codigo en VPS.
+3. Backup/dump de base de datos.
+4. `npm run predeploy`.
+5. Despliegue.
+6. Healthcheck.
+
+## Deploy
+
+El deploy actual se maneja por pipeline local a VPS:
+
+1. Build/predeploy local.
+2. Empaquetar codigo.
+3. Subir al VPS.
+4. Instalar/generar/build en servidor.
+5. `pm2 reload`.
+6. Verificar healthcheck.
+
+## Legacy
+
+El cotizador antiguo Rails debe mantenerse como sub-app aislada si se integra:
+
+- proceso separado,
+- base de datos separada,
+- ruta o subdominio separado,
+- sin mezclar tablas con HidroCRM nuevo.

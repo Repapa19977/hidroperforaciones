@@ -59,13 +59,13 @@ export const CONDICIONES_PERFORACION: CondicionLegal[] = [
   {
     id: 'horas-adversas',
     titulo: 'Horas adversas',
-    texto: 'Horas adversas: La presente cotización se basa en un rendimiento promedio de 20 pies por jornada (2.5 pies/hora). Si por condiciones geológicas el avance fuese inferior a dicho umbral, se aplicará un cargo de Q500.00 por hora adversa. Estas horas se registrarán en la bitácora diaria y se facturarán semanalmente. De presentarse un desacuerdo con el cobro justificado, Hidroperforaciones suspenderá los trabajos y retirará el equipo sin responsabilidad alguna. En tal caso, se emitirá un informe de balance para liquidar los fondos recibidos según los renglones ejecutados y los precios unitarios pactados en esta oferta.',
+    texto: 'Horas adversas: La presente cotización se basa en un rendimiento mínimo de 20 pies por jornada en un turno de 10 horas (equivalente a 2 pies/hora). Si por condiciones geológicas el avance fuese inferior a dicho umbral, se aplicará un cargo de Q500.00 por hora adversa. La hora adversa se calcula como:\nhoras_turno - (pies_perforados / constante)\nLa constante es pies_minimo / horas_turno. Estas horas se registrarán en la bitácora diaria y se facturarán semanalmente. De presentarse un desacuerdo con el cobro justificado, Hidroperforaciones suspenderá los trabajos y retirará el equipo sin responsabilidad alguna. En tal caso, se emitirá un informe de balance para liquidar los fondos recibidos según los renglones ejecutados y los precios unitarios pactados en esta oferta.',
     defaultActiva: true,
   },
   {
     id: 'ampliacion-plazo',
     titulo: 'Ampliación del Plazo Contractual',
-    texto: 'AMPLIACIÓN DEL PLAZO CONTRACTUAL: HIDROPERFORACIONES, S.A. se reserva el derecho de ampliar el plazo de ejecución estipulado en caso de surgir situaciones ajenas a su control. Estas incluyen, de manera enunciativa más no limitativa: complejidad técnica imprevista en los trabajos debido a condiciones geológicas inherentes al terreno proporcionado, averías mecánicas que requieran reparaciones prolongadas o importación de repuestos, restricciones administrativas o comunitarias que limiten la jornada laboral (incluyendo horarios inhábiles y festivos), así como eventos de caso fortuito o fuerza mayor. En tales circunstancias, HIDROPERFORACIONES, S.A. notificará al CONTRATANTE por escrito, detallando el motivo y la estimación del tiempo adicional, sin que ello genere penalizaciones o responsabilidad alguna para la empresa.',
+    texto: 'Ampliación del Plazo Contractual: Hidroperforaciones, S.A. se reserva el derecho de ampliar el plazo de ejecución estipulado en caso de surgir situaciones ajenas a su control. Estas incluyen, de manera enunciativa más no limitativa: complejidad técnica imprevista en los trabajos debido a condiciones geológicas inherentes al terreno proporcionado, averías mecánicas que requieran reparaciones prolongadas o importación de repuestos, restricciones administrativas o comunitarias que limiten la jornada laboral (incluyendo horarios inhábiles y festivos), así como eventos de caso fortuito o fuerza mayor. En tales circunstancias, Hidroperforaciones, S.A. notificará al Contratante por escrito, detallando el motivo y la estimación del tiempo adicional, sin que ello genere penalizaciones o responsabilidad alguna para la empresa.',
     defaultActiva: true,
   },
   {
@@ -119,7 +119,7 @@ export const CONDICIONES_PERFORACION: CondicionLegal[] = [
   {
     id: 'aceptacion',
     titulo: 'Aceptación del Contratante',
-    texto: 'El contratante acepta las condiciones anteriormente establecidas al manifestar su consentimiento por cualquiera de los siguientes medios: firma del presente, aprobación vía correo electrónico, emisión de orden de compra o la realización de cualquier pago. Para los efectos legales, las partes otorgan a este documento la calidad de título ejecutivo.',
+    texto: 'La aceptación de las presentes condiciones se perfeccionará por la manifestación del consentimiento a través de: firma autógrafa, aceptación vía correo electrónico, emisión de orden de compra o el pago de cualquier suma o por cualquier medio escrito. Las condiciones de pago aquí pactadas prevalecerán sobre cualesquiera otras que el contratante consigne en instrumentos contractuales posteriores. Las partes reconocen expresamente la calidad de título ejecutivo del presente documento.',
     defaultActiva: true,
   },
 ]
@@ -175,15 +175,4 @@ export function resolverCondiciones(
   }
 
   return resultado
-}
-
-/** @deprecated — alias por compatibilidad; usar resolverCondiciones */
-export function getCondicionesActivas(seleccion?: Record<string, boolean>): CondicionLegal[] {
-  if (!seleccion || Object.keys(seleccion).length === 0) {
-    return CONDICIONES_PERFORACION.filter(c => c.defaultActiva)
-  }
-  return CONDICIONES_PERFORACION.filter(c => {
-    const s = seleccion[c.id]
-    return s !== undefined ? s : c.defaultActiva
-  })
 }

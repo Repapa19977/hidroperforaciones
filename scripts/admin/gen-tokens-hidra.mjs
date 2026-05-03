@@ -1,5 +1,5 @@
 // Genera los 2 tokens de Hidra (copiloto + cliente) en la DB usando pg directo.
-// Uso: DATABASE_URL=... node scripts/gen-tokens-hidra.mjs
+// Uso: DATABASE_URL=... node scripts/admin/gen-tokens-hidra.mjs
 
 import pg from 'pg'
 import { createHash, randomBytes } from 'crypto'
