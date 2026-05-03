@@ -4,6 +4,7 @@ import path from "path";
 const legacyAppUrl = process.env.LEGACY_APP_URL?.replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   turbopack: {
     root: path.resolve(__dirname),
   },
