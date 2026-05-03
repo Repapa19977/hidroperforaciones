@@ -28,6 +28,8 @@ function getVendedorFromCookie(): string {
   return match?.[1] ? decodeURIComponent(match[1]) : ''
 }
 
+const legacyHref = process.env.NEXT_PUBLIC_LEGACY_APP_URL?.replace(/\/+$/, '') || '/legacy'
+
 const navItems = [
   { href: '/dashboard',         icon: LayoutDashboard, label: 'Dashboard'    },
   { href: '/contactos',         icon: Users,            label: 'Contactos'    },
@@ -40,7 +42,7 @@ const navItems = [
   { href: '/reportes',          icon: BarChart2,        label: 'Reportes'     },
   { href: '/presentacion',      icon: BookOpen,         label: 'Guía'         },
   { href: '/papelera',          icon: Trash2,           label: 'Papelera'     },      // solo superadmin
-  { href: '/legacy/',           icon: Archive,          label: 'Cotizador Viejo', external: true },
+  { href: legacyHref,           icon: Archive,          label: 'Cotizador Viejo', external: true },
 ]
 
 export function Sidebar() {
