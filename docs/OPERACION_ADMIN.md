@@ -62,6 +62,18 @@ El deploy correcto debe tener estas fases:
 7. Smoke test.
 8. Conservar release anterior para rollback.
 
+## Legacy Encapsulado
+
+El cotizador viejo debe correr como sub-app separada.
+
+- No comparte base de datos con HidroCRM.
+- No se importan modelos, Prisma ni codigo interno del legacy dentro del CRM nuevo.
+- HidroCRM solo monta `/legacy` por proxy usando `LEGACY_APP_URL`.
+- En local, levantar primero el legacy en otro puerto, por ejemplo `3001`.
+- Luego configurar `LEGACY_APP_URL=http://127.0.0.1:3001` y reiniciar el CRM nuevo.
+
+Si `LEGACY_APP_URL` no existe, `/legacy` muestra una pantalla de configuracion en vez de 404.
+
 ## Rollback
 
 Si el release nuevo no responde:
