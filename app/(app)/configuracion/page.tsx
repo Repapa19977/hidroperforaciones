@@ -1344,6 +1344,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Tokens API (bots e integraciones) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {isSuperAdmin && <McpTokenSection />}
       {isSuperAdmin && <TokensAPISection />}
 
       {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Observabilidad del bot (MCP calls) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
@@ -1522,6 +1523,140 @@ function BotCallsSection() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface McpTokenResult {
+  token: string
+  sub: string
+  scopes: string[]
+  expires_at: string
+  expires_in_days: number
+}
+
+function McpTokenSection() {
+  const [expiresInDays, setExpiresInDays] = useState(90)
+  const [generating, setGenerating] = useState(false)
+  const [result, setResult] = useState<McpTokenResult | null>(null)
+  const [error, setError] = useState('')
+
+  const mcpUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/mcp` : '/api/mcp'
+
+  async function generarToken() {
+    setGenerating(true)
+    setError('')
+    try {
+      const r = await fetch('/api/bot-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sub: 'hidra-copiloto', expires_in_days: expiresInDays }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setError(data.error || 'No se pudo generar el token MCP')
+        return
+      }
+      setResult(data as McpTokenResult)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function copyValue(value: string) {
+    await navigator.clipboard.writeText(value)
+    alert('Copiado al portapapeles')
+  }
+
+  return (
+    <div className="bg-[#0d1526] rounded-xl border border-blue-500/20 p-5">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-blue-400" />
+          <div>
+            <p className="text-sm font-semibold text-slate-200">Token MCP Hidra Copiloto</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Genera el HIDROCRM_MCP_TOKEN para el bot multiagente.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-slate-500">Dias</label>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={expiresInDays}
+            onChange={e => setExpiresInDays(Math.min(365, Math.max(1, Number(e.target.value) || 90)))}
+            className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
+          />
+          <button
+            onClick={generarToken}
+            disabled={generating}
+            className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+            Generar MCP
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-2 mb-3">
+        <div className="bg-black/25 border border-white/10 rounded-lg px-3 py-2 min-w-0">
+          <p className="text-[10px] text-slate-500 mb-1">HIDROCRM_MCP_URL</p>
+          <code className="text-xs text-blue-300 break-all">{mcpUrl}</code>
+        </div>
+        <button
+          onClick={() => copyValue(mcpUrl)}
+          className="flex items-center justify-center gap-1.5 text-xs border border-white/10 text-slate-300 hover:text-white hover:border-white/20 px-3 py-2 rounded-lg"
+        >
+          <Copy className="w-3.5 h-3.5" /> Copiar URL
+        </button>
+      </div>
+
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200 leading-relaxed mb-3">
+        Este token es el correcto para <code>HIDROCRM_MCP_TOKEN</code> y empieza con <code>eyJ</code>. No es el token viejo <code>hcrm_</code>.
+      </div>
+
+      {error && (
+        <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <p className="text-sm font-semibold text-emerald-200">Token generado para {result.sub}</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">Expira: {new Date(result.expires_at).toLocaleString('es-GT')}</p>
+            </div>
+            <button
+              onClick={() => setResult(null)}
+              className="text-[10px] text-slate-500 hover:text-white border border-white/10 rounded px-2 py-1"
+            >
+              ocultar
+            </button>
+          </div>
+          <div className="bg-black/40 border border-white/10 rounded-lg p-3 mb-3">
+            <p className="text-[10px] text-slate-500 mb-1">HIDROCRM_MCP_TOKEN</p>
+            <code className="text-xs text-emerald-300 break-all font-mono">{result.token}</code>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => copyValue(result.token)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg"
+            >
+              <Copy className="w-3.5 h-3.5" /> Copiar token
+            </button>
+            <button
+              onClick={() => copyValue(`HIDROCRM_MCP_URL=${mcpUrl}\nHIDROCRM_MCP_TOKEN=${result.token}`)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg"
+            >
+              <Copy className="w-3.5 h-3.5" /> Copiar .env del bot
+            </button>
+            <span className="text-[10px] text-slate-500">Scopes: {result.scopes.join(', ')}</span>
+          </div>
         </div>
       )}
     </div>
