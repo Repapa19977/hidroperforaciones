@@ -194,12 +194,18 @@ export default function ImprimirPage() {
     window.location.href = mailto
   }
 
+  function volver() {
+    const params = new URLSearchParams(window.location.search)
+    const returnTo = params.get('returnTo')
+    window.location.href = returnTo?.startsWith('/') ? returnTo : '/cotizaciones'
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
       {/* Barra superior (sticky) */}
       <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-[1200px] mx-auto px-3 sm:px-6 py-2.5 flex items-center gap-2">
-          <button onClick={() => window.history.back()}
+          <button onClick={volver}
             className="flex items-center gap-1.5 text-sm text-slate-700 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition-colors">
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">Volver</span>
@@ -259,7 +265,7 @@ export default function ImprimirPage() {
                   Descargar PDF
                 </button>
               )}
-              <button onClick={() => window.history.back()}
+              <button onClick={volver}
                 className="text-sm bg-white border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50">
                 Volver
               </button>

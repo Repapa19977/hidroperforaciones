@@ -235,7 +235,7 @@ export default function CotizacionesPage() {
         ...datos,
         ...(esLegacy && typeof row.monto === 'number' ? { montoGuardado: row.monto } : {}),
       }))
-      window.open('/imprimir', '_blank')
+      window.open(`/imprimir?returnTo=${encodeURIComponent('/cotizaciones')}`, '_blank')
     } catch {
       alert('Error al procesar la cotización.')
     }
