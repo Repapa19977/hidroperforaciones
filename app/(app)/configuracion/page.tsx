@@ -1537,13 +1537,30 @@ interface McpTokenResult {
   expires_in_days: number
 }
 
+type McpTokenSub = 'hidra-operaciones' | 'hidra-copiloto'
+
+const MCP_TOKEN_OPTIONS: Array<{ sub: McpTokenSub; label: string; description: string }> = [
+  {
+    sub: 'hidra-operaciones',
+    label: 'Operaciones limitado',
+    description: 'Solo permite listar proyectos, alertas de bitacora y registrar bitacora/control de gastos.',
+  },
+  {
+    sub: 'hidra-copiloto',
+    label: 'Copiloto completo',
+    description: 'Token amplio para analisis interno. Usarlo solo cuando el bot necesite mas capacidades.',
+  },
+]
+
 function McpTokenSection() {
+  const [tokenSub, setTokenSub] = useState<McpTokenSub>('hidra-operaciones')
   const [expiresInDays, setExpiresInDays] = useState(90)
   const [generating, setGenerating] = useState(false)
   const [result, setResult] = useState<McpTokenResult | null>(null)
   const [error, setError] = useState('')
 
   const mcpUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/mcp` : '/api/mcp'
+  const selectedToken = MCP_TOKEN_OPTIONS.find(o => o.sub === tokenSub) ?? MCP_TOKEN_OPTIONS[0]
 
   async function generarToken() {
     setGenerating(true)
@@ -1552,7 +1569,7 @@ function McpTokenSection() {
       const r = await fetch('/api/bot-tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sub: 'hidra-copiloto', expires_in_days: expiresInDays }),
+        body: JSON.stringify({ sub: tokenSub, expires_in_days: expiresInDays }),
       })
       const data = await r.json().catch(() => ({}))
       if (!r.ok) {
@@ -1576,11 +1593,26 @@ function McpTokenSection() {
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-blue-400" />
           <div>
-            <p className="text-sm font-semibold text-slate-200">Token MCP Hidra Copiloto</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Genera el HIDROCRM_MCP_TOKEN para el bot multiagente.</p>
+            <p className="text-sm font-semibold text-slate-200">Token MCP Hidra Bot</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Genera el HIDROCRM_MCP_TOKEN para OpenClaw/Telegram.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            value={tokenSub}
+            onChange={e => {
+              setTokenSub(e.target.value as McpTokenSub)
+              setResult(null)
+              setError('')
+            }}
+            className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500/50"
+          >
+            {MCP_TOKEN_OPTIONS.map(option => (
+              <option key={option.sub} value={option.sub} className="bg-[#0d1526]">
+                {option.label}
+              </option>
+            ))}
+          </select>
           <label className="text-[10px] text-slate-500">Dias</label>
           <input
             type="number"
@@ -1615,7 +1647,7 @@ function McpTokenSection() {
       </div>
 
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200 leading-relaxed mb-3">
-        Este token es el correcto para <code>HIDROCRM_MCP_TOKEN</code> y empieza con <code>eyJ</code>. No es el token viejo <code>hcrm_</code>.
+        Recomendado para el bot: <b>{selectedToken.label}</b>. {selectedToken.description} El token correcto empieza con <code>eyJ</code>, no con <code>hcrm_</code>.
       </div>
 
       {error && (

@@ -19,6 +19,18 @@ El VPS emite 2 tokens long-lived al arrancar (o en un panel admin):
 }
 ```
 
+### Token Operaciones (Telegram/OpenClaw limitado)
+```ts
+{
+  sub: 'hidra-operaciones',
+  aud: 'hidrocrm-mcp',
+  iss: 'hidrocrm',
+  scopes: ['bot:ops'],
+  iat: <unix>,
+  exp: <unix + 90*24*3600>
+}
+```
+
 ### Token Cliente (portal cliente)
 ```ts
 {
@@ -105,7 +117,7 @@ async function authenticate(req: NextRequest) {
   });
 
   return {
-    sub: payload.sub as 'hidra-copiloto' | 'hidra-cliente',
+    sub: payload.sub as 'hidra-copiloto' | 'hidra-operaciones' | 'hidra-cliente',
     scopes: payload.scopes as string[],
   };
 }

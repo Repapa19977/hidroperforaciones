@@ -18,6 +18,7 @@ export type McpScope =
   | 'bot:finance'
   | 'bot:field'
   | 'bot:geology'
+  | 'bot:ops'
   | 'cliente:read'
   | 'cliente:solicitud'
 
@@ -905,8 +906,21 @@ const metricasPeriodo: ToolDef = {
 
 // ── Helper: fecha hoy en formato YYYY-MM-DD (GT timezone) ────────────────────
 function hoyISO(): string {
-  // Guatemala es UTC-6 sin DST. Para simplificar uso UTC directo — aceptable.
-  return new Date().toISOString().slice(0, 10)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guatemala',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function addDaysISO(fecha: string, dias: number): string {
+  if (dias <= 0) return ''
+  const d = new Date(`${fecha}T12:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
 }
 
 // ── Helper: buscar proyecto por id o correlativo ─────────────────────────────
@@ -921,11 +935,261 @@ async function resolverProyecto(id: string) {
   return p
 }
 
-// ── 12. registrar_entrada_bitacora ───────────────────────────────────────────
+// ── 12. listar_proyectos_activos ─────────────────────────────────────────────
+const listarProyectosActivos: ToolDef = {
+  name: 'listar_proyectos_activos',
+  description: 'Lista proyectos activos para que el bot pueda ubicar el proyecto correcto. No modifica datos.',
+  scopes: ['bot:ops', 'bot:read'],
+  inputSchema: z.object({
+    buscar: z.string().max(120).default(''),
+    limit: z.coerce.number().int().min(1).max(50).default(25),
+  }),
+  handler: async ({ buscar, limit }) => {
+    const filtro = buscar.trim()
+    const proyectos = await prisma.proyecto.findMany({
+      where: {
+        eliminadoEn: null,
+        estado: 'activo',
+        ...(filtro ? {
+          OR: [
+            { correlativo: { contains: filtro, mode: 'insensitive' as const } },
+            { cliente: { contains: filtro, mode: 'insensitive' as const } },
+            { empresa: { contains: filtro, mode: 'insensitive' as const } },
+            { nombre: { contains: filtro, mode: 'insensitive' as const } },
+          ],
+        } : {}),
+      },
+      select: {
+        id: true,
+        correlativo: true,
+        cliente: true,
+        empresa: true,
+        nombre: true,
+        tipo: true,
+        estado: true,
+        fechaInicio: true,
+        vendedor: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    })
+
+    const ids = proyectos.map(p => p.id)
+    const ultimas = ids.length > 0
+      ? await prisma.bitacoraEntry.groupBy({
+          by: ['proyectoId'],
+          where: { proyectoId: { in: ids } },
+          _max: { fecha: true },
+        })
+      : []
+    const ultimaPorProyecto = new Map(ultimas.map(u => [u.proyectoId, u._max.fecha ?? null]))
+
+    return {
+      total: proyectos.length,
+      proyectos: proyectos.map(p => ({
+        id: p.id,
+        correlativo: p.correlativo,
+        cliente: p.cliente,
+        empresa: p.empresa,
+        nombre: p.nombre,
+        tipo: p.tipo,
+        estado: p.estado,
+        fecha_inicio: p.fechaInicio,
+        vendedor: p.vendedor,
+        ultima_bitacora_fecha: ultimaPorProyecto.get(p.id) ?? null,
+      })),
+    }
+  },
+}
+
+// ── 13. alertas_bitacora_pendiente ───────────────────────────────────────────
+const alertasBitacoraPendiente: ToolDef = {
+  name: 'alertas_bitacora_pendiente',
+  description: 'Detecta proyectos activos sin bitacora registrada para una fecha y turnos esperados. No modifica datos.',
+  scopes: ['bot:ops', 'bot:read'],
+  inputSchema: z.object({
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
+    turnos_esperados: z.array(z.enum(['dia', 'noche'])).min(1).max(2).default(['dia']),
+  }),
+  handler: async ({ fecha: fechaInput, turnos_esperados }) => {
+    const fecha = fechaInput ?? hoyISO()
+    const turnosEsperados = Array.from(new Set(turnos_esperados as Array<'dia' | 'noche'>))
+
+    const proyectos = await prisma.proyecto.findMany({
+      where: { eliminadoEn: null, estado: 'activo' },
+      select: {
+        id: true,
+        correlativo: true,
+        cliente: true,
+        empresa: true,
+        nombre: true,
+        tipo: true,
+        vendedor: true,
+        fechaInicio: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    const ids = proyectos.map(p => p.id)
+    const [entradasFecha, ultimas] = ids.length > 0
+      ? await Promise.all([
+          prisma.bitacoraEntry.findMany({
+            where: { proyectoId: { in: ids }, fecha },
+            select: { proyectoId: true, turno: true, createdAt: true },
+          }),
+          prisma.bitacoraEntry.groupBy({
+            by: ['proyectoId'],
+            where: { proyectoId: { in: ids } },
+            _max: { fecha: true },
+          }),
+        ])
+      : [[], []]
+
+    const turnosPorProyecto = new Map<string, Set<string>>()
+    for (const entrada of entradasFecha) {
+      const turnos = turnosPorProyecto.get(entrada.proyectoId) ?? new Set<string>()
+      turnos.add(entrada.turno)
+      turnosPorProyecto.set(entrada.proyectoId, turnos)
+    }
+    const ultimaPorProyecto = new Map(ultimas.map(u => [u.proyectoId, u._max.fecha ?? null]))
+
+    const pendientes = proyectos
+      .map(p => {
+        const turnosRegistrados = turnosPorProyecto.get(p.id) ?? new Set<string>()
+        const faltanTurnos = turnosEsperados.filter(turno => !turnosRegistrados.has(turno))
+        return {
+          proyecto_id: p.id,
+          correlativo: p.correlativo,
+          cliente: p.cliente,
+          empresa: p.empresa,
+          nombre: p.nombre,
+          tipo: p.tipo,
+          vendedor: p.vendedor,
+          fecha_inicio: p.fechaInicio,
+          ultima_bitacora_fecha: ultimaPorProyecto.get(p.id) ?? null,
+          faltan_turnos: faltanTurnos,
+        }
+      })
+      .filter(p => p.faltan_turnos.length > 0)
+
+    return {
+      fecha,
+      turnos_esperados: turnosEsperados,
+      total_proyectos_activos: proyectos.length,
+      total_pendientes: pendientes.length,
+      pendientes,
+    }
+  },
+}
+
+// ── 14. registrar_gasto_control ──────────────────────────────────────────────
+const registrarGastoControl: ToolDef = {
+  name: 'registrar_gasto_control',
+  description: 'Registra una compra/gasto en Control de Gastos de un proyecto activo. Solo crea GastoExtra; no borra, no edita pagos y no toca cotizaciones.',
+  scopes: ['bot:ops', 'bot:write'],
+  inputSchema: z.object({
+    proyecto_id: z.string().min(1),
+    producto: z.string().min(2).max(120),
+    descripcion: z.string().max(500).default(''),
+    rubro: z.string().min(1).max(80).default('otro'),
+    cantidad: z.coerce.number().positive().default(1),
+    unidad: z.string().min(1).max(30).default('Unidad'),
+    costo_unitario: z.coerce.number().positive().optional(),
+    monto_total: z.coerce.number().positive().optional(),
+    valor_unitario: z.coerce.number().min(0).default(0),
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
+    dias_credito: z.coerce.number().int().min(0).max(365).default(0),
+    pagado: z.boolean().optional(),
+    proveedor: z.string().max(120).default(''),
+    nota: z.string().max(500).default(''),
+  }).refine(
+    data => data.costo_unitario !== undefined || data.monto_total !== undefined,
+    { message: 'Enviar costo_unitario o monto_total' },
+  ),
+  handler: async (args, ctx) => {
+    if (ctx.idempotencyKey) {
+      const cached = idemGet(ctx.idempotencyKey)
+      if (cached) return cached
+    }
+
+    const proy = await resolverProyecto(args.proyecto_id)
+    if (proy.estado !== 'activo') {
+      throw new RpcError(400, `proyecto ${proy.correlativo} esta en estado "${proy.estado}" — no se pueden registrar gastos`)
+    }
+
+    const fecha = args.fecha ?? hoyISO()
+    const costoUnitario = args.costo_unitario ?? (args.monto_total / args.cantidad)
+    const monto = Math.round(args.cantidad * costoUnitario * 100) / 100
+    const fechaVencimiento = addDaysISO(fecha, args.dias_credito)
+    const pagado = args.pagado ?? (args.dias_credito === 0)
+
+    const gasto = await prisma.gastoExtra.create({
+      data: {
+        proyectoId: proy.id,
+        fecha,
+        producto: args.producto,
+        descripcion: args.descripcion,
+        rubro: args.rubro,
+        costoUnitario,
+        valorUnitario: args.valor_unitario,
+        cantidad: args.cantidad,
+        unidad: args.unidad,
+        monto,
+        diasCredito: args.dias_credito,
+        fechaVencimiento,
+        pagado,
+        proveedor: args.proveedor,
+        nota: args.nota ? `[bot/${ctx.sub}] ${args.nota}` : '',
+        creadoPor: ctx.sub,
+        concepto: args.producto,
+        montoUnit: costoUnitario,
+      },
+      select: {
+        id: true,
+        fecha: true,
+        producto: true,
+        rubro: true,
+        cantidad: true,
+        unidad: true,
+        costoUnitario: true,
+        monto: true,
+        diasCredito: true,
+        fechaVencimiento: true,
+        pagado: true,
+        proveedor: true,
+        createdAt: true,
+      },
+    })
+
+    const result = {
+      registrado: true,
+      gasto_id: gasto.id,
+      proyecto_id: proy.id,
+      proyecto_correlativo: proy.correlativo,
+      fecha: gasto.fecha,
+      producto: gasto.producto,
+      rubro: gasto.rubro,
+      cantidad: gasto.cantidad,
+      unidad: gasto.unidad,
+      costo_unitario: gasto.costoUnitario,
+      monto: gasto.monto,
+      dias_credito: gasto.diasCredito,
+      fecha_vencimiento: gasto.fechaVencimiento || null,
+      pagado: gasto.pagado,
+      proveedor: gasto.proveedor || null,
+      creado: gasto.createdAt.toISOString(),
+    }
+    if (ctx.idempotencyKey) idemSet(ctx.idempotencyKey, result)
+    return result
+  },
+}
+
+// ── 15. registrar_entrada_bitacora ───────────────────────────────────────────
 const registrarEntradaBitacora: ToolDef = {
   name: 'registrar_entrada_bitacora',
   description: 'Crea una entrada diaria de bitácora en un proyecto. Suma los totales acumulados automáticamente desde la última entrada. Idempotente por Idempotency-Key.',
-  scopes: ['bot:write', 'bot:field'],
+  scopes: ['bot:write', 'bot:field', 'bot:ops'],
   inputSchema: z.object({
     proyecto_id: z.string().min(1),
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
@@ -1010,7 +1274,7 @@ const registrarEntradaBitacora: ToolDef = {
   },
 }
 
-// ── 13. reportar_incidente ───────────────────────────────────────────────────
+// ── 16. reportar_incidente ───────────────────────────────────────────────────
 const reportarIncidente: ToolDef = {
   name: 'reportar_incidente',
   description: 'Crea una entrada de bitácora marcada como día adverso (lluvia, avería, falla eléctrica, etc). El día no suma avance pero queda documentado.',
@@ -1069,7 +1333,7 @@ const reportarIncidente: ToolDef = {
   },
 }
 
-// ── 14. registrar_pago ───────────────────────────────────────────────────────
+// ── 17. registrar_pago ───────────────────────────────────────────────────────
 const registrarPago: ToolDef = {
   name: 'registrar_pago',
   description: 'Registra un pago recibido contra un proyecto. Debe categorizarlo por hito del plan de pagos (reserva/anticipo/mitad-perf/entubar/prueba/otro). Idempotente.',
@@ -1299,6 +1563,9 @@ export const TOOLS: Record<string, ToolDef> = {
   [misPagos.name]: misPagos,
   [miCotizacion.name]: miCotizacion,
   [metricasPeriodo.name]: metricasPeriodo,
+  [listarProyectosActivos.name]: listarProyectosActivos,
+  [alertasBitacoraPendiente.name]: alertasBitacoraPendiente,
+  [registrarGastoControl.name]: registrarGastoControl,
   [registrarEntradaBitacora.name]: registrarEntradaBitacora,
   [reportarIncidente.name]: reportarIncidente,
   [registrarPago.name]: registrarPago,
