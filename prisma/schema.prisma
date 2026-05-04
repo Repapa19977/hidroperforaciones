@@ -342,6 +342,7 @@ model Pago {
   monto               Float
   fecha               String   // YYYY-MM-DD
   metodo              String   @default("transferencia") // cheque | transferencia | deposito | efectivo | tarjeta
+  banco               String   @default("") // banco receptor si no fue efectivo
   referencia          String   @default("") // # cheque, ref bancaria, etc.
   nota                String   @default("")
   registradoPor       String   @default("")

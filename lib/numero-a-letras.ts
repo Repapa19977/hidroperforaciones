@@ -60,3 +60,16 @@ export function numeroAQuetzalesEnLetras(monto: number): string {
     : `con ${String(centavos).padStart(2, '0')}/100`
   return `${ajustado} ${plural} ${centavosStr}`
 }
+
+export function numeroADolaresEnLetras(monto: number): string {
+  if (monto < 0) return 'menos ' + numeroADolaresEnLetras(-monto)
+  const redondeado = Math.round(monto * 100)
+  const entero = Math.floor(redondeado / 100)
+  const centavos = redondeado % 100
+  const letrasEntero = millones(entero)
+  const plural = entero === 1 ? 'dolar estadounidense' : 'dolares estadounidenses'
+  const centavosStr = centavos === 0
+    ? 'con cero centavos'
+    : `con ${String(centavos).padStart(2, '0')}/100`
+  return `${letrasEntero} ${plural} ${centavosStr}`
+}

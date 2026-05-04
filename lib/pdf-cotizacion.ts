@@ -6,13 +6,14 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { QuotationData, HitoPago } from './quotation-store'
 import { getLineaConfig } from './quotation-store'
-import { calcularPerforacion, calcularLimpieza, defaultInputsPerforacion, defaultInputsLimpieza, formatQ, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
+import { calcularPerforacion, calcularLimpieza, defaultInputsPerforacion, defaultInputsLimpieza, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type CuentaBancaria } from './config-store'
 import { COSTOS_BASE } from './costos-base'
-import { numeroAQuetzalesEnLetras } from './numero-a-letras'
+import { numeroADolaresEnLetras, numeroAQuetzalesEnLetras } from './numero-a-letras'
 import { resolverCondiciones } from './condiciones-perf'
 import { formatFechaDDMMYYYY } from './date-format'
+import { convertFromGTQ, formatCurrency, normalizeCurrency, normalizeExchangeRate } from './currency'
 
 // â”€â”€ Colores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const WHITE  = '#ffffff'
@@ -521,11 +522,17 @@ export async function generarPDF(
     ? data.montoGuardado
     : null
   const total = totalGuardado ?? totalCalculado
+  const monedaCotizacion = normalizeCurrency(data.monedaCotizacion)
+  const tipoCambioCotizacion = normalizeExchangeRate(data.tipoCambioUsd)
+  const formatMonto = (montoQ: number) => formatCurrency(montoQ, monedaCotizacion, tipoCambioCotizacion)
 
   // Valor por pie del pie del PDF = total / profundidad (por construcción del residual
   // total del PDF = profundidad Ã— ip.precioPorPieVenta, entonces esto = precio/pie manual)
   const valorPorPie = ip && ip.profundidad > 0 ? Math.round(total / ip.profundidad) : 0
-  const totalEnLetras = numeroAQuetzalesEnLetras(total)
+  const totalVista = convertFromGTQ(total, monedaCotizacion, tipoCambioCotizacion)
+  const totalEnLetras = monedaCotizacion === 'USD'
+    ? numeroADolaresEnLetras(totalVista)
+    : numeroAQuetzalesEnLetras(total)
 
   // Condiciones legales de perforación: 18 del catálogo (con overrides) + extras del usuario.
   const condicionesPerf = data.tipo === 'perforacion'
@@ -698,10 +705,12 @@ export async function generarPDF(
 
     const totalLabelX = mg + textColW + 4
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); setText('#bfd4ff')
-    doc.text('TOTAL A PAGAR', totalLabelX, yPos + 4.7)
+    doc.text(monedaCotizacion === 'USD' ? 'TOTAL A PAGAR (USD)' : 'TOTAL A PAGAR', totalLabelX, yPos + 4.7)
 
     // Depende del botón visual "mostrar/no mostrar" el desglose en el PDF.
-    const etiqueta = mostrarDesgloseImpuestos ? 'Precio con IVA' : 'Precio sin IVA'
+    const etiqueta = monedaCotizacion === 'USD'
+      ? `TC Q ${tipoCambioCotizacion.toFixed(2)}`
+      : (mostrarDesgloseImpuestos ? 'Precio con IVA' : 'Precio sin IVA')
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.2)
     const etiquetaW = doc.getTextWidth(etiqueta) + 5
     const etiquetaX = totalLabelX
@@ -711,7 +720,7 @@ export async function generarPDF(
     doc.text(etiqueta, etiquetaX + 2.5, yPos + 9.5)
 
     doc.setFont('helvetica', 'bold'); doc.setFontSize(13); setText(WHITE)
-    doc.text(formatQ(total), W - mg - 4, yPos + 10.8, { align: 'right' })
+    doc.text(formatMonto(total), W - mg - 4, yPos + 10.8, { align: 'right' })
     return yPos + cardH
   }
 
@@ -727,7 +736,7 @@ export async function generarPDF(
     doc.setFont('helvetica', 'bold'); doc.setFontSize(6.4); setText('#173765')
     doc.text('Valor por pie perforado:', boxX + 4, yPos + 7.1)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); setText('#1f2937')
-    doc.text(formatQ(valorPorPie), boxX + boxW - 4, yPos + 7.1, { align: 'right' })
+    doc.text(formatMonto(valorPorPie), boxX + boxW - 4, yPos + 7.1, { align: 'right' })
 
     if (mostrarNotaCheque) {
       const notaIva = aplicarIva ? 'El precio ya incluye IVA' : 'Precios sin IVA'
@@ -755,8 +764,8 @@ export async function generarPDF(
           limpiar(l.nombre),
           limpiar(l.unidad),
           String(Number(l.cant).toFixed(Number(l.cant) % 1 === 0 ? 0 : 1)),
-          formatQ(l.precio),
-          formatQ(l.total),
+          formatMonto(l.precio),
+          formatMonto(l.total),
         ]),
         theme: 'plain',
         styles: { overflow: 'linebreak', lineColor: rgb('#d9e2ef'), lineWidth: 0.08 },
@@ -796,8 +805,8 @@ export async function generarPDF(
       margin: { left: mg, right: mg, top: 32, bottom: footerBottom },
       head: [['HITO', '%', 'MONTO']],
       body: [
-        ...hitosActivos.map(h => [limpiar(h.label), `${h.pct}%`, formatQ(Math.round(total * h.pct / 100))]),
-        ['TOTAL', `${hitosActivos.reduce((a, b) => a + b.pct, 0)}%`, formatQ(total)],
+        ...hitosActivos.map(h => [limpiar(h.label), `${h.pct}%`, formatMonto(Math.round(total * h.pct / 100))]),
+        ['TOTAL', `${hitosActivos.reduce((a, b) => a + b.pct, 0)}%`, formatMonto(total)],
       ],
       theme: 'grid',
       headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: 7, fontStyle: 'bold', cellPadding: 2 },

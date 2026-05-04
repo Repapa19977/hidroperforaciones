@@ -13,6 +13,7 @@ const pagoPatchSchema = z.object({
   monto: z.number().positive().optional(),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   metodo: z.enum(['cheque', 'transferencia', 'deposito', 'efectivo', 'tarjeta']).optional(),
+  banco: z.string().max(120).optional(),
   referencia: z.string().max(200).optional(),
   nota: z.string().max(1000).optional(),
 })
@@ -34,7 +35,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const before = await prisma.pago.findUnique({ where: { id } })
   if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const pago = await prisma.pago.update({ where: { id }, data: parsed.data })
+  const patch = {
+    ...parsed.data,
+    ...(parsed.data.metodo === 'efectivo' ? { banco: '' } : {}),
+  }
+  const pago = await prisma.pago.update({ where: { id }, data: patch })
 
   const info = getRequestInfo(request)
   await auditLog({ user: auth.user, accion: 'update', entidad: 'pago', entidadId: id, antes: before, despues: pago, ...info })

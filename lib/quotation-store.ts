@@ -4,6 +4,7 @@
 
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
 import type { PreciosLineas } from './config-store'
+import type { CurrencyCode } from './currency'
 
 export interface HitoPago {
   id: string
@@ -60,6 +61,8 @@ export interface QuotationData {
   mostrarDesgloseImpuestos?: boolean  // mostrar desglose Subtotal/IVA/ISR/Total en el PDF (default false)
   mostrarNotaCheque?: boolean  // mostrar nota "emitir cheque no negociable a nombre de Hidroperforaciones S.A." bajo el valor por pie (default false)
   valorPorPieManual?: number          // override manual del "VALOR POR PIE" del pie del PDF (si 0 o undef, usa auto-calc total/profundidad)
+  monedaCotizacion?: CurrencyCode     // solo presentacion de cotizacion/PDF; montos internos siguen en GTQ
+  tipoCambioUsd?: number              // Q por USD usado como snapshot de esta cotizacion
   mostrarEspesor?: boolean
   descripcionSimple?: boolean
   montoGuardado?: number              // snapshot del monto en DB al reimprimir cotizaciones legacy/guardadas

@@ -11,6 +11,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Dot,
 } from 'recharts'
 import { cn, formatQ } from '@/lib/utils'
+import { formatFechaDDMMYYYY } from '@/lib/date-format'
 import { PagosPanel } from '@/components/pagos-panel'
 
 interface PresupuestoRubro {
@@ -362,11 +363,11 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div>
                 <p className="text-[10px] text-slate-500 uppercase">Inicio del proyecto</p>
-                <p className="text-sm font-semibold text-white">{cronograma.fechaInicio}</p>
+                <p className="text-sm font-semibold text-white">{formatFechaDDMMYYYY(cronograma.fechaInicio)}</p>
               </div>
               <div>
                 <p className="text-[10px] text-slate-500 uppercase">Fin estimado</p>
-                <p className="text-sm font-semibold text-white">{cronograma.fechaFinEstimada}</p>
+                <p className="text-sm font-semibold text-white">{formatFechaDDMMYYYY(cronograma.fechaFinEstimada)}</p>
                 <p className="text-[10px] text-slate-600">{cronograma.diasHabilesTotal} días hábiles</p>
               </div>
               <div>
@@ -457,7 +458,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               <tbody className="divide-y divide-amber-500/10">
                 {ejecutado.diasAdversosDetalle.map((d, i) => (
                   <tr key={i} className="hover:bg-amber-500/5">
-                    <td className="px-2 py-1.5 text-slate-300 tabular-nums">{d.fecha}</td>
+                    <td className="px-2 py-1.5 text-slate-300 tabular-nums">{formatFechaDDMMYYYY(d.fecha)}</td>
                     <td className="px-2 py-1.5 text-right text-red-400 font-semibold tabular-nums">{d.piesPerforados.toFixed(1)}</td>
                     <td className="px-2 py-1.5 text-right text-slate-400 tabular-nums">{d.horasProductivas.toFixed(2)} h</td>
                     <td className="px-2 py-1.5 text-right text-amber-300 font-semibold tabular-nums">{d.horasAdversas.toFixed(2)} h</td>
@@ -682,7 +683,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                     <tr key={g.id} className={cn('hover:bg-white/2',
                       esVencido && 'bg-red-500/5',
                       esPorVencer && !esVencido && 'bg-amber-500/5')}>
-                      <td className="px-3 py-2 text-slate-500 text-xs tabular-nums whitespace-nowrap">{g.fecha}</td>
+                      <td className="px-3 py-2 text-slate-500 text-xs tabular-nums whitespace-nowrap">{formatFechaDDMMYYYY(g.fecha)}</td>
                       <td className="px-3 py-2 text-slate-200">
                         <p className="font-medium">{producto}</p>
                         {g.descripcion && <p className="text-[10px] text-slate-600 truncate max-w-[220px]">{g.descripcion}</p>}
@@ -696,7 +697,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                       <td className="px-2 py-2 text-center text-xs text-slate-400">{g.diasCredito > 0 ? `${g.diasCredito}d` : 'Contado'}</td>
                       <td className={cn('px-2 py-2 text-center text-xs tabular-nums',
                         esVencido ? 'text-red-400 font-bold' : esPorVencer ? 'text-amber-400 font-semibold' : 'text-slate-500')}>
-                        {g.fechaVencimiento || '—'}
+                        {g.fechaVencimiento ? formatFechaDDMMYYYY(g.fechaVencimiento) : '—'}
                       </td>
                       <td className="px-2 py-2 text-center">
                         {pagadoVisual
@@ -784,7 +785,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                         <span className="text-slate-600">·</span>
                         <span className="text-emerald-400 tabular-nums">{formatQ(Math.abs(m.monto))}</span>
                         {m.cliente && <span className="text-slate-600">· {m.cliente}</span>}
-                        <span className="ml-auto text-slate-700">{new Date(m.createdAt).toLocaleDateString('es-GT')}</span>
+                        <span className="ml-auto text-slate-700">{formatFechaDDMMYYYY(m.createdAt)}</span>
                       </div>
                       )
                     })}

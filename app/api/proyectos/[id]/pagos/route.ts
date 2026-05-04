@@ -17,6 +17,7 @@ const pagoInputSchema = z.object({
   monto: z.number().positive(),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha YYYY-MM-DD'),
   metodo: metodoEnum.default('transferencia'),
+  banco: z.string().max(120).optional().default(''),
   referencia: z.string().max(200).optional().default(''),
   nota: z.string().max(1000).optional().default(''),
 })
@@ -30,7 +31,7 @@ interface HitoCalculado {
   montoRecibido: number
   montoPendiente: number
   estado: 'pagado' | 'parcial' | 'pendiente' | 'excedido'
-  pagos: Array<{ id: string; fecha: string; monto: number; metodo: string; referencia: string }>
+  pagos: Array<{ id: string; fecha: string; monto: number; metodo: string; banco: string; referencia: string }>
 }
 
 interface PlanPagosItem { id: string; label: string; pct: number; fijo?: boolean }
@@ -112,12 +113,12 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
         montoRecibido: p.monto,
         montoPendiente: 0,
         estado: 'pagado',
-        pagos: [{ id: p.id, fecha: p.fecha, monto: p.monto, metodo: p.metodo, referencia: p.referencia }],
+        pagos: [{ id: p.id, fecha: p.fecha, monto: p.monto, metodo: p.metodo, banco: p.banco, referencia: p.referencia }],
       })
       continue
     }
     hito.montoRecibido += p.monto
-    hito.pagos.push({ id: p.id, fecha: p.fecha, monto: p.monto, metodo: p.metodo, referencia: p.referencia })
+    hito.pagos.push({ id: p.id, fecha: p.fecha, monto: p.monto, metodo: p.metodo, banco: p.banco, referencia: p.referencia })
   }
 
   // Cascada de excedentes: si un hito recibió más de lo esperado, el excedente
@@ -201,6 +202,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       monto: data.monto,
       fecha: data.fecha,
       metodo: data.metodo,
+      banco: data.metodo === 'efectivo' ? '' : data.banco,
       referencia: data.referencia,
       nota: data.nota,
       registradoPor: auth.user.username,

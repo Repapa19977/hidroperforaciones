@@ -6,10 +6,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Loader2, Plus, DollarSign, CheckCircle2, Clock, AlertCircle, TrendingUp,
+  Loader2, Plus, CheckCircle2, Clock, AlertCircle, TrendingUp,
   Banknote, Receipt, Building, CreditCard, Trash2, Settings2, RotateCcw, X, Save,
 } from 'lucide-react'
 import { cn, formatQ } from '@/lib/utils'
+import { formatFechaDDMMYYYY } from '@/lib/date-format'
+import { BANCOS_GUATEMALA } from '@/lib/bancos-guatemala'
 import { ConfirmDialog } from './confirm-dialog'
 
 interface HitoCalculado {
@@ -20,7 +22,7 @@ interface HitoCalculado {
   montoRecibido: number
   montoPendiente: number
   estado: 'pagado' | 'parcial' | 'pendiente' | 'excedido'
-  pagos: Array<{ id: string; fecha: string; monto: number; metodo: string; referencia: string }>
+  pagos: Array<{ id: string; fecha: string; monto: number; metodo: string; banco: string; referencia: string }>
 }
 
 interface HitoEditable {
@@ -37,6 +39,7 @@ interface PagoRow {
   monto: number
   fecha: string
   metodo: string
+  banco: string
   referencia: string
   nota: string
   registradoPor: string
@@ -54,7 +57,7 @@ const METODOS: { id: string; label: string; icon: typeof Banknote }[] = [
   { id: 'transferencia', label: 'Transferencia', icon: Building },
   { id: 'deposito',      label: 'Depósito',      icon: Receipt },
   { id: 'cheque',        label: 'Cheque',        icon: Banknote },
-  { id: 'efectivo',      label: 'Efectivo',      icon: DollarSign },
+  { id: 'efectivo',      label: 'Efectivo',      icon: Banknote },
   { id: 'tarjeta',       label: 'Tarjeta',       icon: CreditCard },
 ]
 
@@ -66,6 +69,7 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
   const [formMonto, setFormMonto] = useState(0)
   const [formFecha, setFormFecha] = useState(new Date().toISOString().slice(0, 10))
   const [formMetodo, setFormMetodo] = useState('transferencia')
+  const [formBanco, setFormBanco] = useState<string>(BANCOS_GUATEMALA[0])
   const [formReferencia, setFormReferencia] = useState('')
   const [formNota, setFormNota] = useState('')
   const [saving, setSaving] = useState(false)
@@ -93,6 +97,7 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
     setFormMonto(pendiente)
     setFormFecha(new Date().toISOString().slice(0, 10))
     setFormMetodo('transferencia')
+    setFormBanco(BANCOS_GUATEMALA[0])
     setFormReferencia('')
     setFormNota('')
     setShowForm(true)
@@ -111,7 +116,8 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           hitoId: formHitoId, hitoLabel, monto: formMonto, fecha: formFecha,
-          metodo: formMetodo, referencia: formReferencia, nota: formNota,
+          metodo: formMetodo, banco: formMetodo === 'efectivo' ? '' : formBanco,
+          referencia: formReferencia, nota: formNota,
         }),
       })
       if (!r.ok) {
@@ -210,7 +216,7 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
       {/* Header */}
       <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-emerald-400" />
+          <span className="w-5 h-5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 flex items-center justify-center text-[11px] font-black leading-none">Q</span>
           <h2 className="text-base font-semibold text-white">Control de Pagos</h2>
           {data.planSource === 'proyecto' && (
             <span className="text-[10px] bg-violet-500/15 text-violet-300 px-2 py-0.5 rounded-full border border-violet-500/30">Plan personalizado</span>
@@ -287,8 +293,9 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
                 <div className="mt-3 ml-11 space-y-1.5 border-l border-white/5 pl-3">
                   {h.pagos.map(p => (
                     <div key={p.id} className="flex items-center gap-2 text-xs">
-                      <span className="text-slate-500">{p.fecha}</span>
+                      <span className="text-slate-500">{formatFechaDDMMYYYY(p.fecha)}</span>
                       <span className="text-slate-400 capitalize">{p.metodo}</span>
+                      {p.banco && <span className="text-slate-600 truncate max-w-[140px]">{p.banco}</span>}
                       {p.referencia && <span className="text-slate-600">#{p.referencia}</span>}
                       <span className="text-white tabular-nums ml-auto">{formatQ(p.monto)}</span>
                       {isSuperAdmin && (
@@ -354,6 +361,18 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
                     })}
                   </div>
                 </div>
+                {formMetodo !== 'efectivo' && (
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Banco receptor</label>
+                    <select value={formBanco} onChange={e => setFormBanco(e.target.value)}
+                      style={{ colorScheme: 'dark' }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500/50">
+                      {BANCOS_GUATEMALA.map(b => (
+                        <option key={b} value={b} className="bg-[#0d1526]">{b}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-slate-500 mb-1 block">Referencia (# cheque, transferencia, etc.)</label>
                   <input value={formReferencia} onChange={e => setFormReferencia(e.target.value)}
@@ -371,7 +390,7 @@ export function PagosPanel({ proyectoId, isSuperAdmin }: { proyectoId: string; i
                   className="px-4 py-2 text-sm text-slate-400 hover:text-white border border-white/10 rounded-lg">Cancelar</button>
                 <button type="submit" disabled={saving || formMonto <= 0}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg font-medium">
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span className="w-3.5 h-3.5 rounded-full border border-white/40 flex items-center justify-center text-[8px] font-black leading-none">Q</span>}
                   Registrar pago
                 </button>
               </div>

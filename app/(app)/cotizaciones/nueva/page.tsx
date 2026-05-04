@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { DEFAULT_TIPO_CAMBIO_USD, formatCurrency, normalizeExchangeRate, type CurrencyCode } from '@/lib/currency'
 import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
 import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
 
@@ -196,6 +197,8 @@ export default function NuevaCotizacionPage() {
             if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
             if (typeof d.mostrarNotaCheque === 'boolean') setMostrarNotaCheque(d.mostrarNotaCheque)
             if (d.planPagos)       setPlanPagos(d.planPagos)
+            if (d.monedaCotizacion === 'USD' || d.monedaCotizacion === 'GTQ') setMonedaCotizacion(d.monedaCotizacion)
+            if (typeof d.tipoCambioUsd === 'number') setTipoCambioUsd(normalizeExchangeRate(d.tipoCambioUsd))
             // Snapshots de pipas y grava — si la cotización los guardó, usarlos; sino defaults de Config
             if (typeof d.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(d.pipaPrecioVentaUnitario)
             if (typeof d.camionadaGravaPrecioVentaUnitario === 'number') setCamionadaGravaPrecioVentaUnitario(d.camionadaGravaPrecioVentaUnitario)
@@ -267,6 +270,8 @@ export default function NuevaCotizacionPage() {
             if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
             if (typeof d.mostrarNotaCheque === 'boolean') setMostrarNotaCheque(d.mostrarNotaCheque)
             if (d.planPagos)       setPlanPagos(d.planPagos)
+            if (d.monedaCotizacion === 'USD' || d.monedaCotizacion === 'GTQ') setMonedaCotizacion(d.monedaCotizacion)
+            if (typeof d.tipoCambioUsd === 'number') setTipoCambioUsd(normalizeExchangeRate(d.tipoCambioUsd))
             if (typeof d.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(d.pipaPrecioVentaUnitario)
             if (typeof d.camionadaGravaPrecioVentaUnitario === 'number') setCamionadaGravaPrecioVentaUnitario(d.camionadaGravaPrecioVentaUnitario)
             if (typeof d.capacidadCamionM3 === 'number') setCapacidadCamionM3(d.capacidadCamionM3)
@@ -355,6 +360,8 @@ export default function NuevaCotizacionPage() {
   const [aplicarDescuento, setAplicarDescuento] = useState(false)  // descuento especial al cliente
   const [descuentoMonto, setDescuentoMonto] = useState(0)          // Q descontado sobre subtotal (antes de IVA/ISR)
   const [mostrarNotaCheque, setMostrarNotaCheque] = useState(false)  // nota "emitir cheque no negociable..." bajo valor por pie
+  const [monedaCotizacion, setMonedaCotizacion] = useState<CurrencyCode>('GTQ')
+  const [tipoCambioUsd, setTipoCambioUsd] = useState(DEFAULT_TIPO_CAMBIO_USD)
 
   // Precios desde Configuración para líneas del PDF — snapshot al crear cotización
   const [pipaPrecioVentaUnitario, setPipaPrecioVentaUnitario] = useState(700)
@@ -460,6 +467,9 @@ export default function NuevaCotizacionPage() {
   const ivaTotal    = aplicarIva ? Math.round(baseGravable * IVA) : 0
   const isrAplicado = aplicarIsr ? Math.round(baseGravable * ISR) : 0
   const totalConIva = baseGravable + ivaTotal + isrAplicado
+  const tipoCambioCotizacion = normalizeExchangeRate(tipoCambioUsd)
+  const formatCotizacionMoney = (montoQ: number) => formatCurrency(montoQ, monedaCotizacion, tipoCambioCotizacion)
+  const simboloCotizacion = monedaCotizacion === 'USD' ? '$' : 'Q'
 
   // Análisis financiero basado en el TOTAL de las líneas (no solo perforación)
   // ISR: 5% para ambos (retención Guatemala)
@@ -514,6 +524,8 @@ export default function NuevaCotizacionPage() {
       condiciones: condActiva,
       condicionesPerf, condicionesLimp,
       planPagos,
+      monedaCotizacion,
+      tipoCambioUsd: tipoCambioCotizacion,
       lineasActivas,
       lineasConfig,
       preciosVentaOverride,
@@ -1050,6 +1062,7 @@ export default function NuevaCotizacionPage() {
               planPagos={planPagos}
               setPlanPagos={setPlanPagos}
               totalConIva={totalConIva}
+              formatMoney={formatCotizacionMoney}
             />
           </div>
 
@@ -1208,7 +1221,7 @@ export default function NuevaCotizacionPage() {
                       {/* Total */}
                       <span className={cn('font-semibold shrink-0 tabular-nums text-right',
                         !cfg.cobrar ? 'text-amber-400/70 line-through' : 'text-white')}>
-                        {formatQ(l.total)}
+                        {formatCotizacionMoney(l.total)}
                       </span>
                     </div>
                   )
@@ -1281,41 +1294,85 @@ export default function NuevaCotizacionPage() {
                 </button>
               </div>
 
-              <div className="mt-3 pt-3 border-t border-white/10 space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Subtotal</span>
-                  <span className="text-slate-300 tabular-nums">{formatQ(subtotal)}</span>
-                </div>
-                {aplicarDescuento && descuentoQ > 0 && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-emerald-400 font-medium">Descuento especial</span>
-                    <span className="text-emerald-400 tabular-nums font-medium">− {formatQ(descuentoQ)}</span>
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <div className="mb-3 rounded-lg border border-white/10 bg-white/3 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Moneda</span>
+                    <div className="grid grid-cols-2 rounded-lg border border-white/10 overflow-hidden">
+                      {(['GTQ', 'USD'] as CurrencyCode[]).map(moneda => (
+                        <button
+                          key={moneda}
+                          type="button"
+                          onClick={() => setMonedaCotizacion(moneda)}
+                          className={cn(
+                            'px-3 py-1.5 text-xs font-semibold transition-colors',
+                            monedaCotizacion === moneda
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-transparent text-slate-400 hover:text-white'
+                          )}
+                        >
+                          {moneda === 'USD' ? '$ USD' : 'Q GTQ'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  {monedaCotizacion === 'USD' && (
+                    <div>
+                      <label className="text-[10px] text-slate-500 mb-1 block">Tipo de cambio Q por USD</label>
+                      <input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        value={tipoCambioUsd}
+                        onChange={e => {
+                          const next = Number(e.target.value)
+                          setTipoCambioUsd(Number.isFinite(next) && next > 0 ? next : DEFAULT_TIPO_CAMBIO_USD)
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 tabular-nums"
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-slate-500">Base interna GTQ</span>
+                    <span className="text-slate-300 tabular-nums">{formatQ(totalConIva)}</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Subtotal</span>
+                    <span className="text-slate-300 tabular-nums">{formatCotizacionMoney(subtotal)}</span>
+                  </div>
+                {aplicarDescuento && descuentoQ > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-emerald-400 font-medium">Descuento especial</span>
+                      <span className="text-emerald-400 tabular-nums font-medium">− {formatCotizacionMoney(descuentoQ)}</span>
+                    </div>
                 )}
                 {aplicarIva && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-amber-400 font-medium">IVA (12%)</span>
-                    <span className="text-amber-400 tabular-nums font-medium">{formatQ(ivaTotal)}</span>
-                  </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-amber-400 font-medium">IVA (12%)</span>
+                      <span className="text-amber-400 tabular-nums font-medium">{formatCotizacionMoney(ivaTotal)}</span>
+                    </div>
                 )}
                 {aplicarIsr && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-violet-400 font-medium">ISR (5%)</span>
-                    <span className="text-violet-400 tabular-nums font-medium">{formatQ(isrAplicado)}</span>
-                  </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-violet-400 font-medium">ISR (5%)</span>
+                      <span className="text-violet-400 tabular-nums font-medium">{formatCotizacionMoney(isrAplicado)}</span>
+                    </div>
                 )}
-                <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-white/10">
-                  <span className="text-white">TOTAL</span>
-                  <span className="text-blue-400 tabular-nums">{formatQ(totalConIva)}</span>
+                  <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-white/10">
+                    <span className="text-white">TOTAL</span>
+                    <span className="text-blue-400 tabular-nums">{formatCotizacionMoney(totalConIva)}</span>
+                  </div>
                 </div>
               </div>
 
               {/* Recordatorio: el valor por pie se edita en la "Calculadora — Perforación" arriba */}
               {tipo === 'perforacion' && ip.profundidad > 0 && (
                 <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-slate-500 leading-relaxed">
-                  Valor/pie: <span className="text-blue-400 font-semibold tabular-nums">Q {ip.precioPorPieVenta.toLocaleString('es-GT')}</span> × {ip.profundidad} pies
+                  Valor/pie: <span className="text-blue-400 font-semibold tabular-nums">{formatCotizacionMoney(ip.precioPorPieVenta)}</span> × {ip.profundidad} pies
                   {(!aplicarIva || !aplicarIsr) && (
-                    <span className="text-slate-600"> · base con ambos impuestos: {formatQ(ip.profundidad * ip.precioPorPieVenta)}</span>
+                    <span className="text-slate-600"> · base con ambos impuestos: {formatCotizacionMoney(ip.profundidad * ip.precioPorPieVenta)}</span>
                   )}
                   <br/>
                   <span className="text-slate-600">Edita el precio/pie arriba en la Calculadora.</span>
@@ -1374,11 +1431,11 @@ export default function NuevaCotizacionPage() {
                   {/* Cliente paga */}
                   <div className="p-4">
                     <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-blue-400 mb-1">
-                      <DollarSign className="w-3 h-3" /> Cliente paga
+                      <span className="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">{simboloCotizacion}</span> Cliente paga
                     </div>
-                    <p className="text-xl font-black text-white tabular-nums leading-none">{formatQ(totalConIva)}</p>
+                    <p className="text-xl font-black text-white tabular-nums leading-none">{formatCotizacionMoney(totalConIva)}</p>
                     <p className="text-[10px] text-slate-500 mt-1 leading-tight">
-                      {formatQ(subtotal)} subtotal + IVA
+                      {formatCotizacionMoney(subtotal)} subtotal + IVA
                     </p>
                   </div>
                   {/* Tu costo — solo superadmin */}
@@ -1433,7 +1490,7 @@ export default function NuevaCotizacionPage() {
           <div className="flex items-stretch">
             <div className="flex-1 px-4 py-2.5">
               <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider leading-none">Total cotización</p>
-              <p className="text-lg font-bold text-blue-400 tabular-nums leading-tight mt-1">{formatQ(totalConIva)}</p>
+              <p className="text-lg font-bold text-blue-400 tabular-nums leading-tight mt-1">{formatCotizacionMoney(totalConIva)}</p>
               {rolUsuario === 'superadmin' && (
                 <p className="text-[9px] text-slate-500 tabular-nums leading-none mt-0.5">
                   Margen: <span className={margenNeto >= 25 ? 'text-emerald-400' : margenNeto >= 10 ? 'text-amber-400' : 'text-red-400'}>{margenNeto.toFixed(1)}%</span>
@@ -2639,10 +2696,11 @@ function Alert({ type, msg }: { type: 'error' | 'ok'; msg: string }) {
 }
 
 // ── Plan de Pagos — componente ───────────────────────────────────────────────
-function PlanPagosSection({ planPagos, setPlanPagos, totalConIva }: {
+function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = formatQ }: {
   planPagos: HitoPago[]
   setPlanPagos: React.Dispatch<React.SetStateAction<HitoPago[]>>
   totalConIva: number
+  formatMoney?: (montoQ: number) => string
 }) {
   const [showPlan, setShowPlan] = useState(false)
   const SUMA_FIJA = planPagos.filter(h => h.fijo).reduce((a, h) => a + h.pct, 0)
@@ -2700,7 +2758,7 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva }: {
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">%</span>
               </div>
-              <span className="text-xs text-slate-400 w-20 text-right tabular-nums">{formatQ(Math.round(totalConIva * h.pct / 100))}</span>
+              <span className="text-xs text-slate-400 w-20 text-right tabular-nums">{formatMoney(Math.round(totalConIva * h.pct / 100))}</span>
               <button onClick={() => removeHito(h.id)} className="text-slate-600 hover:text-red-400 transition-colors text-xs">✕</button>
             </div>
           ))}
@@ -2712,7 +2770,7 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva }: {
                 <span className="w-full block text-xs text-slate-500 text-right pr-5 py-1.5">{h.pct}</span>
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-600">%</span>
               </div>
-              <span className="text-xs text-slate-500 w-20 text-right tabular-nums">{formatQ(Math.round(totalConIva * h.pct / 100))}</span>
+              <span className="text-xs text-slate-500 w-20 text-right tabular-nums">{formatMoney(Math.round(totalConIva * h.pct / 100))}</span>
               <span className="text-[10px] text-slate-600">fijo</span>
             </div>
           ))}
@@ -2722,7 +2780,7 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva }: {
               + Agregar hito
             </button>
             <div className={cn('text-xs font-semibold tabular-nums', ok ? 'text-emerald-400' : 'text-amber-400')}>
-              Total: {sumaTotal}% = {formatQ(Math.round(totalConIva * sumaTotal / 100))}
+              Total: {sumaTotal}% = {formatMoney(Math.round(totalConIva * sumaTotal / 100))}
             </div>
           </div>
         </div>
