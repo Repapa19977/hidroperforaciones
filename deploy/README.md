@@ -1,82 +1,70 @@
-# Deploy HidroCRM en VPS Hostinger
+# Deploy HidroCRM En VPS
 
-Guía paso a paso para deployar HidroCRM en un VPS Hostinger (Ubuntu 22.04) con dominio propio + SSL gratis.
+Guia segura para desplegar HidroCRM en un VPS Ubuntu con dominio, Nginx, PM2 y SSL.
 
-## Pre-requisitos
+Esta guia usa placeholders. No escribir IPs reales, passwords, tokens, URLs privadas de base de datos ni secretos en el repositorio.
 
-- [ ] VPS Hostinger KVM 2 o superior (2 GB RAM, Ubuntu 22.04 LTS)
-- [ ] Dominio registrado (ej. `hidroperforaciones.com`)
-- [ ] Acceso SSH al VPS (usuario + contraseña o llave SSH)
-- [ ] DNS apuntado al VPS (registro A: `@` y `www` → IP del VPS)
-- [ ] Decisión: ¿Postgres en Neon (gratis, managed) o local en el VPS?
+## Pre-Requisitos
 
-## Paso 1 — Apuntar dominio al VPS
+- VPS Ubuntu 22.04/24.04 LTS.
+- Dominio apuntando al VPS.
+- Acceso SSH con usuario autorizado o llave SSH.
+- Base de datos PostgreSQL administrada o local.
+- Archivo `.env` creado directamente en el VPS, nunca versionado.
 
-En el panel de Hostinger (Dominio → DNS):
+## DNS
 
+En el panel del dominio:
+
+```text
+Tipo  Nombre  Valor        TTL
+A     @       <VPS_HOST>   3600
+A     www     <VPS_HOST>   3600
 ```
-Tipo  Nombre  Valor                TTL
-A     @       <IP_DEL_VPS>         3600
-A     www     <IP_DEL_VPS>         3600
-```
 
-Esperá 10-30 min para propagación.
-
-## Paso 2 — Conexión SSH
-
-Desde Windows PowerShell o cmd:
+## Conexion SSH
 
 ```bash
-ssh root@<IP_DEL_VPS>
+ssh <SSH_USER>@<VPS_HOST>
 ```
 
-(o el usuario que te dio Hostinger)
+No guardar credenciales SSH reales en README, issues, commits, scripts ni logs compartidos.
 
-## Paso 3 — Instalar stack base
+## Instalar Stack Base
 
-Copiar y ejecutar como root el script `vps-setup.sh`. Instala:
-- Node.js 20
-- Git
-- Nginx (reverse proxy)
-- Certbot (SSL Let's Encrypt)
-- PM2 (process manager)
-- PostgreSQL 16 (opcional — solo si NO usás Neon)
+Copiar `deploy/vps-setup.sh` al VPS y ejecutarlo con el usuario autorizado:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<tu_user>/hidrocrm/main/deploy/vps-setup.sh | bash
+bash deploy/vps-setup.sh
 ```
 
-O copiá el archivo `deploy/vps-setup.sh` al VPS y ejecutalo con `bash vps-setup.sh`.
+Evitar `curl | bash` con URLs no verificadas.
 
-## Paso 4 — Clonar repo
+## Clonar Repo
 
 ```bash
 cd /opt
-git clone https://github.com/<tu_user>/hidrocrm.git
+git clone https://github.com/<OWNER>/<REPO>.git hidrocrm
 cd hidrocrm
 npm ci
 ```
 
-## Paso 5 — Variables de entorno
+## Variables De Entorno
 
-Crear `/opt/hidrocrm/.env`:
+Crear `/opt/hidrocrm/.env` directamente en el VPS usando `.env.example` como plantilla.
+
+Ejemplo seguro:
 
 ```bash
-# ── Base de datos ──
-# Opción A: Neon (recomendado — managed gratis)
-DATABASE_URL="postgresql://usuario:pass@ep-xxx.us-east-2.aws.neon.tech/hidrocrm?sslmode=require"
-
-# Opción B: Postgres local
-# DATABASE_URL="postgresql://hidrocrm:password_seguro@localhost:5432/hidrocrm"
-
-# ── Auth ──
-JWT_SECRET="<generar con: openssl rand -hex 64>"
-
-# ── Email (opcional — si usás Resend para bitácora al cliente) ──
-RESEND_API_KEY="re_xxx"
-RESEND_FROM="ventas@hidroperforaciones.com"
-
-# ── Entorno ──
+DATABASE_URL="<DATABASE_URL_POSTGRESQL>"
+JWT_SECRET="<SECRET_GENERADO>"
+JWT_EXP="8h"
+SUPERADMIN_USERNAME="<USUARIO_SUPERADMIN>"
+SUPERADMIN_PASSWORD_HASH="<HASH_DE_PASSWORD>"
+SUPERADMIN_VENDEDOR="<NOMBRE_VISIBLE>"
+TOTP_ENCRYPTION_KEY="<SECRET_GENERADO>"
+RESEND_API_KEY="<RESEND_API_KEY>"
+CRON_SECRET="<SECRET_GENERADO>"
 NODE_ENV="production"
 PORT="3000"
 ```
@@ -87,91 +75,99 @@ Proteger permisos:
 chmod 600 /opt/hidrocrm/.env
 ```
 
-## Paso 6 — Migraciones de DB + seed
+## Migraciones Y Build
 
 ```bash
 cd /opt/hidrocrm
 npx prisma generate
 npx prisma migrate deploy
-# Opcional — cargar usuarios/config iniciales
-npx prisma db execute --file seed-prod.sql || true
+npm run build
 ```
 
-## Paso 7 — Build + PM2
+## PM2
 
 ```bash
-cd /opt/hidrocrm
-npm run build
 pm2 start npm --name hidrocrm -- start
 pm2 save
-pm2 startup      # genera el comando para ejecutar al boot — copiar y ejecutar lo que imprima
+pm2 startup
 ```
 
-## Paso 8 — Nginx reverse proxy
+Si el proceso ya existe:
 
-Copiar `deploy/nginx.conf.template` al VPS como `/etc/nginx/sites-available/hidrocrm`, reemplazar `TU_DOMINIO.com` por el real, y:
+```bash
+pm2 reload hidrocrm
+```
+
+## Nginx
+
+Copiar `deploy/nginx.conf.template` al VPS como `/etc/nginx/sites-available/hidrocrm`, reemplazar `TU_DOMINIO.com` por el dominio real y validar:
 
 ```bash
 ln -s /etc/nginx/sites-available/hidrocrm /etc/nginx/sites-enabled/
-rm /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 ```
 
-## Paso 9 — SSL Let's Encrypt (gratis)
+## SSL
 
 ```bash
-certbot --nginx -d TU_DOMINIO.com -d www.TU_DOMINIO.com --non-interactive --agree-tos -m rodriporres@gmail.com
+certbot --nginx -d <DOMINIO> -d www.<DOMINIO> --non-interactive --agree-tos -m <EMAIL_ADMIN>
 ```
 
-Auto-renueva cada 90 días. Ya.
+Validar renovacion:
 
-## Paso 10 — Probar
-
-```
-https://TU_DOMINIO.com
+```bash
+certbot renew --dry-run
 ```
 
-Debería cargar HidroCRM con SSL válido (candado verde).
-
-## Actualizar el app después (CI/CD manual)
-
-Cada vez que quieras deployar cambios:
+## Actualizar App
 
 ```bash
 cd /opt/hidrocrm
-git pull
+git pull --ff-only
 npm ci
+npx prisma generate
 npx prisma migrate deploy
 npm run build
 pm2 reload hidrocrm
 ```
 
-O usá el script `deploy/update.sh`.
-
-## Logs y monitoreo
+Tambien se puede usar:
 
 ```bash
-pm2 logs hidrocrm         # logs en vivo
-pm2 status                # estado del proceso
-pm2 restart hidrocrm      # reiniciar
-systemctl status nginx    # estado Nginx
-tail -f /var/log/nginx/error.log
+bash deploy/update.sh
 ```
 
-## Backups de DB
+## Backups
 
-Si usás Neon: automático.
-Si usás Postgres local:
+Antes de deploys grandes:
 
 ```bash
-# diario con cron
-pg_dump hidrocrm | gzip > /backups/hidrocrm_$(date +%Y%m%d).sql.gz
+mkdir -p /opt/hidrocrm-backups
+tar \
+  --exclude=node_modules \
+  --exclude=.next \
+  --exclude=.git \
+  --exclude=dev.db \
+  --exclude='*.log' \
+  -czf /opt/hidrocrm-backups/hidrocrm-<FECHA>.tgz \
+  -C /opt hidrocrm
+```
+
+Si la base de datos es externa, usar snapshots/backups del proveedor. Si es local, generar dump con credenciales seguras fuera del repo.
+
+## Verificacion
+
+```bash
+pm2 status hidrocrm
+curl -I http://127.0.0.1:3000
+nginx -t
+df -h /
 ```
 
 ## Troubleshooting
 
-- **502 Bad Gateway**: revisar `pm2 logs hidrocrm` — el app no está corriendo.
-- **Base de datos no conecta**: verificar `DATABASE_URL` en `.env` + que el puerto 5432 esté abierto (si es local).
-- **SSL no válido**: `certbot renew --dry-run` para probar.
-- **DNS no propagado**: esperar más tiempo, probar con `dig TU_DOMINIO.com`.
+- `502 Bad Gateway`: revisar `pm2 logs hidrocrm` y puerto local.
+- Error de base de datos: validar `DATABASE_URL` en el `.env` del VPS.
+- SSL no valido: revisar DNS y `certbot renew --dry-run`.
+- Disco creciendo: revisar backups que no excluyan `node_modules`, `.next` o `.git`.

@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 dev.db
+/prisma/dev.db
+/auditoria/
+/CALCULADORA_PROGRESO.txt
 
 # debug
 npm-debug.log*
