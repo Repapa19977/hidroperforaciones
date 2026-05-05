@@ -31,6 +31,22 @@ El VPS emite 2 tokens long-lived al arrancar (o en un panel admin):
 }
 ```
 
+### Token Superadmin (Telegram/OpenClaw con aprobacion)
+```ts
+{
+  sub: 'hidra-superadmin',
+  aud: 'hidrocrm-mcp',
+  iss: 'hidrocrm',
+  scopes: ['bot:superadmin'],
+  iat: <unix>,
+  exp: <unix + 90*24*3600>
+}
+```
+
+Las tools de escritura con `bot:superadmin` requieren `approval_code`. El codigo
+se valida contra `HIDROCRM_MCP_APPROVAL_CODE` o
+`HIDROCRM_MCP_APPROVAL_CODE_SHA256` en el `.env` del VPS.
+
 ### Token Cliente (portal cliente)
 ```ts
 {
@@ -117,7 +133,7 @@ async function authenticate(req: NextRequest) {
   });
 
   return {
-    sub: payload.sub as 'hidra-copiloto' | 'hidra-operaciones' | 'hidra-cliente',
+    sub: payload.sub as 'hidra-copiloto' | 'hidra-operaciones' | 'hidra-superadmin' | 'hidra-cliente',
     scopes: payload.scopes as string[],
   };
 }

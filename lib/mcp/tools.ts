@@ -4,6 +4,7 @@
 // Implementa los 6 tools mínimos para activar hidra-copiloto.
 // Los handlers trabajan con el schema real de HidroCRM (Prisma + cuid, no uuid).
 
+import { createHash, timingSafeEqual } from 'crypto'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS } from '@/lib/config-store'
@@ -19,6 +20,7 @@ export type McpScope =
   | 'bot:field'
   | 'bot:geology'
   | 'bot:ops'
+  | 'bot:superadmin'
   | 'cliente:read'
   | 'cliente:solicitud'
 
@@ -74,6 +76,45 @@ function idemSet(key: string, value: any): void {
 // ── Helpers compartidos ──────────────────────────────────────────────────────
 
 // Buscar contacto por teléfono (normalizando: quita espacios, +, guiones)
+function isSuperadminMcp(ctx: McpCtx): boolean {
+  return ctx.sub === 'hidra-superadmin' || ctx.scopes.includes('bot:superadmin')
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && timingSafeEqual(left, right)
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function requireSuperadminApproval(args: { approval_code?: string }, ctx: McpCtx, action: string): void {
+  if (!isSuperadminMcp(ctx)) return
+
+  const provided = args.approval_code?.trim()
+  if (!provided) {
+    throw new RpcError(401, `approval_code requerido para ${action}`)
+  }
+
+  const expectedPlain = process.env.HIDROCRM_MCP_APPROVAL_CODE?.trim()
+  const expectedHash = process.env.HIDROCRM_MCP_APPROVAL_CODE_SHA256?.trim().toLowerCase()
+  if (!expectedPlain && !expectedHash) {
+    throw new RpcError(503, 'codigo de aprobacion MCP no configurado', {
+      env: 'HIDROCRM_MCP_APPROVAL_CODE',
+    })
+  }
+
+  const approved = expectedHash
+    ? safeEqual(sha256(provided), expectedHash)
+    : safeEqual(provided, expectedPlain ?? '')
+
+  if (!approved) {
+    throw new RpcError(403, 'approval_code invalido')
+  }
+}
+
 async function contactoByPhone(telefono: string) {
   const normalize = (s: string) => s.replace(/[^\d]/g, '')
   const target = normalize(telefono)
@@ -105,7 +146,7 @@ function margenFromCotizacion(monto: number, datosJson: string): number | null {
 const buscarOportunidad: ToolDef = {
   name: 'buscar_oportunidad',
   description: 'Obtiene detalle de una oportunidad por ID (correlativo o id interno)',
-  scopes: ['bot:read'],
+  scopes: ['bot:read', 'bot:superadmin'],
   inputSchema: z.object({
     id: z.string().min(1), // cuid o correlativo
   }),
@@ -154,7 +195,7 @@ const buscarOportunidad: ToolDef = {
 const expedienteCliente: ToolDef = {
   name: 'expediente_cliente',
   description: 'Expediente completo del cliente (contacto + proyectos + oportunidades + cotizaciones)',
-  scopes: ['bot:read', 'cliente:read'],
+  scopes: ['bot:read', 'bot:superadmin', 'cliente:read'],
   inputSchema: z.object({
     contacto_id: z.string().min(1).optional(),
   }),
@@ -259,7 +300,7 @@ const expedienteCliente: ToolDef = {
 const historialCliente: ToolDef = {
   name: 'historial_cliente',
   description: 'Busca clientes por nombre (case-insensitive) con histórico resumido',
-  scopes: ['bot:read'],
+  scopes: ['bot:read', 'bot:superadmin'],
   inputSchema: z.object({
     nombre: z.string().min(2).max(100),
   }),
@@ -322,7 +363,7 @@ const historialCliente: ToolDef = {
 const previewCotizacion: ToolDef = {
   name: 'preview_cotizacion',
   description: 'Calcula precio estimado de cotización sin persistir. Para que el asesor vea rango antes de enviar.',
-  scopes: ['bot:calc'],
+  scopes: ['bot:calc', 'bot:superadmin'],
   inputSchema: z.object({
     tipo: z.enum(['pozo_nuevo', 'limpieza_mecanica', 'mantenimiento']),
     municipio: z.string().min(2),
@@ -401,7 +442,7 @@ const previewCotizacion: ToolDef = {
 const simularDescuento: ToolDef = {
   name: 'simular_descuento',
   description: 'Calcula impacto de un descuento en el margen de una cotización existente',
-  scopes: ['bot:calc'],
+  scopes: ['bot:calc', 'bot:superadmin'],
   inputSchema: z.object({
     cotizacion_id: z.string().min(1), // id o correlativo
     pct: z.number().min(0).max(50),
@@ -445,13 +486,16 @@ const simularDescuento: ToolDef = {
 const registrarMensaje: ToolDef = {
   name: 'registrar_mensaje',
   description: 'Guarda una nota/mensaje en la oportunidad (memoria visible para el asesor)',
-  scopes: ['bot:write'],
+  scopes: ['bot:write', 'bot:superadmin'],
   inputSchema: z.object({
     oportunidad_id: z.string().min(1),
     mensaje: z.string().min(1).max(5000),
     autor: z.enum(['hidra-copiloto', 'asesor']).default('hidra-copiloto'),
+    approval_code: z.string().min(4).max(128).optional(),
   }),
-  handler: async ({ oportunidad_id, mensaje, autor }, ctx) => {
+  handler: async ({ oportunidad_id, mensaje, autor, approval_code }, ctx) => {
+    requireSuperadminApproval({ approval_code }, ctx, 'registrar mensaje en oportunidad')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -838,7 +882,7 @@ const miCotizacion: ToolDef = {
 const metricasPeriodo: ToolDef = {
   name: 'metricas_periodo',
   description: 'KPIs del período: cotizaciones, monto, confirmadas, enviadas, canceladas, conversión, por vendedor. Requiere scope bot:analytics.',
-  scopes: ['bot:analytics'],
+  scopes: ['bot:analytics', 'bot:superadmin'],
   inputSchema: z.object({
     desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD'),
     hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD'),
@@ -939,7 +983,7 @@ async function resolverProyecto(id: string) {
 const listarProyectosActivos: ToolDef = {
   name: 'listar_proyectos_activos',
   description: 'Lista proyectos activos para que el bot pueda ubicar el proyecto correcto. No modifica datos.',
-  scopes: ['bot:ops', 'bot:read'],
+  scopes: ['bot:ops', 'bot:read', 'bot:superadmin'],
   inputSchema: z.object({
     buscar: z.string().max(120).default(''),
     limit: z.coerce.number().int().min(1).max(50).default(25),
@@ -1007,7 +1051,7 @@ const listarProyectosActivos: ToolDef = {
 const alertasBitacoraPendiente: ToolDef = {
   name: 'alertas_bitacora_pendiente',
   description: 'Detecta proyectos activos sin bitacora registrada para una fecha y turnos esperados. No modifica datos.',
-  scopes: ['bot:ops', 'bot:read'],
+  scopes: ['bot:ops', 'bot:read', 'bot:superadmin'],
   inputSchema: z.object({
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
     turnos_esperados: z.array(z.enum(['dia', 'noche'])).min(1).max(2).default(['dia']),
@@ -1083,11 +1127,158 @@ const alertasBitacoraPendiente: ToolDef = {
   },
 }
 
-// ── 14. registrar_gasto_control ──────────────────────────────────────────────
+// ── 14. resumen_hidrocrm_superadmin ──────────────────────────────────────────
+const resumenHidrocrmSuperadmin: ToolDef = {
+  name: 'resumen_hidrocrm_superadmin',
+  description: 'Resumen ejecutivo del ecosistema HidroCRM: cotizaciones, oportunidades, proyectos, pagos, gastos y bitacora. No modifica datos.',
+  scopes: ['bot:superadmin'],
+  inputSchema: z.object({
+    desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
+    hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
+  }),
+  handler: async ({ desde, hasta }) => {
+    const hoy = hoyISO()
+    const desdePeriodo = desde ?? `${hoy.slice(0, 7)}-01`
+    const hastaPeriodo = hasta ?? hoy
+
+    const [
+      cotizacionesPorEstado,
+      oportunidadesPorEtapa,
+      proyectosPorEstado,
+      pagosPeriodo,
+      gastosPeriodo,
+      bitacorasHoy,
+      proyectosActivos,
+    ] = await Promise.all([
+      prisma.cotizacion.groupBy({
+        by: ['estado'],
+        where: { eliminadaEn: null },
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+      prisma.oportunidad.groupBy({
+        by: ['etapa'],
+        where: { eliminadaEn: null },
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+      prisma.proyecto.groupBy({
+        by: ['estado'],
+        where: { eliminadoEn: null },
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+      prisma.pago.aggregate({
+        where: { eliminadoEn: null, fecha: { gte: desdePeriodo, lte: hastaPeriodo } },
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+      prisma.gastoExtra.aggregate({
+        where: { fecha: { gte: desdePeriodo, lte: hastaPeriodo } },
+        _count: { _all: true },
+        _sum: { monto: true },
+      }),
+      prisma.bitacoraEntry.count({ where: { fecha: hoy } }),
+      prisma.proyecto.count({ where: { eliminadoEn: null, estado: 'activo' } }),
+    ])
+
+    return {
+      fecha: hoy,
+      periodo: { desde: desdePeriodo, hasta: hastaPeriodo },
+      cotizaciones: cotizacionesPorEstado.map(row => ({
+        estado: row.estado,
+        cantidad: row._count._all,
+        monto: Math.round((row._sum.monto ?? 0) * 100) / 100,
+      })),
+      oportunidades: oportunidadesPorEtapa.map(row => ({
+        etapa: row.etapa,
+        cantidad: row._count._all,
+        monto: Math.round((row._sum.monto ?? 0) * 100) / 100,
+      })),
+      proyectos: proyectosPorEstado.map(row => ({
+        estado: row.estado,
+        cantidad: row._count._all,
+        monto: Math.round((row._sum.monto ?? 0) * 100) / 100,
+      })),
+      proyectos_activos: proyectosActivos,
+      pagos_periodo: {
+        cantidad: pagosPeriodo._count._all,
+        monto: Math.round((pagosPeriodo._sum.monto ?? 0) * 100) / 100,
+      },
+      gastos_periodo: {
+        cantidad: gastosPeriodo._count._all,
+        monto: Math.round((gastosPeriodo._sum.monto ?? 0) * 100) / 100,
+      },
+      bitacoras_hoy: bitacorasHoy,
+    }
+  },
+}
+
+// ── 15. listar_cotizaciones ─────────────────────────────────────────────────
+const listarCotizaciones: ToolDef = {
+  name: 'listar_cotizaciones',
+  description: 'Lista cotizaciones no eliminadas por estado, cliente, proyecto o correlativo. No modifica datos.',
+  scopes: ['bot:superadmin'],
+  inputSchema: z.object({
+    buscar: z.string().max(120).default(''),
+    estado: z.string().max(50).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  }),
+  handler: async ({ buscar, estado, limit }) => {
+    const filtro = buscar.trim()
+    const cotizaciones = await prisma.cotizacion.findMany({
+      where: {
+        eliminadaEn: null,
+        ...(estado ? { estado } : {}),
+        ...(filtro ? {
+          OR: [
+            { correlativo: { contains: filtro, mode: 'insensitive' as const } },
+            { cliente: { contains: filtro, mode: 'insensitive' as const } },
+            { empresa: { contains: filtro, mode: 'insensitive' as const } },
+            { proyecto: { contains: filtro, mode: 'insensitive' as const } },
+          ],
+        } : {}),
+      },
+      select: {
+        id: true,
+        correlativo: true,
+        cliente: true,
+        empresa: true,
+        proyecto: true,
+        tipo: true,
+        estado: true,
+        monto: true,
+        fecha: true,
+        vendedor: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    })
+
+    return {
+      total: cotizaciones.length,
+      cotizaciones: cotizaciones.map(c => ({
+        id: c.id,
+        correlativo: c.correlativo,
+        cliente: c.cliente,
+        empresa: c.empresa,
+        proyecto: c.proyecto,
+        tipo: c.tipo,
+        estado: c.estado,
+        monto: c.monto,
+        fecha: c.fecha,
+        vendedor: c.vendedor,
+      })),
+    }
+  },
+}
+
+// ── 16. registrar_gasto_control ──────────────────────────────────────────────
 const registrarGastoControl: ToolDef = {
   name: 'registrar_gasto_control',
   description: 'Registra una compra/gasto en Control de Gastos de un proyecto activo. Solo crea GastoExtra; no borra, no edita pagos y no toca cotizaciones.',
-  scopes: ['bot:ops', 'bot:write'],
+  scopes: ['bot:ops', 'bot:write', 'bot:superadmin'],
   inputSchema: z.object({
     proyecto_id: z.string().min(1),
     producto: z.string().min(2).max(120),
@@ -1103,11 +1294,14 @@ const registrarGastoControl: ToolDef = {
     pagado: z.boolean().optional(),
     proveedor: z.string().max(120).default(''),
     nota: z.string().max(500).default(''),
+    approval_code: z.string().min(4).max(128).optional(),
   }).refine(
     data => data.costo_unitario !== undefined || data.monto_total !== undefined,
     { message: 'Enviar costo_unitario o monto_total' },
   ),
   handler: async (args, ctx) => {
+    requireSuperadminApproval(args, ctx, 'registrar gasto en control de gastos')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -1189,7 +1383,7 @@ const registrarGastoControl: ToolDef = {
 const registrarEntradaBitacora: ToolDef = {
   name: 'registrar_entrada_bitacora',
   description: 'Crea una entrada diaria de bitácora en un proyecto. Suma los totales acumulados automáticamente desde la última entrada. Idempotente por Idempotency-Key.',
-  scopes: ['bot:write', 'bot:field', 'bot:ops'],
+  scopes: ['bot:write', 'bot:field', 'bot:ops', 'bot:superadmin'],
   inputSchema: z.object({
     proyecto_id: z.string().min(1),
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'formato YYYY-MM-DD').optional(),
@@ -1208,8 +1402,11 @@ const registrarEntradaBitacora: ToolDef = {
     circulacion_pct: z.number().int().min(0).max(100).default(0),
     nota_cliente: z.string().max(1000).default(''),
     nota_interna: z.string().max(2000).default(''),
+    approval_code: z.string().min(4).max(128).optional(),
   }),
   handler: async (args, ctx) => {
+    requireSuperadminApproval(args, ctx, 'registrar entrada de bitacora')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -1278,14 +1475,17 @@ const registrarEntradaBitacora: ToolDef = {
 const reportarIncidente: ToolDef = {
   name: 'reportar_incidente',
   description: 'Crea una entrada de bitácora marcada como día adverso (lluvia, avería, falla eléctrica, etc). El día no suma avance pero queda documentado.',
-  scopes: ['bot:write', 'bot:field'],
+  scopes: ['bot:write', 'bot:field', 'bot:superadmin'],
   inputSchema: z.object({
     proyecto_id: z.string().min(1),
     descripcion: z.string().min(3).max(1000),
     tipo_incidente: z.enum(['lluvia', 'averia', 'falla_electrica', 'acceso_bloqueado', 'espera_material', 'otro']).default('otro'),
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    approval_code: z.string().min(4).max(128).optional(),
   }),
   handler: async (args, ctx) => {
+    requireSuperadminApproval(args, ctx, 'reportar incidente')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -1337,7 +1537,7 @@ const reportarIncidente: ToolDef = {
 const registrarPago: ToolDef = {
   name: 'registrar_pago',
   description: 'Registra un pago recibido contra un proyecto. Debe categorizarlo por hito del plan de pagos (reserva/anticipo/mitad-perf/entubar/prueba/otro). Idempotente.',
-  scopes: ['bot:write', 'bot:finance'],
+  scopes: ['bot:write', 'bot:finance', 'bot:superadmin'],
   inputSchema: z.object({
     proyecto_id: z.string().min(1),
     hito_id: z.enum(['reserva', 'anticipo', 'mitad-perf', 'entubar', 'prueba', 'otro']),
@@ -1345,10 +1545,14 @@ const registrarPago: ToolDef = {
     monto: z.number().positive(),
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     metodo: z.enum(['transferencia', 'cheque', 'deposito', 'efectivo', 'tarjeta']).default('transferencia'),
+    banco: z.string().max(120).default(''),
     referencia: z.string().max(100).default(''),
     nota: z.string().max(500).default(''),
+    approval_code: z.string().min(4).max(128).optional(),
   }),
   handler: async (args, ctx) => {
+    requireSuperadminApproval(args, ctx, 'registrar pago o ingreso')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -1383,6 +1587,7 @@ const registrarPago: ToolDef = {
         monto: args.monto,
         fecha: args.fecha ?? hoyISO(),
         metodo: args.metodo,
+        banco: args.metodo === 'efectivo' ? '' : args.banco,
         referencia: args.referencia,
         nota: args.nota ? `[bot/${ctx.sub}] ${args.nota}` : '',
         registradoPor: ctx.sub,
@@ -1419,7 +1624,7 @@ const registrarPago: ToolDef = {
 const actualizarContacto: ToolDef = {
   name: 'actualizar_contacto',
   description: 'Actualiza datos de un contacto EXISTENTE (teléfono, email, empresa, dirección, notas). NO puede crear contactos ni cambiar el nombre.',
-  scopes: ['bot:write'],
+  scopes: ['bot:write', 'bot:superadmin'],
   inputSchema: z.object({
     contacto_id: z.string().min(1),
     telefono: z.string().max(30).optional(),
@@ -1428,8 +1633,11 @@ const actualizarContacto: ToolDef = {
     departamento: z.string().max(100).optional(),
     municipio: z.string().max(100).optional(),
     notas: z.string().max(2000).optional(),
+    approval_code: z.string().min(4).max(128).optional(),
   }),
   handler: async (args, ctx) => {
+    requireSuperadminApproval(args, ctx, 'actualizar contacto')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -1485,13 +1693,16 @@ const actualizarContacto: ToolDef = {
 const actualizarEstadoProyecto: ToolDef = {
   name: 'actualizar_estado_proyecto',
   description: 'Cambia el estado de un proyecto (activo / pausado / completado). Guarda el motivo en la bitácora interna.',
-  scopes: ['bot:write'],
+  scopes: ['bot:write', 'bot:superadmin'],
   inputSchema: z.object({
     proyecto_id: z.string().min(1),
     estado: z.enum(['activo', 'pausado', 'completado']),
     motivo: z.string().max(500).optional(),
+    approval_code: z.string().min(4).max(128).optional(),
   }),
   handler: async (args, ctx) => {
+    requireSuperadminApproval(args, ctx, 'actualizar estado de proyecto')
+
     if (ctx.idempotencyKey) {
       const cached = idemGet(ctx.idempotencyKey)
       if (cached) return cached
@@ -1565,6 +1776,8 @@ export const TOOLS: Record<string, ToolDef> = {
   [metricasPeriodo.name]: metricasPeriodo,
   [listarProyectosActivos.name]: listarProyectosActivos,
   [alertasBitacoraPendiente.name]: alertasBitacoraPendiente,
+  [resumenHidrocrmSuperadmin.name]: resumenHidrocrmSuperadmin,
+  [listarCotizaciones.name]: listarCotizaciones,
   [registrarGastoControl.name]: registrarGastoControl,
   [registrarEntradaBitacora.name]: registrarEntradaBitacora,
   [reportarIncidente.name]: reportarIncidente,

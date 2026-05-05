@@ -61,6 +61,7 @@ Variables criticas:
 - `TOTP_ENCRYPTION_KEY`
 - `RESEND_API_KEY`
 - `CRON_SECRET`
+- `HIDROCRM_MCP_APPROVAL_CODE` o `HIDROCRM_MCP_APPROVAL_CODE_SHA256`
 
 Los valores reales viven solo en el entorno local, el VPS o el proveedor de secretos. El README y las guias deben usar placeholders como `<VPS_HOST>`, `<DATABASE_URL>` y `<SECRET_GENERADO>`.
 

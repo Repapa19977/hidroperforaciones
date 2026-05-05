@@ -113,3 +113,59 @@ el costo unitario usando `monto_total / cantidad`.
 
 El bot nunca debe inventar datos operativos. Si falta proyecto, fecha, producto,
 monto o avance, debe preguntar antes de registrar.
+
+## Modo superadmin con aprobacion
+
+Para que OpenClaw opere como asistente superadmin sin ser una llave peligrosa,
+generar en HidroCRM el token `hidra-superadmin`. Ese token usa scope
+`bot:superadmin`.
+
+El VPS debe tener configurado uno de estos secretos en `.env`:
+
+```env
+HIDROCRM_MCP_APPROVAL_CODE=<PIN_OPERATIVO_PRIVADO>
+# o, preferido:
+HIDROCRM_MCP_APPROVAL_CODE_SHA256=<SHA256_DEL_PIN>
+```
+
+El bot debe pedir el codigo al final del flujo, despues de mostrar el resumen.
+Nunca debe pedir la contrasena real del login de HidroCRM.
+
+### Lectura superadmin
+
+Con `hidra-superadmin` puede leer:
+
+- `resumen_hidrocrm_superadmin`
+- `listar_cotizaciones`
+- `listar_proyectos_activos`
+- `alertas_bitacora_pendiente`
+- `expediente_cliente`
+- `historial_cliente`
+- `buscar_oportunidad`
+- `preview_cotizacion`
+- `simular_descuento`
+- `metricas_periodo`
+
+### Escrituras superadmin con codigo
+
+Estas tools requieren `approval_code`:
+
+- `registrar_entrada_bitacora`
+- `registrar_gasto_control`
+- `reportar_incidente`
+- `registrar_pago`
+- `actualizar_contacto`
+- `actualizar_estado_proyecto`
+- `registrar_mensaje`
+
+Regla para el bot:
+
+1. Recopilar datos.
+2. Mostrar resumen.
+3. Pedir confirmacion.
+4. Pedir `approval_code`.
+5. Ejecutar la tool con `Idempotency-Key`.
+6. Responder con el ID creado/actualizado.
+
+El backend no expone tools para borrar. Aunque el usuario lo pida, el bot debe
+responder que no puede borrar desde Telegram.

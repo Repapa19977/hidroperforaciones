@@ -1537,7 +1537,7 @@ interface McpTokenResult {
   expires_in_days: number
 }
 
-type McpTokenSub = 'hidra-operaciones' | 'hidra-copiloto'
+type McpTokenSub = 'hidra-operaciones' | 'hidra-superadmin' | 'hidra-copiloto'
 
 const MCP_TOKEN_OPTIONS: Array<{ sub: McpTokenSub; label: string; description: string }> = [
   {
@@ -1546,9 +1546,14 @@ const MCP_TOKEN_OPTIONS: Array<{ sub: McpTokenSub; label: string; description: s
     description: 'Solo permite listar proyectos, alertas de bitacora y registrar bitacora/control de gastos.',
   },
   {
+    sub: 'hidra-superadmin',
+    label: 'Superadmin con aprobacion',
+    description: 'Lee mas areas del CRM y permite acciones sensibles solo con approval_code configurado en el VPS.',
+  },
+  {
     sub: 'hidra-copiloto',
     label: 'Copiloto completo',
-    description: 'Token amplio para analisis interno. Usarlo solo cuando el bot necesite mas capacidades.',
+    description: 'Token legacy amplio para analisis interno. Para Telegram operativo usar limitado o superadmin con aprobacion.',
   },
 ]
 

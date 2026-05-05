@@ -7,12 +7,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify, SignJWT } from 'jose'
 import { randomUUID } from 'crypto'
 
-const ALLOWED_SUBS = ['hidra-copiloto', 'hidra-operaciones', 'hidra-cliente'] as const
+const ALLOWED_SUBS = ['hidra-copiloto', 'hidra-operaciones', 'hidra-superadmin', 'hidra-cliente'] as const
 type SubType = typeof ALLOWED_SUBS[number]
 
 const SCOPES_BY_SUB: Record<SubType, string[]> = {
   'hidra-copiloto': ['bot:read', 'bot:calc', 'bot:write', 'bot:analytics', 'bot:finance', 'bot:field', 'bot:geology'],
   'hidra-operaciones': ['bot:ops'],
+  'hidra-superadmin': ['bot:superadmin'],
   'hidra-cliente': ['cliente:read', 'cliente:solicitud'],
 }
 

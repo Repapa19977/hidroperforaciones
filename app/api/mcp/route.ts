@@ -47,6 +47,21 @@ function jsonRpcError(id: any, code: number, message: string, data?: any, httpSt
   )
 }
 
+const SENSITIVE_ARG_KEYS = ['approval_code', 'approvalcode', 'password', 'token', 'secret', 'pin']
+
+function redactMcpArgs(value: any): any {
+  if (Array.isArray(value)) return value.map(redactMcpArgs)
+  if (!value || typeof value !== 'object') return value
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => {
+      const normalized = key.toLowerCase().replace(/[-_\s]/g, '')
+      const sensitive = SENSITIVE_ARG_KEYS.some(pattern => normalized.includes(pattern.replace(/[-_\s]/g, '')))
+      return [key, sensitive ? '[REDACTED]' : redactMcpArgs(nested)]
+    }),
+  )
+}
+
 export async function POST(req: NextRequest) {
   const { ip, userAgent } = getRequestInfo(req)
 
@@ -149,6 +164,7 @@ async function callTool(id: any, params: any, ctx: McpCtx) {
   try {
     const result = await tool.handler(parsed.data, ctx)
     const durationMs = Date.now() - start
+    const safeArgs = redactMcpArgs(parsed.data)
     // Auditar TODOS los tool calls (reads + writes) para dashboard de observabilidad del bot.
     // Writes se distinguen por accion='mcp_write', reads/calc/analytics por 'mcp_call'.
     const isWrite = tool.scopes.includes('bot:write')
@@ -157,7 +173,7 @@ async function callTool(id: any, params: any, ctx: McpCtx) {
       accion: isWrite ? 'mcp_write' : 'mcp_call',
       entidad: tool.name,
       entidadId: (result as { id?: string } | null)?.id ?? '',
-      despues: { args: parsed.data, duration_ms: durationMs, status: 'ok' },
+      despues: { args: safeArgs, duration_ms: durationMs, status: 'ok' },
       ip: ctx.ip,
       userAgent: ctx.userAgent,
     }).catch(() => {})
@@ -165,12 +181,13 @@ async function callTool(id: any, params: any, ctx: McpCtx) {
   } catch (err: unknown) {
     const durationMs = Date.now() - start
     const errObj = err instanceof Error ? err : new Error(String(err))
+    const safeArgs = redactMcpArgs(parsed.data)
     auditLog({
       user: { username: ctx.sub, role: 'bot', scopes: ctx.scopes, tokenNombre: ctx.sub },
       accion: 'mcp_error',
       entidad: tool.name,
       entidadId: '',
-      despues: { args: parsed.data, duration_ms: durationMs, status: 'error', error: errObj.message },
+      despues: { args: safeArgs, duration_ms: durationMs, status: 'error', error: errObj.message },
       ip: ctx.ip,
       userAgent: ctx.userAgent,
     }).catch(() => {})
