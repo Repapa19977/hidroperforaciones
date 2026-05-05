@@ -193,11 +193,11 @@ export function agregarBitacora(
   const diasInactivos       = entries.filter(e => e.estado === 'inactivo' || e.diaAdverso).length
 
   // Horas adversas — fórmula nueva del jefe (2026-04-20):
-  //   constante    = piesMinimoTurno / horasTurno    (default 20 / 10 = 2 pies/hora)
+  //   constante    = piesMinimoTurno / horasTurno    (default 20 / 8 = 2.5 pies/hora)
   //   horasAdversas = max(0, horasTurno − pies / constante)
   //   cobro        = horasAdversas × valorHoraAdversa
   // Solo se aplica cuando pies < piesMinimoTurno (día bajo rendimiento).
-  const horasTurno        = paramsAdversas?.horasTurno ?? 10
+  const horasTurno        = paramsAdversas?.horasTurno ?? 8
   const piesMinimo        = paramsAdversas?.piesMinimoTurno ?? 20
   const valorHoraAdversa  = paramsAdversas?.valorHoraAdversa ?? 500
   let horasAdversasTotal = 0

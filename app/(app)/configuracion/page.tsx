@@ -610,16 +610,16 @@ export default function ConfiguracionPage() {
       <Section title="Horas Adversas" icon={<Percent className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
           Pol?tica de cobro por bajo rendimiento. Si un d?a perfora menos del m?nimo, se cobran las horas &quot;adversas&quot; al cliente.
-          La constante pies/hora se deriva: <b className="text-amber-400">pies m?nimos Ã· horas turno</b>. Con los defaults (10h, 20 pies) = <b>2 pies/hora</b>.
+          La constante pies/hora se deriva: <b className="text-amber-400">pies m?nimos Ã· horas turno</b>. Con los defaults (8h, 20 pies) = <b>2.5 pies/hora</b>.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <ConfigInput
             label="Horas de turno"
-            value={config.horasTurnoDefault ?? 10}
+            value={config.horasTurnoDefault ?? 8}
             onChange={v => patch('horasTurnoDefault', v)}
             unit="h"
             locked={!isSuperAdmin}
-            hint="Duraci?n de la jornada (antes 8, ahora default 10)"
+            hint="Duraci?n de la jornada default 8h"
             accent
           />
           <ConfigInput
@@ -641,8 +641,8 @@ export default function ConfiguracionPage() {
         </div>
         <div className="mt-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
           <p className="text-[11px] text-amber-300 leading-relaxed">
-            ðŸ’¡ <b>Ejemplo con los valores actuales</b>: turno de {config.horasTurnoDefault ?? 10}h, m?nimo {config.piesMinimoTurno ?? 20} pies, valor Q{config.valorHoraAdversa ?? 500}/h.
-            Si un d?a se perforan 8 pies: horas productivas = 8 Ã· {((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 10)).toFixed(2)} = {(8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 10))).toFixed(1)}h, horas adversas = {((config.horasTurnoDefault ?? 10) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 10))).toFixed(1)}h Ã— Q{config.valorHoraAdversa ?? 500} = <b>Q{Math.round(((config.horasTurnoDefault ?? 10) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 10))) * (config.valorHoraAdversa ?? 500))}</b> a cobrar.
+            ðŸ’¡ <b>Ejemplo con los valores actuales</b>: turno de {config.horasTurnoDefault ?? 8}h, m?nimo {config.piesMinimoTurno ?? 20} pies, valor Q{config.valorHoraAdversa ?? 500}/h.
+            Si un d?a se perforan 8 pies: horas productivas = 8 Ã· {((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8)).toFixed(2)} = {(8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))).toFixed(1)}h, horas adversas = {((config.horasTurnoDefault ?? 8) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))).toFixed(1)}h Ã— Q{config.valorHoraAdversa ?? 500} = <b>Q{Math.round(((config.horasTurnoDefault ?? 8) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))) * (config.valorHoraAdversa ?? 500))}</b> a cobrar.
           </p>
         </div>
       </Section>

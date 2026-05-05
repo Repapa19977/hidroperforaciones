@@ -121,11 +121,11 @@ export interface AppConfig {
 
   // ── Horas adversas — política operativa (fórmula del jefe) ──
   // La constante pies/hora se deriva de (piesMinimoTurno / horasTurnoDefault).
-  // El turno default se puede sobreescribir por proyecto (proyecto.horasTurnoOverride).
   // Fórmula: horasAdversas = horasTurno − (piesPerforados / constante)
-  horasTurnoDefault?: number           // default 10 (antes se asumía 8)
+  horasTurnoDefault?: number           // default 8
   piesMinimoTurno?: number             // default 20 pies mínimo por turno
   valorHoraAdversa?: number            // default Q500 cobro por hora adversa
+  horasAdversasConfigVersion?: number  // v2 = default operativo 8h
 }
 
 export interface CuentaBancaria {
@@ -168,17 +168,34 @@ export const DEFAULT_CONFIG: AppConfig = {
     { banco: 'Banco CHN',        tipo: 'Cuenta monetaria quetzales', numero: '02-099-081589-1' },
     { banco: 'BAC Credomatic',   tipo: 'Cuenta monetaria quetzales', numero: '70571190-2' },
   ],
-  // Horas adversas — política nueva (fórmula del jefe 2026-04-20)
-  horasTurnoDefault: 10,
+  // Horas adversas — política operativa: 20 pies en turno de 8h.
+  horasTurnoDefault: 8,
   piesMinimoTurno: 20,
   valorHoraAdversa: 500,
+  horasAdversasConfigVersion: 2,
+}
+
+export const HORAS_ADVERSAS_CONFIG_VERSION = 2
+
+export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
+  const cfg: AppConfig = { ...DEFAULT_CONFIG, ...(raw ?? {}) }
+  const rawVersion = Number(raw?.horasAdversasConfigVersion ?? 0)
+
+  // Migracion suave: configs guardadas antes de v2 traian 10h como default.
+  // Si despues alguien setea 10h manualmente, ya queda versionado como v2.
+  if (rawVersion < HORAS_ADVERSAS_CONFIG_VERSION && Number(raw?.horasTurnoDefault ?? DEFAULT_CONFIG.horasTurnoDefault) === 10) {
+    cfg.horasTurnoDefault = 8
+  }
+
+  cfg.horasAdversasConfigVersion = HORAS_ADVERSAS_CONFIG_VERSION
+  return cfg
 }
 
 export function getConfig(): AppConfig {
   if (typeof window === 'undefined') return DEFAULT_CONFIG
   const raw = localStorage.getItem(CONFIG_KEY)
   if (!raw) return DEFAULT_CONFIG
-  try { return { ...DEFAULT_CONFIG, ...JSON.parse(raw) } } catch { return DEFAULT_CONFIG }
+  try { return normalizeAppConfig(JSON.parse(raw)) } catch { return DEFAULT_CONFIG }
 }
 
 export function saveConfig(cfg: AppConfig) {

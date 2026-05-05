@@ -59,7 +59,7 @@ export const CONDICIONES_PERFORACION: CondicionLegal[] = [
   {
     id: 'horas-adversas',
     titulo: 'Horas adversas',
-    texto: 'Horas adversas: La presente cotización se basa en un rendimiento mínimo de 20 pies por jornada en un turno de 10 horas (equivalente a 2 pies/hora). Si por condiciones geológicas el avance fuese inferior a dicho umbral, se aplicará un cargo de Q500.00 por hora adversa. La hora adversa se calcula como:\nhoras_turno - (pies_perforados / constante)\nLa constante es pies_minimo / horas_turno. Estas horas se registrarán en la bitácora diaria y se facturarán semanalmente. De presentarse un desacuerdo con el cobro justificado, Hidroperforaciones suspenderá los trabajos y retirará el equipo sin responsabilidad alguna. En tal caso, se emitirá un informe de balance para liquidar los fondos recibidos según los renglones ejecutados y los precios unitarios pactados en esta oferta.',
+    texto: 'Horas adversas: La presente cotización se basa en un rendimiento mínimo de 20 pies por jornada en un turno de 8 horas (equivalente a 2.5 pies/hora). Si por condiciones geológicas el avance fuese inferior a dicho umbral, se aplicará un cargo de Q500.00 por hora adversa. La hora adversa se calcula como:\nhoras_turno - (pies_perforados / constante)\nLa constante es pies_minimo / horas_turno. Estas horas se registrarán en la bitácora diaria y se facturarán semanalmente. De presentarse un desacuerdo con el cobro justificado, Hidroperforaciones suspenderá los trabajos y retirará el equipo sin responsabilidad alguna. En tal caso, se emitirá un informe de balance para liquidar los fondos recibidos según los renglones ejecutados y los precios unitarios pactados en esta oferta.',
     defaultActiva: true,
   },
   {

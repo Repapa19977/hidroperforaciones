@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { calcularPresupuestoPerforacion, agregarBitacora, calcularAvance, calcularEstadoPorRubro, type BitacoraEntryAgg } from '@/lib/control-gastos'
 import { calcularCronograma } from '@/lib/dias-habiles'
 import type { InputsPerforacion } from '@/lib/calculator'
-import { DEFAULT_CONFIG, type AppConfig } from '@/lib/config-store'
+import { DEFAULT_CONFIG, normalizeAppConfig, type AppConfig } from '@/lib/config-store'
 import { requireSuperAdmin } from '@/lib/auth'
 import { reconciliarReservaBentonitaProyecto } from '@/lib/inventario-bentonita'
 
@@ -52,10 +52,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const cfgRow = await prisma.config.findUnique({ where: { id: 'singleton' } })
   let cfg: AppConfig = DEFAULT_CONFIG
   if (cfgRow?.datos) {
-    try { cfg = { ...DEFAULT_CONFIG, ...JSON.parse(cfgRow.datos) } } catch { /* ignore */ }
+    try { cfg = normalizeAppConfig(JSON.parse(cfgRow.datos)) } catch { /* ignore */ }
   }
   const paramsAdversas = {
-    horasTurno:       cfg.horasTurnoDefault ?? 10,
+    horasTurno:       cfg.horasTurnoDefault ?? 8,
     piesMinimoTurno:  cfg.piesMinimoTurno   ?? 20,
     valorHoraAdversa: cfg.valorHoraAdversa  ?? 500,
   }

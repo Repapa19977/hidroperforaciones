@@ -286,7 +286,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
 
   const { proyecto, presupuesto, ejecutado, gastosExtras, totalExtras, totalEjecutadoMasExtras, desviacionQ, avancePct, estadoPorRubro, reservas, movimientos, valorReservado, ventasExternas, cronograma, paramsAdversas } = data
   const pctComprado = presupuesto && presupuesto.total > 0 ? (totalEjecutadoMasExtras / presupuesto.total) * 100 : 0
-  const horasTurno = paramsAdversas?.horasTurno ?? 10
+  const horasTurno = paramsAdversas?.horasTurno ?? 8
   const piesMinimoTurno = paramsAdversas?.piesMinimoTurno ?? 20
   const valorHoraAdversa = paramsAdversas?.valorHoraAdversa ?? 500
   const rendimientoMinimo = horasTurno > 0 ? piesMinimoTurno / horasTurno : 0

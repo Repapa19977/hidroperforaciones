@@ -264,19 +264,19 @@ export function formatBroca(diametro: number): string {
 // ── HORAS ADVERSAS ────────────────────────────────────────────
 // Fuente: CALCULO DE HORAS ADVERSAS (2).xlsx — fórmula del jefe 2026-04-20.
 // La constante pies/hora se deriva: piesMinimoTurno / horasTurno.
-// Con default (10h, 20 pies) → 2 pies/hora.  Con viejo (8h, 20 pies) → 2.5 pies/hora.
+// Con default (8h, 20 pies) -> 2.5 pies/hora. Con 10h opcional -> 2 pies/hora.
 // El valor de "rendimiento mínimo" queda como compat legacy; el cálculo real
 // usa la constante dinámica que respeta el turno del proyecto/config.
 export const RENDIMIENTO_MINIMO = 2.5  // pies/hora — @deprecated mantener por compat
 export const VALOR_HORA_ADVERSA = 500  // Q/hora — default (sobreescribible por config)
 
-/** Default del turno — alineado con la fórmula nueva del jefe (antes era 8h). */
-export const HORAS_TURNO_DEFAULT = 10
+/** Default del turno: 20 pies esperados en una jornada de 8h. */
+export const HORAS_TURNO_DEFAULT = 8
 /** Default de pies mínimos requeridos por turno para no incurrir en horas adversas. */
 export const PIES_MINIMO_TURNO_DEFAULT = 20
 
 export interface ParamsAdversas {
-  /** Horas que dura el turno operativo. Default 10. */
+  /** Horas que dura el turno operativo. Default 8. */
   horasTurno?: number
   /** Pies mínimos que se deben perforar en ese turno. Default 20. */
   piesMinimoTurno?: number
@@ -1012,7 +1012,7 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
 // ── HORAS ADVERSAS (cotización por separado) ────────────────────────────────
 export interface InputsHorasAdversas {
   piesEnTurno: number
-  horasTurno: number          // default 10 (fórmula nueva del jefe)
+  horasTurno: number          // default 8
   piesMinimoTurno?: number    // default 20
   valorHoraAdversa?: number   // default 500
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { DEFAULT_CONFIG } from '@/lib/config-store'
+import { DEFAULT_CONFIG, HORAS_ADVERSAS_CONFIG_VERSION, normalizeAppConfig } from '@/lib/config-store'
 import { requireSuperAdmin, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
 
@@ -18,7 +18,7 @@ export async function GET() {
   const row = await prisma.config.findUnique({ where: { id: 'singleton' } })
   const body = !row
     ? DEFAULT_CONFIG
-    : (() => { try { return { ...DEFAULT_CONFIG, ...JSON.parse(row.datos) } } catch { return DEFAULT_CONFIG } })()
+    : (() => { try { return normalizeAppConfig(JSON.parse(row.datos)) } catch { return DEFAULT_CONFIG } })()
   return NextResponse.json(body, { headers: NO_CACHE_HEADERS })
 }
 
@@ -27,12 +27,13 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const body = await request.json()
+  const cfgToSave = { ...body, horasAdversasConfigVersion: HORAS_ADVERSAS_CONFIG_VERSION }
   const before = await prisma.config.findUnique({ where: { id: 'singleton' } })
 
   await prisma.config.upsert({
     where:  { id: 'singleton' },
-    update: { datos: JSON.stringify(body) },
-    create: { id: 'singleton', datos: JSON.stringify(body) },
+    update: { datos: JSON.stringify(cfgToSave) },
+    create: { id: 'singleton', datos: JSON.stringify(cfgToSave) },
   })
 
   const info = getRequestInfo(request)
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     entidad: 'config',
     entidadId: 'singleton',
     antes: before ? { id: before.id } : null,
-    despues: { keys: Object.keys(body ?? {}) },
+    despues: { keys: Object.keys(cfgToSave ?? {}) },
     ...info,
   })
 
