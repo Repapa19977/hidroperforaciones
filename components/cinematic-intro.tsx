@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 
-const SESSION_KEY = 'hc_intro_water_20260505'
+const SESSION_KEY = 'hc_intro_shown'
 
 function shouldSkipIntro() {
   if (typeof window === 'undefined') return false
@@ -14,8 +14,9 @@ function shouldSkipIntro() {
 }
 
 /**
- * Intro cinematografica: perforacion, capas geologicas y acuifero.
- * Se muestra una vez por sesion y dura maximo 5 segundos.
+ * Intro cinematográfica — se muestra UNA sola vez por sesión de navegador.
+ * Secuencia: fade-in logo → escala sutil → blur out → desmonta.
+ * Respeta prefers-reduced-motion y la puede saltar tapeando cualquier parte.
  */
 export function CinematicIntro() {
   const [stage, setStage] = useState<'pending' | 'mounted' | 'visible' | 'exiting' | 'done'>('pending')
@@ -30,11 +31,11 @@ export function CinematicIntro() {
 
     const t0 = setTimeout(() => setStage('mounted'), 0)
     const t1 = setTimeout(() => setStage('visible'), 20)
-    const t2 = setTimeout(() => setStage('exiting'), 4300)
+    const t2 = setTimeout(() => setStage('exiting'), 1900)
     const t3 = setTimeout(() => {
       try { sessionStorage.setItem(SESSION_KEY, '1') } catch {}
       setStage('done')
-    }, 5000)
+    }, 2600)
 
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [])
@@ -52,29 +53,14 @@ export function CinematicIntro() {
       className={`hc-intro-root ${stage === 'exiting' ? 'hc-intro-exiting' : ''} ${stage === 'visible' ? 'hc-intro-visible' : ''}`}
       aria-hidden="true"
     >
-      <div className="hc-intro-sky" />
+      {/* Gradient radial de fondo */}
+      <div className="hc-intro-glow" />
 
-      <div className="hc-intro-rig" aria-hidden="true">
-        <span className="hc-intro-rig-top" />
-        <span className="hc-intro-rig-leg hc-intro-rig-leg-left" />
-        <span className="hc-intro-rig-leg hc-intro-rig-leg-right" />
-      </div>
+      {/* Líneas decorativas (agua / perforación) */}
+      <div className="hc-intro-line hc-intro-line-1" />
+      <div className="hc-intro-line hc-intro-line-2" />
 
-      <div className="hc-intro-earth" aria-hidden="true">
-        <span className="hc-intro-layer hc-intro-layer-top" />
-        <span className="hc-intro-layer hc-intro-layer-sand" />
-        <span className="hc-intro-layer hc-intro-layer-clay" />
-        <span className="hc-intro-layer hc-intro-layer-rock" />
-        <span className="hc-intro-aquifer" />
-        <span className="hc-intro-water-wave hc-intro-water-wave-1" />
-        <span className="hc-intro-water-wave hc-intro-water-wave-2" />
-      </div>
-
-      <div className="hc-intro-drill" aria-hidden="true">
-        <span className="hc-intro-drill-cable" />
-        <span className="hc-intro-drill-bit" />
-      </div>
-
+      {/* Logo + nombre */}
       <div className="hc-intro-stack">
         <div className="hc-intro-logo">
           <Image src="/logo.png" alt="Hidroperforaciones" width={96} height={96} priority className="object-contain" />
@@ -83,10 +69,10 @@ export function CinematicIntro() {
           <span className="hc-intro-title-word">Hidro</span>
           <span className="hc-intro-title-word hc-intro-title-accent">perforaciones</span>
         </div>
-        <div className="hc-intro-tag">Pozos mecánicos · Agua subterránea · Guatemala</div>
+        <div className="hc-intro-tag">Guatemala · CRM</div>
       </div>
 
-      <button type="button" onClick={skip} className="hc-intro-skip">Saltar</button>
+      <button onClick={skip} className="hc-intro-skip">Saltar</button>
     </div>
   )
 }
