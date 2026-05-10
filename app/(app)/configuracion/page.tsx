@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useId } from 'react'
+import { Fragment, useEffect, useState, useId } from 'react'
 import Link from 'next/link'
 import {
   getRol, setRol, verificarPinSuperAdmin,
@@ -1475,7 +1475,7 @@ function BotCallsSection() {
                 const fecha = new Date(l.fecha).toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit' })
                 const isOpen = expandedId === l.id
                 return (
-                  <>
+                  <Fragment key={l.id}>
                     <tr key={l.id} className="hover:bg-white/3 transition-colors">
                       <td className="py-2 text-slate-400 font-mono tabular-nums">
                         <div>{hora}</div>
@@ -1518,7 +1518,7 @@ function BotCallsSection() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
