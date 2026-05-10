@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // Lee del JWT el rol y nombre del vendedor. Si el rol es admin, usamos ese
-// nombre para forzar la propiedad de la cotizaci?n (admin NO puede asignar
+// nombre para forzar la propiedad de la cotización (admin NO puede asignar
 // a otro vendedor aunque lo intente desde el body).
-// GET ? listar todas activas (filtra eliminadas por default).
-// Query params: ?vendedor=X ? ?papelera=1 (solo eliminadas)
+// GET - listar todas activas (filtra eliminadas por default).
+// Query params: ?vendedor=X / ?papelera=1 (solo eliminadas)
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(rows)
 }
 
-// POST ? crear o actualizar cotizaci?n (y auto-upsert contacto si hay tel?fono)
+// POST - crear o actualizar cotización (y auto-upsert contacto si hay teléfono)
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
@@ -43,11 +43,11 @@ export async function POST(request: NextRequest) {
   const { correlativo, cliente, empresa, proyecto, tipo, estado, monto, fecha, datos } = body
   let contactoId: string | null = body.contactoId ?? null
 
-  // â”€â”€ Regla de edici?n: solo cotizaciones EN BORRADOR son editables â”€â”€
-  // Si ya existe una cotizaci?n con ese correlativo y su estado actual NO es
-  // borrador (enviada/confirmada/cancelada), rechazar cualquier edici?n.
+  // ── Regla de edición: solo cotizaciones EN BORRADOR son editables ──
+  // Si ya existe una cotización con ese correlativo y su estado actual NO es
+  // borrador (enviada/confirmada/cancelada), rechazar cualquier edición.
   // Aplica tanto a admin como superadmin. Para modificar hay que crear una
-  // cotizaci?n nueva con otro correlativo.
+  // cotización nueva con otro correlativo.
   const existente = await prisma.cotizacion.findUnique({
     where: { correlativo },
     select: { estado: true, eliminadaEn: true, vendedor: true },
@@ -57,14 +57,14 @@ export async function POST(request: NextRequest) {
   }
   if (existente && existente.eliminadaEn === null && existente.estado !== 'borrador') {
     return NextResponse.json({
-      error: `Esta cotizaci?n est? "${existente.estado}" y no se puede editar. Cre? una nueva si necesit?s cambiar algo.`,
+      error: `Esta cotización está "${existente.estado}" y no se puede editar. Creá una nueva si necesitás cambiar algo.`,
       bloqueada: true,
       estadoActual: existente.estado,
     }, { status: 409 })
   }
 
   // Enforcement de ownership: si el caller es admin, el vendedor SIEMPRE es
-  // ?l mismo (desde el JWT), ignorando lo que venga en el body. Si es superadmin,
+  // él mismo (desde el JWT), ignorando lo que venga en el body. Si es superadmin,
   // puede asignar a cualquier vendedor del body (default: su propio nombre).
   let vendedor: string = body.vendedor ?? ''
   if (auth.user.role === 'admin') {
@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
     vendedor = auth.user.vendedor ?? ''  // default al propio si no se especifico
   }
 
-  // Auto-upsert contacto si el cliente tiene tel?fono registrado (ignora contactos eliminados).
-  // Si no lleg? contactoId expl?cito, intentamos resolverlo por nombre+vendedor (fallback).
+  // Auto-upsert contacto si el cliente tiene teléfono registrado (ignora contactos eliminados).
+  // Si no llegó contactoId explícito, intentamos resolverlo por nombre+vendedor (fallback).
   // Los campos depto/municipio/proyectoNombre vienen del cotizador y enriquecen el contacto.
   const telefono:       string = (typeof datos === 'object' ? datos?.telefono ?? '' : '') as string
   const email:          string = (typeof datos === 'object' ? datos?.email ?? ''    : '') as string
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
     if (!contactoId) contactoId = contactoAutoId
   }
 
-  // Ãšltimo fallback: si no hay contactoId a?n, intentar match por nombre solo (case-insensitive)
+  // Último fallback: si no hay contactoId aún, intentar match por nombre solo (case-insensitive)
   if (!contactoId && cliente) {
     const found = await prisma.contacto.findFirst({
       where: {
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
   } catch (e: unknown) {
     if (typeof e === 'object' && e && 'code' in e && (e as { code?: string }).code === 'P2002') {
       return NextResponse.json({
-        error: 'Ese correlativo ya fue usado por otra cotizaci?n. Gener? uno nuevo para evitar duplicados.',
+        error: 'Ese correlativo ya fue usado por otra cotización. Generá uno nuevo para evitar duplicados.',
       }, { status: 409 })
     }
     throw e

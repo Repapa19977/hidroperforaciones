@@ -111,7 +111,7 @@ export default function ConfiguracionPage() {
   const [userLoading, setUserLoading]   = useState(false)
   const [showNewPass, setShowNewPass]   = useState(false)
 
-  // Modal de confirmaci?n con re-password (para acciones destructivas)
+  // Modal de confirmación con re-password (para acciones destructivas)
   const [confirmPwd, setConfirmPwd] = useState<{
     label: string
     detail?: string
@@ -122,7 +122,7 @@ export default function ConfiguracionPage() {
   const [cambiarPwdTarget, setCambiarPwdTarget] = useState<{ id: string; nombre: string } | null>(null)
   const [totpSetup, setTotpSetup] = useState<TotpSetupState | null>(null)
 
-  // Edit inline de nombre ? track qu? usuario est? en modo edici?n
+  // Edit inline de nombre - track qué usuario está en modo edición
   const [editNombreId, setEditNombreId] = useState<string | null>(null)
   const [editNombreVal, setEditNombreVal] = useState('')
 
@@ -258,7 +258,7 @@ export default function ConfiguracionPage() {
   function handleEliminarUsuario(id: string, nombre: string) {
     setConfirmPwd({
       label: `Desactivar a ${nombre}`,
-      detail: `Se conservar? el historial (soft delete). Pod?s reactivarlo despu?s.`,
+      detail: `Se conservará el historial (soft delete). Podés reactivarlo después.`,
       action: async () => {
         const res = await fetch(`/api/usuarios/${id}`, { method: 'DELETE' })
         if (res.ok) {
@@ -274,7 +274,7 @@ export default function ConfiguracionPage() {
 
   function handleToggleActivo(id: string, activo: boolean, nombre: string, rol: string) {
     const desactivar = activo
-    // Si se va a desactivar un superadmin ? pedir re-password por seguridad
+    // Si se va a desactivar un superadmin - pedir re-password por seguridad
     const doToggle = async () => {
       const res = await fetch(`/api/usuarios/${id}`, {
         method:  'PATCH',
@@ -292,21 +292,21 @@ export default function ConfiguracionPage() {
     if (desactivar && rol === 'superadmin') {
       setConfirmPwd({
         label: `Desactivar superadmin: ${nombre}`,
-        detail: 'Est?s desactivando a un superadmin. Confirm? con tu contraseña.',
+        detail: 'Estás desactivando a un superadmin. Confirmá con tu contraseña.',
         action: doToggle,
       })
     } else {
-      doToggle()  // activar o desactivar admin com?n ? sin confirmaci?n
+      doToggle()  // activar o desactivar admin común, sin confirmación
     }
   }
 
   function handleCambiarRol(id: string, nombre: string, rolActual: string) {
     const nuevoRol = rolActual === 'superadmin' ? 'admin' : 'superadmin'
     setConfirmPwd({
-      label: `Cambiar rol de ${nombre}: ${rolActual} ? ${nuevoRol}`,
+      label: `Cambiar rol de ${nombre}: ${rolActual} → ${nuevoRol}`,
       detail: nuevoRol === 'superadmin'
-        ? '? Le dar?s acceso total: ver todo, editar precios, gestionar usuarios.'
-        : '? Le quitar?s permisos de superadmin. Solo ver? sus propios proyectos.',
+        ? 'Le darás acceso total: ver todo, editar precios, gestionar usuarios.'
+        : 'Le quitarás permisos de superadmin. Solo verá sus propios proyectos.',
       action: async () => {
         const res = await fetch(`/api/usuarios/${id}`, {
           method:  'PATCH',
@@ -345,7 +345,7 @@ export default function ConfiguracionPage() {
     setCambiarPwdTarget(null)
     setConfirmPwd({
       label: `Cambiar contraseña de ${target.nombre}`,
-      detail: `El usuario tendr? que usar la nueva contraseña para iniciar sesión.`,
+      detail: `El usuario tendrá que usar la nueva contraseña para iniciar sesión.`,
       action: async () => {
         const res = await fetch(`/api/usuarios/${target.id}`, {
           method:  'PATCH',
@@ -387,7 +387,7 @@ export default function ConfiguracionPage() {
   function handleDesactivar2FA(id: string, nombre: string) {
     setConfirmPwd({
       label: `Desactivar 2FA de ${nombre}`,
-      detail: 'Ese usuario volver? a entrar solo con usuario y contraseña.',
+      detail: 'Ese usuario volverá a entrar solo con usuario y contraseña.',
       action: async () => {
         const res = await fetch(`/api/usuarios/${id}/2fa`, { method: 'DELETE' })
         const data = await res.json().catch(() => ({}))
@@ -405,8 +405,8 @@ export default function ConfiguracionPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Configuraci?n</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Par?metros del sistema ? Solo Super Admin puede editar</p>
+          <h1 className="text-2xl font-bold text-white">Configuración</h1>
+          <p className="text-slate-400 text-sm mt-0.5">Parámetros del sistema - Solo Super Admin puede editar</p>
         </div>
         {saved && (
           <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-lg">
@@ -428,12 +428,12 @@ export default function ConfiguracionPage() {
             : <ShieldAlert className="w-5 h-5 text-slate-500" />}
           <div>
             <p className={cn('font-semibold text-sm', isSuperAdmin ? 'text-violet-300' : 'text-slate-300')}>
-              {isSuperAdmin ? 'Sesi?n como Super Admin' : 'Sesi?n como Admin'}
+              {isSuperAdmin ? 'Sesión como Super Admin' : 'Sesión como Admin'}
             </p>
             <p className="text-xs text-slate-500">
               {isSuperAdmin
-                ? 'Tienes acceso completo a todos los par?metros'
-                : 'Solo lectura ? ingresa PIN para editar'}
+                ? 'Tienes acceso completo a todos los parámetros'
+                : 'Solo lectura - ingresa PIN para editar'}
             </p>
           </div>
         </div>
@@ -442,7 +442,7 @@ export default function ConfiguracionPage() {
             onClick={handleLock}
             className="flex items-center gap-2 text-xs text-slate-400 hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-lg transition-all"
           >
-            <Lock className="w-3.5 h-3.5" /> Cerrar sesi?n Super Admin
+            <Lock className="w-3.5 h-3.5" /> Cerrar sesión Super Admin
           </button>
         ) : (
           <button
@@ -497,15 +497,15 @@ export default function ConfiguracionPage() {
             onChange={v => patch('iva', v / 100)}
             unit="%"
             locked={!isSuperAdmin}
-            hint={`Actual: ${formatPct(config.iva)} ? Se aplica sobre precio de venta`}
+            hint={`Actual: ${formatPct(config.iva)} - Se aplica sobre precio de venta`}
           />
           <ConfigInput
-            label="ISR (retenci?n)"
+            label="ISR (retención)"
             value={config.isr * 100}
             onChange={v => patch('isr', v / 100)}
             unit="%"
             locked={!isSuperAdmin}
-            hint={`Actual: ${formatPct(config.isr)} ? Retenci?n sobre ingresos`}
+            hint={`Actual: ${formatPct(config.isr)} - Retención sobre ingresos`}
           />
         </div>
         <div className="mt-3 bg-white/3 rounded-lg px-4 py-3 border border-white/5 text-xs text-slate-400">
@@ -516,11 +516,11 @@ export default function ConfiguracionPage() {
       {/* PRECIOS DE VENTA */}
       <Section title="Precios de Venta Base" icon={<DollarSign className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Estos son los precios m?nimos de referencia. El Admin <strong className="text-slate-300">no puede</strong> modificarlos al crear una cotizaci?n.
+          Estos son los precios mínimos de referencia. El Admin <strong className="text-slate-300">no puede</strong> modificarlos al crear una cotización.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <ConfigInput
-            label="Precio por pie ? Perforaci?n"
+            label="Precio por pie - Perforación"
             value={config.precioPorPieBase}
             onChange={v => patch('precioPorPieBase', v)}
             unit="Q/pie"
@@ -529,7 +529,7 @@ export default function ConfiguracionPage() {
             accent
           />
           <ConfigInput
-            label="Precio por hora ? Limpieza"
+            label="Precio por hora - Limpieza"
             value={config.precioVentaHoraBase}
             onChange={v => patch('precioVentaHoraBase', v)}
             unit="Q/hora"
@@ -543,26 +543,26 @@ export default function ConfiguracionPage() {
       {/* COSTOS OPERATIVOS */}
       <Section title="Costos Operativos" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Costos fijos de operaci?n. Basados en los Excel reales de la empresa.
+          Costos fijos de operación. Basados en los Excel reales de la empresa.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          <ConfigInput label="Maquinaria/d?a" value={config.costomaquinariaDia} onChange={v => patch('costomaquinariaDia', v)} unit="Q/d?a" locked={!isSuperAdmin} />
-          <ConfigInput label="Di?sel en obra/d?a" value={config.costoDieselDia} onChange={v => patch('costoDieselDia', v)} unit="Q/d?a" locked={!isSuperAdmin} />
-          <ConfigInput label="Bonificaci?n/pie" value={config.bonificacionPorPie} onChange={v => patch('bonificacionPorPie', v)} unit="Q/pie" locked={!isSuperAdmin} />
+          <ConfigInput label="Maquinaria/día" value={config.costomaquinariaDia} onChange={v => patch('costomaquinariaDia', v)} unit="Q/día" locked={!isSuperAdmin} />
+          <ConfigInput label="Diésel en obra/día" value={config.costoDieselDia} onChange={v => patch('costoDieselDia', v)} unit="Q/día" locked={!isSuperAdmin} />
+          <ConfigInput label="Bonificación/pie" value={config.bonificacionPorPie} onChange={v => patch('bonificacionPorPie', v)} unit="Q/pie" locked={!isSuperAdmin} />
           <ConfigInput label="Bentonita/saco" value={config.precioBentonitaSaco} onChange={v => patch('precioBentonitaSaco', v)} unit="Q/saco" locked={!isSuperAdmin} />
           <ConfigInput label="Aforo base" value={config.costoAforoBase} onChange={v => patch('costoAforoBase', v)} unit="Q" locked={!isSuperAdmin} />
           <ConfigInput label="Grava (total)" value={config.costoGravaDefault} onChange={v => patch('costoGravaDefault', v)} unit="Q" locked={!isSuperAdmin} />
-          <ConfigInput label="Comisi?n vendedor" value={config.comisionVendedorPct} onChange={v => patch('comisionVendedorPct', v)} unit="%" locked={!isSuperAdmin} />
+          <ConfigInput label="Comisión vendedor" value={config.comisionVendedorPct} onChange={v => patch('comisionVendedorPct', v)} unit="%" locked={!isSuperAdmin} />
           <ConfigInput
-            label="Markup Qu?micos ? Limpieza"
+            label="Markup Químicos - Limpieza"
             value={config.markupQuimicosLimpieza}
             onChange={v => patch('markupQuimicosLimpieza', v)}
-            unit="Ã—"
+            unit="×"
             locked={!isSuperAdmin}
-            hint="Multiplicador sobre costo de qu?micos (1.5 = +50%)"
+            hint="Multiplicador sobre costo de químicos (1.5 = +50%)"
           />
           <ConfigInput
-            label="Pipa agua ? Costo"
+            label="Pipa agua - Costo"
             value={config.pipaCostoUnitario}
             onChange={v => patch('pipaCostoUnitario', v)}
             unit="Q/pipa"
@@ -570,7 +570,7 @@ export default function ConfiguracionPage() {
             hint="Lo que nos cuesta cada pipa"
           />
           <ConfigInput
-            label="Pipa agua ? Venta cliente"
+            label="Pipa agua - Venta cliente"
             value={config.pipaPrecioVentaUnitario}
             onChange={v => patch('pipaPrecioVentaUnitario', v)}
             unit="Q/pipa"
@@ -579,23 +579,23 @@ export default function ConfiguracionPage() {
             accent
           />
           <ConfigInput
-            label="Cami?n grava ? Capacidad"
+            label="Camión grava - Capacidad"
             value={config.capacidadCamionM3}
             onChange={v => patch('capacidadCamionM3', v)}
-            unit="mÂ³"
+            unit="m³"
             locked={!isSuperAdmin}
-            hint="1-12 mÂ³ = 1 camionada, 13-24 = 2, etc."
+            hint="1-12 m³ = 1 camionada, 13-24 = 2, etc."
           />
           <ConfigInput
-            label="Camionada grava ? Costo"
+            label="Camionada grava - Costo"
             value={config.camionadaGravaCostoUnitario}
             onChange={v => patch('camionadaGravaCostoUnitario', v)}
             unit="Q/camión"
             locked={!isSuperAdmin}
-            hint="Lo que nos cuesta cada flete de 12 mÂ³"
+            hint="Lo que nos cuesta cada flete de 12 m³"
           />
           <ConfigInput
-            label="Camionada grava ? Venta cliente"
+            label="Camionada grava - Venta cliente"
             value={config.camionadaGravaPrecioVentaUnitario}
             onChange={v => patch('camionadaGravaPrecioVentaUnitario', v)}
             unit="Q/camión"
@@ -606,11 +606,11 @@ export default function ConfiguracionPage() {
         </div>
       </Section>
 
-      {/* HORAS ADVERSAS ? f?rmula del jefe */}
+      {/* HORAS ADVERSAS - fórmula del jefe */}
       <Section title="Horas Adversas" icon={<Percent className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Pol?tica de cobro por bajo rendimiento. Si un d?a perfora menos del m?nimo, se cobran las horas &quot;adversas&quot; al cliente.
-          La constante pies/hora se deriva: <b className="text-amber-400">pies m?nimos Ã· horas turno</b>. Con los defaults (8h, 20 pies) = <b>2.5 pies/hora</b>.
+          Política de cobro por bajo rendimiento. Si un día perfora menos del mínimo, se cobran las horas &quot;adversas&quot; al cliente.
+          La constante pies/hora se deriva: <b className="text-amber-400">pies mínimos ÷ horas turno</b>. Con los defaults (8h, 20 pies) = <b>2.5 pies/hora</b>.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <ConfigInput
@@ -619,16 +619,16 @@ export default function ConfiguracionPage() {
             onChange={v => patch('horasTurnoDefault', v)}
             unit="h"
             locked={!isSuperAdmin}
-            hint="Duraci?n de la jornada default 8h"
+            hint="Duración de la jornada default 8h"
             accent
           />
           <ConfigInput
-            label="Pies m?nimos por turno"
+            label="Pies mínimos por turno"
             value={config.piesMinimoTurno ?? 20}
             onChange={v => patch('piesMinimoTurno', v)}
             unit="pies"
             locked={!isSuperAdmin}
-            hint="M?nimo requerido para no incurrir en horas adversas"
+            hint="Mínimo requerido para no incurrir en horas adversas"
           />
           <ConfigInput
             label="Valor hora adversa"
@@ -641,24 +641,24 @@ export default function ConfiguracionPage() {
         </div>
         <div className="mt-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
           <p className="text-[11px] text-amber-300 leading-relaxed">
-            ðŸ’¡ <b>Ejemplo con los valores actuales</b>: turno de {config.horasTurnoDefault ?? 8}h, m?nimo {config.piesMinimoTurno ?? 20} pies, valor Q{config.valorHoraAdversa ?? 500}/h.
-            Si un d?a se perforan 8 pies: horas productivas = 8 Ã· {((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8)).toFixed(2)} = {(8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))).toFixed(1)}h, horas adversas = {((config.horasTurnoDefault ?? 8) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))).toFixed(1)}h Ã— Q{config.valorHoraAdversa ?? 500} = <b>Q{Math.round(((config.horasTurnoDefault ?? 8) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))) * (config.valorHoraAdversa ?? 500))}</b> a cobrar.
+            Nota: <b>Ejemplo con los valores actuales</b>: turno de {config.horasTurnoDefault ?? 8}h, mínimo {config.piesMinimoTurno ?? 20} pies, valor Q{config.valorHoraAdversa ?? 500}/h.
+            Si un día se perforan 8 pies: horas productivas = 8 ÷ {((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8)).toFixed(2)} = {(8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))).toFixed(1)}h, horas adversas = {((config.horasTurnoDefault ?? 8) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))).toFixed(1)}h × Q{config.valorHoraAdversa ?? 500} = <b>Q{Math.round(((config.horasTurnoDefault ?? 8) - 8 / ((config.piesMinimoTurno ?? 20) / (config.horasTurnoDefault ?? 8))) * (config.valorHoraAdversa ?? 500))}</b> a cobrar.
           </p>
         </div>
       </Section>
 
       {/* CATALOGO DE TUBERIAS - costo interno + % markup + precio cliente (sincronizados) */}
-      <Section title="Catalogo de Tuberias" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
+      <Section title="Catálogo de Tuberías" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-2">
           Tres campos sincronizados por tubo (sin IVA): <b className="text-slate-300">costo interno</b> nuestro, luego <b className="text-slate-300">%</b> markup (default 30), luego <b className="text-slate-300">precio cliente</b>.
         </p>
         <p className="text-[11px] text-amber-300/80 bg-amber-500/5 border border-amber-500/20 rounded-md px-2.5 py-1.5 mb-4">
-          Importante: el campo <b>Costo interno</b> es lo que Hidroperforaciones paga al proveedor. No coloques ahi el precio cliente; el sistema calcula la referencia de venta con el markup.
+          Importante: el campo <b>Costo interno</b> es lo que Hidroperforaciones paga al proveedor. No coloques ahí el precio cliente; el sistema calcula la referencia de venta con el markup.
         </p>
 
         {/* Header */}
         <div className="hidden md:grid grid-cols-[200px_1fr_110px_1fr_40px] gap-3 px-3 pb-2 text-[10px] uppercase tracking-wider text-slate-600 font-semibold">
-          <div>Tuberia</div>
+          <div>Tubería</div>
           <div>Costo interno (Q/tubo)</div>
           <div className="text-center">Markup %</div>
           <div>Precio cliente ref. (Q/tubo)</div>
@@ -806,7 +806,7 @@ export default function ConfiguracionPage() {
           })}
         </div>
 
-        {/* â”€â”€ NUEVA MEDIDA (fuera de cat?logo) ? lisa + ranurada siempre pareadas â”€â”€ */}
+        {/* ── NUEVA MEDIDA (fuera de catálogo) - lisa + ranurada siempre pareadas ── */}
         <NuevaMedidaTuberia
           extras={config.tuberiasExtra ?? []}
           disabled={!isSuperAdmin}
@@ -832,23 +832,23 @@ export default function ConfiguracionPage() {
             } catch (err) {
               // Revertir + alertar
               setConfig(snapshotAnterior)
-              alert('Error al guardar en el servidor. Revis? tu conexi?n y reintent?.\n' + (err as Error).message)
+              alert('Error al guardar en el servidor. Revisá tu conexión y reintentá.\n' + (err as Error).message)
             }
           }}
         />
       </Section>
 
-      {/* PRECIOS DE L?NEAS */}
-      <Section title="Precios de L?neas de Cotizaci?n" icon={<Tag className="w-4 h-4" />} locked={!isSuperAdmin}>
+      {/* PRECIOS DE LÍNEAS */}
+      <Section title="Precios de Líneas de Cotización" icon={<Tag className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Precios predeterminados que aparecen en las cotizaciones. Los admins pueden ajustarlos por cotizaci?n (salvo que los bloquees).
+          Precios predeterminados que aparecen en las cotizaciones. Los admins pueden ajustarlos por cotización (salvo que los bloquees).
         </p>
 
         {/* Toggle bloqueo */}
         <div className="flex items-center justify-between bg-white/3 rounded-lg px-4 py-3 border border-white/5 mb-4">
           <div>
-            <p className="text-sm font-medium text-slate-300">Bloquear edici?n para Admins</p>
-            <p className="text-xs text-slate-500 mt-0.5">Si est? activado, solo el Super Admin puede cambiar estos precios al cotizar</p>
+            <p className="text-sm font-medium text-slate-300">Bloquear edición para Admins</p>
+            <p className="text-xs text-slate-500 mt-0.5">Si está activado, solo el Super Admin puede cambiar estos precios al cotizar</p>
           </div>
           <button
             onClick={() => isSuperAdmin && patch('bloquearPreciosAdmin', !config.bloquearPreciosAdmin)}
@@ -866,15 +866,15 @@ export default function ConfiguracionPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {([
-            { key: 'instalacionEquipo',       label: 'Instalaci?n de equipo' },
-            { key: 'registroElectrico',       label: 'Registro el?ctrico' },
-            { key: 'desarrolloLimpieza',      label: 'Desarrollo y limpieza (perforaci?n)' },
-            { key: 'cementacion',             label: 'Cementaci?n' },
-            { key: 'analisisFisicoQuimico',   label: 'An?lisis f?sico-qu?mico' },
-            { key: 'analisisBacteriologico',  label: 'An?lisis bacteriol?gico' },
+            { key: 'instalacionEquipo',       label: 'Instalación de equipo' },
+            { key: 'registroElectrico',       label: 'Registro eléctrico' },
+            { key: 'desarrolloLimpieza',      label: 'Desarrollo y limpieza (perforación)' },
+            { key: 'cementacion',             label: 'Cementación' },
+            { key: 'analisisFisicoQuimico',   label: 'Análisis físico-químico' },
+            { key: 'analisisBacteriologico',  label: 'Análisis bacteriológico' },
             { key: 'informeFinal',            label: 'Informe final de pozo' },
-            { key: 'desinstalacion',          label: 'Desinstalaci?n y retiro' },
-            { key: 'sartaProduccion',         label: 'Sarta de producci?n' },
+            { key: 'desinstalacion',          label: 'Desinstalación y retiro' },
+            { key: 'sartaProduccion',         label: 'Sarta de producción' },
             { key: 'desarrolloLimpiezaFinal', label: 'Desarrollo limpieza final (limpieza)' },
           ] as { key: keyof PreciosLineas; label: string }[]).map(({ key, label }) => (
             <ConfigInput
@@ -889,7 +889,7 @@ export default function ConfiguracionPage() {
         </div>
       </Section>
 
-      {/* â”€â”€ Costos base por rubro (solo superadmin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Costos base por rubro (solo superadmin) ────────────────────────── */}
       <Section title="Costos Base por Rubro" icon={<TrendingUp className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
           Controla lo que le cuesta a la empresa y el precio base que se le cobra al cliente por rubro.
@@ -984,10 +984,10 @@ export default function ConfiguracionPage() {
         </div>
       </Section>
 
-      {/* â”€â”€ Cuentas bancarias ? aparecen al pie del PDF de cotizaci?n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Cuentas bancarias - aparecen al pie del PDF de cotización ──────────── */}
       <Section title="Cuentas Bancarias (PDF)" icon={<DollarSign className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Se imprimen al pie del PDF de cada cotizaci?n. El cliente debe emitir cheque &quot;No Negociable&quot; a nombre de HIDROPERFORACIONES, S.A. o transferir a alguna de estas cuentas.
+          Se imprimen al pie del PDF de cada cotización. El cliente debe emitir cheque &quot;No Negociable&quot; a nombre de HIDROPERFORACIONES, S.A. o transferir a alguna de estas cuentas.
         </p>
         <div className="space-y-2">
           {(config.cuentasBancarias ?? []).map((cuenta, idx) => (
@@ -1058,22 +1058,22 @@ export default function ConfiguracionPage() {
         </div>
       </Section>
 
-      {/* Bot?n guardar */}
+      {/* Botón guardar */}
       {isSuperAdmin && (
         <button
           onClick={handleSave}
           className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white py-3.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-violet-500/25"
         >
-          <Save className="w-4 h-4" /> Guardar Configuraci?n
+          <Save className="w-4 h-4" /> Guardar Configuración
         </button>
       )}
 
-      {/* â”€â”€ GESTIÃ“N DE USUARIOS ? solo superadmin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── GESTIÓN DE USUARIOS - solo superadmin ──────────────────────────────── */}
       {isSuperAdmin && (
         <div className="bg-[#0d1526] rounded-xl border border-violet-500/20 p-5">
           <div className="flex items-center gap-2 mb-5">
             <Users className="w-4 h-4 text-violet-400" />
-            <p className="text-sm font-semibold text-slate-300">Gesti?n de Usuarios</p>
+            <p className="text-sm font-semibold text-slate-300">Gestión de Usuarios</p>
           </div>
 
           {/* Lista existente */}
@@ -1087,7 +1087,7 @@ export default function ConfiguracionPage() {
                 <p className="text-sm font-medium text-slate-200">
                   {process.env.NEXT_PUBLIC_SUPERADMIN_NOMBRE ?? 'Super Admin'}
                 </p>
-                <p className="text-xs text-slate-500">Cuenta maestra ? No editable desde aqu?</p>
+                <p className="text-xs text-slate-500">Cuenta maestra - No editable desde aquí</p>
               </div>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/20 text-violet-400">Super Admin</span>
             </div>
@@ -1125,7 +1125,7 @@ export default function ConfiguracionPage() {
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setEditNombreId(null)} className="text-slate-500 p-1" title="Cancelar">
-                          Ã—
+                          ×
                         </button>
                       </div>
                     ) : (
@@ -1143,12 +1143,12 @@ export default function ConfiguracionPage() {
                     )}
                     <p className="text-xs text-slate-500 truncate">
                       {esClienteFinal
-                        ? <>âœ‰ {u.email}{u.empresaCliente && <span className="text-slate-600"> ? {u.empresaCliente}</span>}</>
+                        ? <>✉ {u.email}{u.empresaCliente && <span className="text-slate-600"> · {u.empresaCliente}</span>}</>
                         : <>@{u.username}</>
                       }
                     </p>
                     {u.ultimoAcceso && (
-                      <p className="text-[10px] text-slate-600">Ãšltimo acceso: {new Date(u.ultimoAcceso).toLocaleString('es-GT')}</p>
+                      <p className="text-[10px] text-slate-600">Último acceso: {new Date(u.ultimoAcceso).toLocaleString('es-GT')}</p>
                     )}
                   </div>
                   <span className={cn('px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0', rolPill)}>
@@ -1242,13 +1242,13 @@ export default function ConfiguracionPage() {
                   type="text"
                   value={nuevoUser.nombre}
                   onChange={e => setNuevoUser(p => ({ ...p, nombre: e.target.value }))}
-                  placeholder="Ej: Carlos Sol?s"
+                  placeholder="Ej: Carlos Solís"
                   required
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 mb-1.5 block">Usuario (para iniciar sesi?n)</label>
+                <label className="text-xs text-slate-500 mb-1.5 block">Usuario (para iniciar sesión)</label>
                 <input
                   type="text"
                   value={nuevoUser.username}
@@ -1259,13 +1259,13 @@ export default function ConfiguracionPage() {
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500 mb-1.5 block">Contrase?a inicial</label>
+                <label className="text-xs text-slate-500 mb-1.5 block">Contraseña inicial</label>
                 <div className="relative">
                   <input
                     type={showNewPass ? 'text' : 'password'}
                     value={nuevoUser.password}
                     onChange={e => setNuevoUser(p => ({ ...p, password: e.target.value }))}
-                    placeholder="M?n 8 chars, 1 letra, 1 n?mero"
+                    placeholder="Mín 8 chars, 1 letra, 1 número"
                     required
                     minLength={8}
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 pr-10 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
@@ -1321,7 +1321,7 @@ export default function ConfiguracionPage() {
               'Ver cotizaciones de todos',
               'Eliminar cotizaciones',
               'Crear y gestionar usuarios',
-              'Acceso a Configuraci?n',
+              'Acceso a Configuración',
             ]}
           />
           <RolCard
@@ -1343,14 +1343,14 @@ export default function ConfiguracionPage() {
         </div>
       </div>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Tokens API (bots e integraciones) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ═══════════════ Tokens API (bots e integraciones) ═══════════════ */}
       {isSuperAdmin && <McpTokenSection />}
       {isSuperAdmin && <TokensAPISection />}
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Observabilidad del bot (MCP calls) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ═══════════════ Observabilidad del bot (MCP calls) ═══════════════ */}
       {isSuperAdmin && <BotCallsSection />}
 
-      {/* Modal: confirmaci?n con re-password para acciones destructivas */}
+      {/* Modal: confirmación con re-password para acciones destructivas */}
       {confirmPwd && (
         <ConfirmarConPasswordModal
           label={confirmPwd.label}
@@ -1388,10 +1388,10 @@ export default function ConfiguracionPage() {
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// BotCallsSection ? muestra los ?ltimos calls del bot al MCP para observar
-// en tiempo real qu? est? pidiendo Hidra (superadmin only).
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════════════════════════════════════════════
+// BotCallsSection - muestra los últimos calls del bot al MCP para observar
+// en tiempo real qué está pidiendo Hidra (superadmin only).
+// ══════════════════════════════════════════════════════════════════════════
 interface BotCallRow {
   id: string
   fecha: string
@@ -1437,7 +1437,7 @@ function BotCallsSection() {
           </div>
           <div>
             <p className="text-sm font-semibold text-white">Observabilidad del Bot</p>
-            <p className="text-[11px] text-slate-500">Ãšltimos {logs.length} llamados al MCP ? refresca c/15s</p>
+            <p className="text-[11px] text-slate-500">Últimos {logs.length} llamados al MCP - refresca c/15s</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1453,7 +1453,7 @@ function BotCallsSection() {
 
       {logs.length === 0 ? (
         <div className="text-center py-8 text-slate-500 text-sm">
-          {loading ? 'Cargando...' : 'Sin llamados registrados todav?a. Cuando Hidra use el MCP aparecer? ac?.'}
+          {loading ? 'Cargando...' : 'Sin llamados registrados todavía. Cuando Hidra use el MCP aparecerá acá.'}
         </div>
       ) : (
         <div className="overflow-x-auto -mx-6 sm:mx-0 px-6 sm:px-0">
@@ -1464,7 +1464,7 @@ function BotCallsSection() {
                 <th className="text-left py-2 font-medium">Bot</th>
                 <th className="text-left py-2 font-medium">Tool</th>
                 <th className="text-left py-2 font-medium">Estado</th>
-                <th className="text-right py-2 font-medium">Duraci?n</th>
+                <th className="text-right py-2 font-medium">Duración</th>
                 <th className="text-left py-2 pl-3 font-medium">IP</th>
                 <th className="py-2" />
               </tr>
@@ -1488,7 +1488,7 @@ function BotCallsSection() {
                           'px-1.5 py-0.5 rounded-md text-[10px] font-semibold',
                           l.status === 'ok' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400',
                         )}>
-                          {l.status === 'ok' ? '? ok' : '? error'}
+                          {l.status === 'ok' ? '✓ ok' : '× error'}
                         </span>
                       </td>
                       <td className="py-2 text-right text-slate-500 font-mono tabular-nums">
@@ -1700,7 +1700,7 @@ function McpTokenSection() {
   )
 }
 
-// â”€â”€ Secci?n Tokens API ? genera/revoca ServiceTokens para bots (OpenClaw, etc.) â”€â”€
+// ── Sección Tokens API - genera/revoca ServiceTokens para bots (OpenClaw, etc.) ──
 interface ServiceTokenItem {
   id: string
   nombre: string
@@ -1735,7 +1735,7 @@ function TokensAPISection() {
 
   const SCOPES_DISPONIBLES = [
     { key: 'bot:read',          label: 'Lectura del CRM',             desc: 'Ver cotizaciones, contactos, proyectos' },
-    { key: 'bot:calc',          label: 'Simular c?lculos',            desc: 'Previsualizar cotizaciones y descuentos' },
+    { key: 'bot:calc',          label: 'Simular cálculos',            desc: 'Previsualizar cotizaciones y descuentos' },
     { key: 'bot:write',         label: 'Escribir borradores',         desc: 'Crear cotizaciones borrador, registrar conversaciones' },
     { key: 'bot:followup',      label: 'Mandar WhatsApp',             desc: 'Enviar mensajes de seguimiento' },
     { key: 'cliente:read',      label: 'Portal cliente (lectura)',    desc: 'Cliente ve su proyecto' },
@@ -1766,7 +1766,7 @@ function TokensAPISection() {
   }
 
   async function revocarToken(id: string, nombre: string) {
-    if (!confirm(`Â¿Revocar el token "${nombre}"? El bot dejar? de funcionar inmediatamente.`)) return
+    if (!confirm(`¿Revocar el token "${nombre}"? El bot dejará de funcionar inmediatamente.`)) return
     const r = await fetch(`/api/tokens/${id}`, { method: 'DELETE' })
     if (r.ok) await load()
   }
@@ -1776,7 +1776,7 @@ function TokensAPISection() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Key className="w-4 h-4 text-violet-400" />
-          <p className="text-sm font-semibold text-slate-300">Tokens API ? Bots e Integraciones</p>
+          <p className="text-sm font-semibold text-slate-300">Tokens API - Bots e Integraciones</p>
         </div>
         <button onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 text-xs bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg transition-colors">
@@ -1793,7 +1793,7 @@ function TokensAPISection() {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-[#0d1526] border border-violet-500/40 rounded-2xl p-6 max-w-lg w-full">
             <h3 className="text-base font-bold text-white mb-2">Token creado: {revealedToken.nombre}</h3>
-            <p className="text-xs text-amber-400 mb-3">? Copi? este valor ahora ? no se puede recuperar despu?s.</p>
+            <p className="text-xs text-amber-400 mb-3">Copiá este valor ahora; no se puede recuperar después.</p>
             <div className="bg-black/40 border border-white/10 rounded-lg p-3 mb-3">
               <code className="text-xs text-emerald-300 break-all font-mono">{revealedToken.token}</code>
             </div>
@@ -1819,7 +1819,7 @@ function TokensAPISection() {
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500/50" />
           </div>
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Scopes (qu? puede hacer)</label>
+            <label className="text-xs text-slate-400 mb-1 block">Scopes (qué puede hacer)</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {SCOPES_DISPONIBLES.map(s => (
                 <label key={s.key} className="flex items-start gap-2 bg-white/3 border border-white/5 rounded-lg p-2 cursor-pointer hover:border-violet-500/30">
@@ -1860,7 +1860,7 @@ function TokensAPISection() {
         <div className="flex items-center gap-2 text-slate-500 text-sm py-4"><Loader2 className="w-4 h-4 animate-spin" /> Cargando...</div>
       ) : tokens.length === 0 ? (
         <div className="text-center py-6 text-slate-500 text-sm">
-          A?n no hay tokens. Cre? el primero para conectar tu bot.
+          Aún no hay tokens. Creá el primero para conectar tu bot.
         </div>
       ) : (
         <div className="space-y-2">
@@ -1878,8 +1878,8 @@ function TokensAPISection() {
                     {!t.activo && <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">Revocado</span>}
                   </div>
                   <p className="text-[10px] text-slate-500 mt-0.5">
-                    Scopes: {scopesList.join(', ') || '(ninguno)'} ? Usado {t.vecesUsado}Ã—
-                    {t.ultimoUso && ` ? ?ltimo uso ${new Date(t.ultimoUso).toLocaleString('es-GT')}`}
+                    Scopes: {scopesList.join(', ') || '(ninguno)'} · Usado {t.vecesUsado}×
+                    {t.ultimoUso && ` · último uso ${new Date(t.ultimoUso).toLocaleString('es-GT')}`}
                   </p>
                   {t.notas && <p className="text-[10px] text-slate-400 mt-0.5 italic">{t.notas}</p>}
                 </div>
@@ -1899,7 +1899,7 @@ function TokensAPISection() {
   )
 }
 
-// â”€â”€ Componentes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Componentes ───────────────────────────────────────────────────────────────
 function Section({ title, icon, locked, children }: {
   title: string; icon: React.ReactNode; locked: boolean; children: React.ReactNode
 }) {
@@ -1985,7 +1985,7 @@ function RolCard({ rol, color, permisos, bloqueados }: {
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════════════════════════════════════════════
 function TotpSetupModal({
   setup, onChange, onCancel, onConfirmed,
 }: {
@@ -2088,9 +2088,9 @@ function TotpSetupModal({
   )
 }
 // Modal: ConfirmarConPasswordModal
-// Pide la contraseña del superadmin actual antes de ejecutar una acci?n
+// Pide la contraseña del superadmin actual antes de ejecutar una acción
 // destructiva (borrar, cambiar rol, desactivar superadmin).
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════════════════════════════════════════════
 function ConfirmarConPasswordModal({
   label, detail, onCancel, onConfirm,
 }: {
@@ -2116,7 +2116,7 @@ function ConfirmarConPasswordModal({
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        setError(err.error ?? 'Contrase?a incorrecta')
+        setError(err.error ?? 'Contraseña incorrecta')
         return
       }
       onConfirm()
@@ -2130,7 +2130,7 @@ function ConfirmarConPasswordModal({
       <div className="bg-[#0d1526] border border-red-500/30 rounded-2xl w-full max-w-md shadow-2xl">
         <div className="px-5 py-4 border-b border-white/10 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-red-400" />
-          <p className="text-sm font-bold text-white">Confirmaci?n de seguridad</p>
+          <p className="text-sm font-bold text-white">Confirmación de seguridad</p>
         </div>
         <div className="px-5 py-5 space-y-3">
           <p className="text-sm text-slate-200">{label}</p>
@@ -2169,11 +2169,11 @@ function ConfirmarConPasswordModal({
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════════════════════════════════════════════
 // Modal: CambiarPasswordModal
-// Permite al superadmin cambiar la password de otro usuario. Despu?s del
-// onConfirm, el padre pide confirmaci?n con re-password del superadmin.
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Permite al superadmin cambiar la password de otro usuario. Después del
+// onConfirm, el padre pide confirmación con re-password del superadmin.
+// ══════════════════════════════════════════════════════════════════════════
 function CambiarPasswordModal({
   nombre, onCancel, onConfirm,
 }: {
@@ -2187,9 +2187,9 @@ function CambiarPasswordModal({
   const [error, setError] = useState('')
 
   function handleSubmit() {
-    if (pass1.length < 8)        { setError('M?nimo 8 caracteres'); return }
+    if (pass1.length < 8)        { setError('Mínimo 8 caracteres'); return }
     if (!/[a-zA-Z]/.test(pass1)) { setError('Debe incluir al menos una letra'); return }
-    if (!/[0-9]/.test(pass1))    { setError('Debe incluir al menos un n?mero'); return }
+    if (!/[0-9]/.test(pass1))    { setError('Debe incluir al menos un número'); return }
     if (pass1 !== pass2)         { setError('Las contraseñas no coinciden'); return }
     onConfirm(pass1)
   }
@@ -2209,7 +2209,7 @@ function CambiarPasswordModal({
                 type={showPwd ? 'text' : 'password'}
                 value={pass1}
                 onChange={e => { setPass1(e.target.value); setError('') }}
-                placeholder="M?n 8 chars, 1 letra, 1 n?mero"
+                placeholder="Mín 8 chars, 1 letra, 1 número"
                 autoFocus
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 pr-10 text-sm text-white outline-none focus:border-blue-500/50"
               />
@@ -2246,12 +2246,12 @@ function CambiarPasswordModal({
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// NuevaMedidaTuberia ? agrega/edita medidas fuera del cat?logo fijo.
+// ═══════════════════════════════════════════════════════════════════════════
+// NuevaMedidaTuberia - agrega/edita medidas fuera del catálogo fijo.
 // Las medidas custom SIEMPRE se crean en pareja (lisa + ranurada) con los
-// mismos valores. Editar o borrar act?a sobre la pareja ? as? Rodrigo nunca
+// mismos valores. Editar o borrar actúa sobre la pareja; así Rodrigo nunca
 // tiene que duplicar trabajo.
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 interface TuberiaExtra {
   tipo: 'lisa' | 'ranurada'
   diametro: number
@@ -2298,7 +2298,7 @@ function NuevaMedidaTuberia({
   const precioCliente = Math.round(precio * (1 + markupPct / 100))
   const pares = agruparPares(extras)
 
-  // Helper: chequea si la medida existe en el cat?logo fijo
+  // Helper: chequea si la medida existe en el catálogo fijo
   function existeEnCatalogoFijo(d: number, e: number): boolean {
     return CATALOGO_TUBERIA.some(
       t => t.diametro === d && Math.abs(t.espesor - e) < 0.001
@@ -2319,23 +2319,23 @@ function NuevaMedidaTuberia({
   /** Agregar medida ? crea lisa + ranurada con los mismos datos. */
   function handleAdd() {
     setError('')
-    if (!diametro || diametro <= 0) return setError('Diametro requerido (ej. 14)')
+    if (!diametro || diametro <= 0) return setError('Diámetro requerido (ej. 14)')
     if (!espesor  || espesor  <= 0) return setError('Espesor requerido (ej. 0.25)')
     if (!precio   || precio   <= 0) return setError('Costo interno requerido (ej. 3500)')
-    // Validacion contra extras existentes
+    // Validación contra extras existentes
     const duplicadoExtra = extras.some(
       e => e.diametro === diametro && Math.abs(e.espesor - espesor) < 0.001
     )
-    if (duplicadoExtra) return setError(`La medida ${diametro}" Ã— ${espesor}" ya est? en tu lista custom. Edítala abajo.`)
-    // Validacion contra catalogo fijo
+    if (duplicadoExtra) return setError(`La medida ${diametro}" × ${espesor}" ya está en tu lista custom. Edítala abajo.`)
+    // Validación contra catálogo fijo
     if (existeEnCatalogoFijo(diametro, espesor)) {
-      return setError(`La medida ${diametro}" Ã— ${espesor}" ya existe en el catalogo fijo. No necesita agregarse como custom.`)
+      return setError(`La medida ${diametro}" × ${espesor}" ya existe en el catálogo fijo. No necesita agregarse como custom.`)
     }
     const nuevaLisa:     TuberiaExtra = { tipo: 'lisa',     diametro, espesor, precio, markupPct }
     const nuevaRanurada: TuberiaExtra = { tipo: 'ranurada', diametro, espesor, precio, markupPct }
     void ejecutar(
       () => [...extras, nuevaLisa, nuevaRanurada],
-      `? Guardado: ${diametro}" Ã— ${espesor}" (lisa + ranurada)`,
+      `✓ Guardado: ${diametro}" × ${espesor}" (lisa + ranurada)`,
     )
     setDiametro(0); setEspesor(0); setPrecio(0); setMarkupPct(30)
   }
@@ -2347,7 +2347,7 @@ function NuevaMedidaTuberia({
         (e.diametro === diametro && Math.abs(e.espesor - espesor) < 0.001)
           ? { ...e, [campo]: valor } : e
       ),
-      `? ${campo === 'precio' ? 'Costo interno' : 'Markup'} actualizado`,
+      `✓ ${campo === 'precio' ? 'Costo interno' : 'Markup'} actualizado`,
     )
   }
 
@@ -2355,7 +2355,7 @@ function NuevaMedidaTuberia({
   function handleDeletePair(diametro: number, espesor: number) {
     void ejecutar(
       () => extras.filter(e => !(e.diametro === diametro && Math.abs(e.espesor - espesor) < 0.001)),
-      `? Eliminado: ${diametro}" Ã— ${espesor}"`,
+      `✓ Eliminado: ${diametro}" × ${espesor}"`,
     )
   }
 
@@ -2363,19 +2363,19 @@ function NuevaMedidaTuberia({
     <div className="mt-6 pt-5 border-t border-white/5">
       <div className="flex items-center gap-2 mb-3">
         <Plus className="w-4 h-4 text-emerald-400" />
-        <h4 className="text-sm font-semibold text-slate-200">Nueva medida (fuera de catalogo)</h4>
+        <h4 className="text-sm font-semibold text-slate-200">Nueva medida (fuera de catálogo)</h4>
       </div>
       <p className="text-xs text-slate-500 mb-2">
-        Agrega medidas que no estan en el catalogo fijo. El valor que ingresas es costo interno del proveedor; apareceran en los selectores al cotizar.
+        Agrega medidas que no están en el catálogo fijo. El valor que ingresas es costo interno del proveedor; aparecerán en los selectores al cotizar.
       </p>
       <p className="text-[11px] text-violet-300/80 bg-violet-500/5 border border-violet-500/20 rounded-md px-2.5 py-1.5 mb-4">
-        Al agregar una medida se crea automaticamente en <b>Lisa + Ranurada</b> con los mismos valores. Precio cliente = costo interno + markup.
+        Al agregar una medida se crea automáticamente en <b>Lisa + Ranurada</b> con los mismos valores. Precio cliente = costo interno + markup.
       </p>
 
       {/* Formulario para agregar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/15 mb-3">
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 block">Diametro &quot;</label>
+          <label className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 block">Diámetro &quot;</label>
           <input
             type="number" step="1" min={0} value={diametro || ''}
             onChange={e => setDiametro(parseFloat(e.target.value) || 0)}
@@ -2472,9 +2472,9 @@ function NuevaMedidaTuberia({
                   {incompleto && (
                     <span
                       className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300"
-                      title="Este par est? incompleto (falta lisa o ranurada). Al editar se restaurar?."
+                      title="Este par está incompleto (falta lisa o ranurada). Al editar se restaurará."
                     >
-                      ? parcial
+                      Parcial
                     </span>
                   )}
                 </div>

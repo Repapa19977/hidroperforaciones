@@ -7,7 +7,7 @@ import { auditLog } from '@/lib/audit'
 import { getRequestInfo, hashPassword, isLegacyPasswordHash, verifyPassword } from '@/lib/auth'
 import { verifyTotp } from '@/lib/totp'
 
-// L?mites: 10 intentos por IP en 15 min + 5 intentos por username en 15 min.
+// Límites: 10 intentos por IP en 15 min + 5 intentos por username en 15 min.
 const WINDOW_MS = 15 * 60 * 1000
 const IP_LIMIT = 10
 const USER_LIMIT = 5
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   const { username, password } = parsed.data
   const totpCode = parsed.data.totpCode?.trim() || undefined
 
-  // Rate limit por IP y por username ? limpieza ocasional
+  // Rate limit por IP y por username - limpieza ocasional
   if (Math.random() < 0.05) cleanupRateLimit()
   const ip = getClientIp(request)
   const ipCheck = checkRateLimit(`ip:${ip}`, IP_LIMIT, WINDOW_MS)
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const resetAt = Math.max(ipCheck.resetAt, userCheck.resetAt)
     const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
     return NextResponse.json(
-      { error: 'Demasiados intentos. Intenta de nuevo m?s tarde.', retryAfter },
+      { error: 'Demasiados intentos. Intenta de nuevo más tarde.', retryAfter },
       { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
   }
@@ -64,13 +64,13 @@ export async function POST(request: NextRequest) {
   const info = getRequestInfo(request)
 
   if (!role) {
-    // Log intento fallido (?til para detectar ataques de fuerza bruta)
+    // Log intento fallido (útil para detectar ataques de fuerza bruta)
     await auditLog({
       user: null, accion: 'login', entidad: 'usuario', entidadId: username,
       despues: { resultado: 'falla', motivo: 'credenciales_incorrectas' },
       ...info,
     })
-    return NextResponse.json({ error: 'Usuario o contrase?a incorrectos' }, { status: 401 })
+    return NextResponse.json({ error: 'Usuario o contraseña incorrectos' }, { status: 401 })
   }
 
   if (twoFactorSecret) {
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     data: { ultimoAcceso: new Date() },
   }).catch(() => {})
 
-  // Migraci?n transparente: si el usuario a?n estaba en SHA-256, al login exitoso queda en scrypt.
+  // Migración transparente: si el usuario aún estaba en SHA-256, al login exitoso queda en scrypt.
   if (usuarioDb && isLegacyPasswordHash(usuarioDb.passwordHash)) {
     prisma.usuario.update({
       where: { id: usuarioDb.id },

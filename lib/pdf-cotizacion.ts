@@ -15,10 +15,10 @@ import { resolverCondiciones } from './condiciones-perf'
 import { formatFechaDDMMYYYY } from './date-format'
 import { convertFromGTQ, formatCurrency, normalizeCurrency, normalizeExchangeRate } from './currency'
 
-// â”€â”€ Colores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Colores ──────────────────────────────────────────────────────────────────
 const WHITE  = '#ffffff'
 
-// â”€â”€ Constructores de líneas â€” formato idéntico a Odoo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Constructores de líneas — formato idéntico a Odoo ────────────────────────
 export function buildLineasPerf(
   ip: InputsPerforacion,
   res: ReturnType<typeof calcularPerforacion>,
@@ -35,7 +35,7 @@ export function buildLineasPerf(
   const camionadasAlCliente = camionadasGrava(res.m3Grava, capacidadCamion)
   const piesLisa       = ip.tubosLisos     * 20
   const piesRan        = ip.tubosRanurados * 20
-  // Venta al cliente = costo Ã— 1.30 (markup 30% sobre costo nuestro) â€” instrucción René 2026-04-20
+  // Venta al cliente = costo × 1.30 (markup 30% sobre costo nuestro) — instrucción René 2026-04-20
   const MARKUP_TUBERIA = 1.30
   const precioLisaPie  = piesLisa > 0 ? Math.round((res.precioTubLisa     * MARKUP_TUBERIA) / 20) : 0
   const precioRanPie   = piesRan  > 0 ? Math.round((res.precioTubRanurada * MARKUP_TUBERIA) / 20) : 0
@@ -66,7 +66,7 @@ export function buildLineasPerf(
       unidad: 'Global', cant: 1, precio: pl.instalacionEquipo },
 
     // Rubro 3: se ajusta al final como RESIDUAL para que
-    // subtotal + IVA + ISR = profundidad Ã— ip.precioPorPieVenta
+    // subtotal + IVA + ISR = profundidad × ip.precioPorPieVenta
     { key: 'perforacion',
       nombre: `Perforación de pozo mecánico en ${formatBroca(ip.diametro)} de diámetro.`,
       unidad: 'Pie', cant: ip.profundidad, precio: 0 },
@@ -111,8 +111,8 @@ export function buildLineasPerf(
 
     ...(ip.incluirSelloSanitario ? [{ key: 'sello-sanitario',
       nombre: 'Instalación de sello sanitario de concreto.',
-      // Precio por pie Ã— pies de sello (NO es la profundidad total del pozo).
-      // Regla de 3 del jefe 2026-04-20: 20 pies = Q1,500 â†’ Q75/pie. Rango típico 10-40 pies.
+      // Precio por pie × pies de sello (NO es la profundidad total del pozo).
+      // Regla de 3 del jefe 2026-04-20: 20 pies = Q1,500 → Q75/pie. Rango típico 10-40 pies.
       unidad: 'Und', cant: 1, precio: Math.round(pl.selloSanitario * (ip.piesSelloSanitario ?? 20)) }] : []),
 
     { key: 'sopleteado',
@@ -151,7 +151,7 @@ export function buildLineasPerf(
   // Así cualquier cambio hecho desde el modal de comparativa se refleja en la cotización
   // y en el PDF automáticamente. Los rubros que ya tenían override inline (bentonita,
   // grava-material, pipas-agua, transporte-grava) siguen funcionando porque el override
-  // ya se aplicó arriba â€” aquí solo cubrimos los que faltaban.
+  // ya se aplicó arriba — aquí solo cubrimos los que faltaban.
   const rowsConOverride = rows.map(r => {
     if (r.key === 'perforacion') return r  // el rubro 3 lo calcula el residual, no override
     const nuevoPrecio = preciosVentaOverride[r.key]
@@ -164,7 +164,7 @@ export function buildLineasPerf(
   // Rubro 3 residual: precio/pie = "con IVA e ISR incluidos". Divisor fijo 1.17.
   // Subtotal queda estable y los toggles IVA/ISR suman/restan al total final.
   const totalClienteObjetivo = ip.profundidad * ip.precioPorPieVenta
-  const FACTOR_IMPUESTOS_COMPLETO = 1 + IVA + ISR  // 1.17 â€” fijo, no depende de toggles
+  const FACTOR_IMPUESTOS_COMPLETO = 1 + IVA + ISR  // 1.17 — fijo, no depende de toggles
   const subtotalObjetivo = totalClienteObjetivo / FACTOR_IMPUESTOS_COMPLETO
   const perfIdx = built.findIndex(l => l.key === 'perforacion')
   if (perfIdx >= 0 && ip.profundidad > 0) {
@@ -308,7 +308,7 @@ function buildLineasLimp(
   ].map(r => ({ ...r, total: r.cant * r.precio }))
 }
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ───────────────────────────────────────────────────────────────────
 type LegacyInputsPerforacion = Partial<InputsPerforacion> & {
   numeroDeTubos?: number
   numeroDeFilteros?: number
@@ -356,7 +356,7 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 function repararMojibake(texto: string): string {
-  if (!/[ÃƒÃ‚]/.test(texto)) return texto
+  if (!/[ÃÂ]/.test(texto)) return texto
   try {
     const bytes = new Uint8Array(Array.from(texto, ch => ch.charCodeAt(0) & 0xff))
     const reparado = new TextDecoder('utf-8').decode(bytes)
@@ -392,7 +392,7 @@ async function cargarLogoBase64(): Promise<string | null> {
   return null
 }
 
-// Convierte "Banco Industrial" â†’ "banco-industrial", "BAC Credomatic" â†’ "bac-credomatic".
+// Convierte "Banco Industrial" → "banco-industrial", "BAC Credomatic" → "bac-credomatic".
 // Solo letras ASCII, números y guiones.
 function slugifyBanco(nombre: string): string {
   return nombre
@@ -431,7 +431,7 @@ async function cargarLogoBanco(banco: string): Promise<{ dataUrl: string; w: num
   return null
 }
 
-// â”€â”€ Generador principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Generador principal ───────────────────────────────────────────────────────
 // Estrategia: el contenido se dibuja primero (paginación dinámica, puede ser 2, 3 o más páginas).
 // Al final se recorre cada página y se estampa header + footer con el total de páginas correcto.
 export async function generarPDF(
@@ -445,7 +445,7 @@ export async function generarPDF(
   const H  = doc.internal.pageSize.getHeight()
   const mg = 14
 
-  // â”€â”€ Preparar líneas y totales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Preparar líneas y totales ─────────────────────────────────────────────────
   const pl = { ...DEFAULT_PRECIOS_LINEAS, ...data.preciosLineas }
   const lineasActivas = data.lineasActivas ?? {}
   const lineasConfig  = data.lineasConfig  ?? {}
@@ -471,7 +471,7 @@ export async function generarPDF(
       ? buildLineasLimp(il, resLimp, pl)
       : []
 
-  // Líneas extras (custom) agregadas por el usuario â€” se suman al final de la tabla
+  // Líneas extras (custom) agregadas por el usuario — se suman al final de la tabla
   // Se excluyen items vacíos (sin nombre, sin cantidad o sin precio) para no ensuciar el PDF
   const extras: LineaFinal[] = (data.lineasExtras ?? [])
     .filter(e =>
@@ -506,11 +506,11 @@ export async function generarPDF(
   const lineas = todasLineas.filter(esVisible)
   const subtotal = todasLineas.filter(esCobrada).reduce((a, b) => a + b.total, 0)
 
-  // Toggles de impuestos â€” controlados por el usuario en la cotización
+  // Toggles de impuestos — controlados por el usuario en la cotización
   const aplicarIva = data.aplicarIva ?? true   // default: incluye IVA 12%
   const aplicarIsr = data.aplicarIsr ?? false  // default: no suma ISR
   const mostrarDesgloseImpuestos = data.mostrarDesgloseImpuestos ?? false
-  // Descuento especial â€” resta al subtotal antes de calcular impuestos
+  // Descuento especial — resta al subtotal antes de calcular impuestos
   const aplicarDescuento = data.aplicarDescuento ?? false
   const descuentoMonto   = Math.max(0, Number(data.descuentoMonto ?? 0))
   const descuentoQ       = aplicarDescuento ? Math.min(subtotal, descuentoMonto) : 0
@@ -527,7 +527,7 @@ export async function generarPDF(
   const formatMonto = (montoQ: number) => formatCurrency(montoQ, monedaCotizacion, tipoCambioCotizacion)
 
   // Valor por pie del pie del PDF = total / profundidad (por construcción del residual
-  // total del PDF = profundidad Ã— ip.precioPorPieVenta, entonces esto = precio/pie manual)
+  // total del PDF = profundidad × ip.precioPorPieVenta, entonces esto = precio/pie manual)
   const valorPorPie = ip && ip.profundidad > 0 ? Math.round(total / ip.profundidad) : 0
   const totalVista = convertFromGTQ(total, monedaCotizacion, tipoCambioCotizacion)
   const totalEnLetras = monedaCotizacion === 'USD'
@@ -929,7 +929,7 @@ export async function generarPDF(
   return new Uint8Array(doc.output('arraybuffer') as ArrayBuffer)
 }
 
-// â”€â”€ Nombre de archivo limpio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Nombre de archivo limpio ─────────────────────────────────────────────────
 export function sanitize(s: string): string {
   return s
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
