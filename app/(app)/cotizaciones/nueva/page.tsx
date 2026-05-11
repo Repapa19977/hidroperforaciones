@@ -1032,7 +1032,14 @@ export default function NuevaCotizacionPage() {
             {tipo === 'perforacion'
               ? <CalcPerforacion ip={ip} patchIp={patchIp} showCostos={showCostos} setShowCostos={setShowCostos} res={resPerf} rol={rolUsuario}
                   preciosVentaOverride={preciosVentaOverride} />
-              : <CalcServicios il={il} patchIl={patchIl} setServicioSubtipo={setServicioSubtipo} res={resLimp} />}
+              : <CalcServicios
+                  il={il}
+                  patchIl={patchIl}
+                  setServicioSubtipo={setServicioSubtipo}
+                  res={resLimp}
+                  lineasConfig={lineasConfig}
+                  setLineasConfig={setLineasConfig}
+                />}
 
             {/* Precios de líneas */}
             <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
@@ -2356,11 +2363,13 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
 }
 
 // ── Panel Financiero Perforación ─────────────────────────────────────────────
-function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
+function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, setLineasConfig }: {
   il: InputsLimpieza
   patchIl: (k: keyof InputsLimpieza, v: number | boolean | string) => void
   setServicioSubtipo: (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => void
   res: ReturnType<typeof calcularLimpieza>
+  lineasConfig: Record<string, LineaConfig>
+  setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
   const subtipo = il.servicioSubtipo ?? 'basico'
   const tablaServicio = il.servicioTuberiaTabla?.length ? il.servicioTuberiaTabla : DEFAULT_SERVICIO_COTIZACION.tablaTuberia
@@ -2380,6 +2389,20 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
     patchIl('cantidadTuberiaServicio', cantidad)
     patchIl('tubosExtraccion', modo === 'instalacion' ? 0 : cantidad)
     patchIl('tubosInstalacion', modo === 'extraccion' ? 0 : cantidad)
+  }
+  const tecnicoKey = 'tecnico-chequeo-servicio'
+  const tecnicoCfg = lineasConfig[tecnicoKey] ?? { mostrar: true, cobrar: true }
+  const costoTecnico = il.costoTecnicoChequeoServicio ?? 1200
+  const ventaTecnico = il.precioTecnicoChequeoServicio ?? 2500
+  const markupTecnico = costoTecnico > 0 ? ((ventaTecnico - costoTecnico) / costoTecnico) * 100 : 0
+  const toggleTecnico = (campo: 'mostrar' | 'cobrar') => {
+    setLineasConfig(prev => ({
+      ...prev,
+      [tecnicoKey]: { ...tecnicoCfg, [campo]: !tecnicoCfg[campo] },
+    }))
+  }
+  const setMarkupTecnico = (pct: number) => {
+    patchIl('precioTecnicoChequeoServicio', Math.round(costoTecnico * (1 + pct / 100) * 100) / 100)
   }
   const inputClass = 'w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
   const selectClass = cn(inputClass, 'bg-[#111827] text-white [color-scheme:dark]')
@@ -2507,9 +2530,44 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
                 <p className="mt-1 text-xs text-slate-500">Selecciona un diametro para cargar precios y ritmo desde Configuracion.</p>
               )}
             </div>
+            <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-white/10 bg-white/3 px-3 py-3 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Tecnico para chequeo</p>
+                  <p className="text-[10px] text-slate-600">Estos controles modifican solo la linea de tecnico en la cotizacion.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleTecnico('mostrar')}
+                    className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
+                      tecnicoCfg.mostrar ? 'bg-blue-500 border-blue-500 shadow-sm shadow-blue-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
+                    title={tecnicoCfg.mostrar ? 'Visible en PDF' : 'Oculto del PDF'}
+                  >
+                    {tecnicoCfg.mostrar
+                      ? <Eye className="w-3.5 h-3.5 text-white" />
+                      : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleTecnico('cobrar')}
+                    className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
+                      tecnicoCfg.cobrar ? 'bg-emerald-500 border-emerald-500 shadow-sm shadow-emerald-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
+                    title={tecnicoCfg.cobrar ? 'Se cobra al cliente' : 'No se cobra'}
+                  >
+                    <DollarSign className={cn('w-3.5 h-3.5', tecnicoCfg.cobrar ? 'text-white' : 'text-slate-500')} />
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
+                <NumInput label="Venta tecnico (Q)" value={ventaTecnico} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
+                  accent hint={`Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`} />
+                <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
+                  hint="Al cambiar el %, recalcula la venta al cliente." />
+              </div>
+            </div>
             <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
-              hint="Linea global del presupuesto de servicio" />
-            <NumInput label="Tecnico chequeo equipo (Q)" value={il.precioTecnicoChequeoServicio ?? 0} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
               hint="Linea global del presupuesto de servicio" />
           </>
         )}
@@ -2579,8 +2637,6 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
           <NumInput label="Salario mensual (Q)" value={il.salarioMensual} onChange={v => patchIl('salarioMensual', v)} />
           <NumInput label="Bonificacion/dia (Q)" value={il.bonificacionDiaria ?? 0} onChange={v => patchIl('bonificacionDiaria', v)}
             hint={`Total bonificaciones: ${formatQ(res.costoBonificaciones)}`} />
-          <NumInput label="Costo tecnico chequeo (Q)" value={il.costoTecnicoChequeoServicio ?? 1200} onChange={v => patchIl('costoTecnicoChequeoServicio', v)}
-            hint={`Venta tecnico: ${formatQ(il.precioTecnicoChequeoServicio ?? 2500)}`} />
           <NumInput label="Imprevisto servicio (%)" value={il.imprevistoPctLimpieza * 100}
             onChange={v => patchIl('imprevistoPctLimpieza', v / 100)}
             hint={`+${formatQ(res.imprevistoPorHora)}/hora`} />
