@@ -2395,6 +2395,8 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
           <span>Dias total: <b className="text-white">{res.diasTotales}</b></span>
           <span>Traslado: <b className="text-white">{formatQ(res.costoTraslado)}</b></span>
           <span>Galones: <b className="text-white">{res.galonesTraslado.toFixed(2)}</b></span>
+          <span>Personal: <b className="text-white">{res.personalServicio}</b></span>
+          <span>Canecas: <b className="text-white">{res.canecasQuimicosServicio}</b></span>
           <span>Costo neto/h: <b className={res.costoNetoHora > il.precioVentaHora ? 'text-red-400' : 'text-emerald-400'}>{formatQ(res.costoNetoHora)}</b></span>
         </div>
       </div>
@@ -2514,10 +2516,14 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
 
         {usaLimpieza && (
           <>
-            <NumInput label="Canecas de quimicos" value={il.canecasQuimicos} onChange={v => patchIl('canecasQuimicos', v)} />
+            <div className="rounded-lg border border-white/10 bg-white/3 px-3 py-2.5">
+              <p className="text-xs text-slate-400 font-medium">Canecas automaticas</p>
+              <p className="text-sm font-semibold text-white">{res.canecasQuimicosServicio} canecas</p>
+              <p className="text-[10px] text-slate-600 mt-1">Menor a 6&quot; = 2 canecas · 6&quot; o mas = 4 canecas.</p>
+            </div>
             <NumInput label="Costo/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
             <NumInput label="Precio venta/caneca (Q)" value={il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca} onChange={v => patchIl('precioVentaQuimicoCaneca', v)}
-              accent hint={`Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * il.canecasQuimicos)}`} />
+              accent hint={`Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`} />
           </>
         )}
 
@@ -2573,6 +2579,8 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
           <NumInput label="Salario mensual (Q)" value={il.salarioMensual} onChange={v => patchIl('salarioMensual', v)} />
           <NumInput label="Bonificacion/dia (Q)" value={il.bonificacionDiaria ?? 0} onChange={v => patchIl('bonificacionDiaria', v)}
             hint={`Total bonificaciones: ${formatQ(res.costoBonificaciones)}`} />
+          <NumInput label="Costo tecnico chequeo (Q)" value={il.costoTecnicoChequeoServicio ?? 1200} onChange={v => patchIl('costoTecnicoChequeoServicio', v)}
+            hint={`Venta tecnico: ${formatQ(il.precioTecnicoChequeoServicio ?? 2500)}`} />
           <NumInput label="Imprevisto servicio (%)" value={il.imprevistoPctLimpieza * 100}
             onChange={v => patchIl('imprevistoPctLimpieza', v / 100)}
             hint={`+${formatQ(res.imprevistoPorHora)}/hora`} />
@@ -3066,7 +3074,7 @@ function buildComparativaLimpieza(
     push('traslado-limp', 'Traslado', res.costoTraslado, ventaDe('traslado-limp'), `${res.kmIdaVuelta.toFixed(1)} km`)
     push('extraccion-tuberia-servicio', 'Extraccion tuberia', res.costoExtraccionTuberiaServicio, ventaDe('extraccion-tuberia-servicio'), `${tubosExtraccion} tubos`)
     push('instalacion-tuberia-servicio', 'Instalacion tuberia', res.costoInstalacionTuberiaServicio, ventaDe('instalacion-tuberia-servicio'), `${tubosInstalacion} tubos`)
-    push('quimicos-limp', 'Quimicos', res.costoQuimicos, ventaDe('quimicos-limp'), `${il.canecasQuimicos} canecas`)
+    push('quimicos-limp', 'Quimicos', res.costoQuimicos, ventaDe('quimicos-limp'), `${res.canecasQuimicosServicio} canecas`)
     push('limpieza-horas', 'Limpieza mecanica', res.costoDieselTrabajo, ventaDe('limpieza-horas'), `${il.horasLimpieza} horas`)
     push('material-instalacion-servicio', 'Material instalacion', res.costoMaterialInstalacionServicio, ventaDe('material-instalacion-servicio'))
     push('tecnico-chequeo-servicio', 'Tecnico chequeo', res.costoTecnicoChequeoServicio, ventaDe('tecnico-chequeo-servicio'))
@@ -3303,12 +3311,12 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
     })
   }
 
-  if ((subtipo === 'basico' || subtipo === 'completo') && il.canecasQuimicos > 0) {
+  if ((subtipo === 'basico' || subtipo === 'completo') && res.canecasQuimicosServicio > 0) {
     rows.push({
       key: 'quimicos-limp',
       nombre: 'Canecas de aditivo para limpieza',
       unidad: 'Caneca',
-      cant: il.canecasQuimicos,
+      cant: res.canecasQuimicosServicio,
       precio: res.precioVentaQuimicoCaneca,
       total: 0,
     })

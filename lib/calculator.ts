@@ -919,6 +919,7 @@ export interface ResultadosLimpieza {
   tubosHoraInstalacionServicio: number
   precioVentaQuimicoCaneca: number
   personalServicio: number
+  canecasQuimicosServicio: number
   cantidadTuberiaServicio: number
   servicioTuberiaModo: ServicioTuberiaModo
   costoTuberiaServicio: number
@@ -1002,7 +1003,8 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const costoDieselAforo = 5 * horasAforo * inp.precioDiesel
 
   // ── OTROS COSTOS ─────────────────────────────────────────────────────────────
-  const costoQuimicos  = usaLimpieza ? inp.precioQuimicoCaneca * inp.canecasQuimicos : 0
+  const canecasQuimicosServicio = usaLimpieza ? (diametroServicio && diametroServicio >= 6 ? 4 : 2) : 0
+  const costoQuimicos  = usaLimpieza ? inp.precioQuimicoCaneca * canecasQuimicosServicio : 0
   const costoAforo = costoDieselAforo
   const costoInspeccionCamara = servicioSubtipo === 'completo' && inp.inspeccionCamara
     ? Math.max(0, inp.costoInspeccionCamara ?? DEFAULT_SERVICIO_COTIZACION.camaraInspeccionCosto)
@@ -1075,7 +1077,7 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
     0,
     inp.precioVentaQuimicoCaneca ?? (inp.precioQuimicoCaneca * (inp.markupQuimicos ?? 1.5))
   )
-  const precioVentaQuimicos = usaLimpieza ? precioVentaQuimicoCaneca * Math.max(0, inp.canecasQuimicos) : 0
+  const precioVentaQuimicos = usaLimpieza ? precioVentaQuimicoCaneca * canecasQuimicosServicio : 0
   const precioVentaTraslado = usaServicioBasico && costoTraslado > 0 ? precioVentaTrasladoServicio : 0
   const precioVentaAforo = usaAforo ? (inp.precioVentaAforoTotal ?? 23000) : 0
   const precioVentaCamara = servicioSubtipo === 'completo' && inp.inspeccionCamara
@@ -1100,7 +1102,7 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
     costoExtraccionTuberiaServicio, costoInstalacionTuberiaServicio,
     precioVentaTuboExtraccionUnitario, precioVentaTuboInstalacionUnitario,
     tubosHoraExtraccionServicio, tubosHoraInstalacionServicio, precioVentaQuimicoCaneca,
-    personalServicio, cantidadTuberiaServicio, servicioTuberiaModo,
+    personalServicio, canecasQuimicosServicio, cantidadTuberiaServicio, servicioTuberiaModo,
     costoTuberiaServicio, precioVentaTuberiaServicio,
     costoMaterialInstalacionServicio, precioMaterialInstalacionServicio, costoTecnicoChequeoServicio, precioTecnicoChequeoServicio,
     costoQuimicos,

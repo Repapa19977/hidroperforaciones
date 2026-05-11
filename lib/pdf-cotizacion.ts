@@ -238,12 +238,12 @@ function buildLineasLimp(
     })
   }
 
-  if ((subtipo === 'basico' || subtipo === 'completo') && il.canecasQuimicos > 0) {
+  if ((subtipo === 'basico' || subtipo === 'completo') && res.canecasQuimicosServicio > 0) {
     rows.push({
       key: 'quimicos-limp',
       nombre: 'Canecas de aditivo para limpieza',
       unidad: 'Caneca',
-      cant: il.canecasQuimicos,
+      cant: res.canecasQuimicosServicio,
       precio: res.precioVentaQuimicoCaneca,
       total: 0,
     })

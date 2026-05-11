@@ -110,7 +110,7 @@ export const DEFAULT_SERVICIO_COTIZACION: ServicioCotizacionConfig = {
   materialInstalacionPrecio: 1500,
   materialInstalacionCosto: 700,
   tecnicoChequeoPrecio: 2500,
-  tecnicoChequeoCosto: 0,
+  tecnicoChequeoCosto: 1200,
   camaraInspeccionPrecio: 8000,
   camaraInspeccionCosto: 4500,
 }
@@ -204,7 +204,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   precioPorPieBase: 700,
   precioVentaHoraBase: 375,
   servicioCotizacion: DEFAULT_SERVICIO_COTIZACION,
-  servicioCotizacionConfigVersion: 2,
+  servicioCotizacionConfigVersion: 3,
   costomaquinariaDia: 0,       // Excel reunión: Q 0 (editable — margen reservado)
   costoDieselDia: 2300,        // Excel reunión: Q 2,300/día
   bonificacionPorPie: 15,      // Excel reunión: Q 15/pie
@@ -239,7 +239,7 @@ export const DEFAULT_CONFIG: AppConfig = {
 }
 
 export const HORAS_ADVERSAS_CONFIG_VERSION = 2
-export const SERVICIO_COTIZACION_CONFIG_VERSION = 2
+export const SERVICIO_COTIZACION_CONFIG_VERSION = 3
 
 export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
   const cfg: AppConfig = { ...DEFAULT_CONFIG, ...(raw ?? {}) }
