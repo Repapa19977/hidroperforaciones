@@ -8,7 +8,7 @@ import {
   getCostoColocacionPorDiametro,
   getPrecioTuberia, getEspesoresDisponibles, getDiametrosTuberia, DIAMETROS_BROCA,
   PERFORACION_MM, TUBERIA_MM, calcGravaM3,
-  PRECIOS_BROCAS,
+  PRECIOS_BROCAS, getReglaTuberiaServicio,
   type InputsPerforacion, type InputsLimpieza, type InputsAforoDetallado,
   formatQ
 } from '@/lib/calculator'
@@ -18,7 +18,7 @@ import {
   type HitoPago, type LineaConfig,
   type CondicionOverridePerf, type CondicionExtraPerf, type LineaExtra,
 } from '@/lib/quotation-store'
-import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type PreciosLineas } from '@/lib/config-store'
+import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, DEFAULT_SERVICIO_COTIZACION, type PreciosLineas, type ServicioCotizacionConfig } from '@/lib/config-store'
 import { COSTOS_BASE, calcMarkupPct, calcVentaDesdeMarkup, getCostosBaseConOverrides, preciosVentaOverrideDesdeRubros } from '@/lib/costos-base'
 import { CONDICIONES_PERFORACION } from '@/lib/condiciones-perf'
 import {
@@ -35,6 +35,89 @@ import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
 import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
 
 type TipoCot = 'perforacion' | 'limpieza'
+
+function inputsServicioDesdeConfig(servicio?: Partial<ServicioCotizacionConfig>): Partial<InputsLimpieza> {
+  const s = { ...DEFAULT_SERVICIO_COTIZACION, ...(servicio ?? {}) }
+  return {
+    precioVentaHora: s.precioLimpiezaHora,
+    precioDiesel: s.dieselGalon,
+    precioQuimicoCaneca: s.costoQuimicoCaneca,
+    precioVentaQuimicoCaneca: s.precioVentaQuimicoCaneca,
+    horasDia: s.horasDiaLimpieza,
+    personal: s.personalServicio,
+    precioMaterialInstalacionServicio: s.materialInstalacionPrecio,
+    costoMaterialInstalacionServicio: s.materialInstalacionCosto,
+    precioTecnicoChequeoServicio: s.tecnicoChequeoPrecio,
+    costoTecnicoChequeoServicio: s.tecnicoChequeoCosto,
+    precioInspeccionCamara: s.camaraInspeccionPrecio,
+    costoInspeccionCamara: s.camaraInspeccionCosto,
+    servicioTrasladoKmGalon: s.trasladoKmPorGalon,
+    servicioTrasladoPrecioVenta: s.trasladoPrecioVenta,
+    servicioConsumoExtraccionInstalacionGalHora: s.consumoExtraccionInstalacionGalHora,
+    servicioConsumoLimpiezaGalHora: s.consumoLimpiezaGalHora,
+    servicioTuberiaTabla: s.tablaTuberia,
+    aumentoKmPct: 0,
+    margenTuboServicioPct: 0,
+    imprevistoPctLimpieza: 0,
+    markupQuimicos: 1,
+  }
+}
+
+type LineaExtraTemplate = Omit<LineaExtra, 'id' | 'mostrar' | 'cobrar'> & {
+  key: string
+  mostrar?: boolean
+  cobrar?: boolean
+}
+
+const EQUIPAMIENTO_EXCEL_TEMPLATES: LineaExtraTemplate[] = [
+  { key: 'traslado-grua-servicio', rubro: 'equipamiento', nombre: 'Traslado de grua de servicio al punto de trabajo.', unidad: 'Global', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'tuberia-columna-hg', rubro: 'equipamiento', nombre: 'Tuberia de columna de HG', descripcion: 'Diametros 2, 3, 4, 5, 6, 8, 10 o 12 pulgadas.', unidad: 'Tubo', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'motor-sumergible', rubro: 'equipamiento', nombre: 'Motor sumergible', descripcion: 'Introducir especificaciones.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'bomba-sumergible', rubro: 'equipamiento', nombre: 'Bomba sumergible', descripcion: 'Introducir especificaciones.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'cable-sumergible', rubro: 'equipamiento', nombre: 'Cable sumergible', descripcion: 'Introducir calibre y especificaciones.', unidad: 'Metro', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'panel-arranque', rubro: 'equipamiento', nombre: 'Panel de arranque para equipo sumergible', descripcion: 'Con monitor, proyector de fases, guarda nivel y accesorios segun especificacion.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'electrodos-inoxidable', rubro: 'equipamiento', nombre: 'Electrodos de acero inoxidable', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'material-empalmes', rubro: 'equipamiento', nombre: 'Material para empalmes de motor sumergible y accesorios', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'funda-enfriamiento', rubro: 'equipamiento', nombre: 'Funda de enfriamiento', descripcion: 'Introducir especificaciones.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'tuberia-rosca-copla', rubro: 'equipamiento', nombre: 'Tuberia con rosca y copla tipo mediano HG', descripcion: 'Introducir especificaciones.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'collarin-soporte', rubro: 'equipamiento', nombre: 'Collarin de soporte', descripcion: 'Introducir especificacion.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'sello-sanitario-equipamiento', rubro: 'equipamiento', nombre: 'Sello sanitario', descripcion: 'Introducir especificaciones.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'cheque-vertical', rubro: 'equipamiento', nombre: 'Cheque vertical', descripcion: 'Introducir especificaciones.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'linea-aire', rubro: 'equipamiento', nombre: 'Linea de aire de 1/4', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'kit-linea-aire', rubro: 'equipamiento', nombre: 'Kit de linea de aire', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'cabezal-descarga', rubro: 'equipamiento', nombre: 'Cabezal de descarga', descripcion: 'Incluye cheque de bronce, llave de paso y accesorios segun especificacion.', unidad: 'Unidad', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'cable-argos', rubro: 'equipamiento', nombre: 'Cable sumergible marca Argos de doble forro', descripcion: 'Introducir especificaciones.', unidad: 'Metro', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'material-instalacion-cintas-cable', rubro: 'equipamiento', nombre: 'Material de instalacion, cintas y cable', unidad: 'Global', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+  { key: 'instalacion-tuberia-hg-equipamiento', rubro: 'equipamiento', nombre: 'Instalacion de tuberia de HG de columna y equipo sumergible', descripcion: 'Bomba, motor y cable. Introducir especificaciones.', unidad: 'Tubo', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
+]
+
+const AFORO_EXCEL_TEMPLATES: LineaExtraTemplate[] = [
+  {
+    key: 'servicio-aforo-condensado',
+    rubro: 'aforo',
+    nombre: 'Servicio de aforo',
+    descripcion: 'Incluye personal, traslado y regreso de generador, instalacion y desinstalacion de tuberia de columna, horas de aforo y generador.',
+    unidad: 'Global',
+    cantidad: 1,
+    costoUnitario: 0,
+    precioVentaUnitario: 0,
+  },
+]
+
+function crearExtrasDesdeTemplates(templates: LineaExtraTemplate[]): LineaExtra[] {
+  return templates.map((tpl, idx) => ({
+    id: `excel-${tpl.rubro}-${tpl.key}-${idx}`,
+    rubro: tpl.rubro,
+    nombre: tpl.nombre,
+    descripcion: tpl.descripcion ?? '',
+    unidad: tpl.unidad,
+    cantidad: tpl.cantidad,
+    costoUnitario: tpl.costoUnitario,
+    precioVentaUnitario: tpl.precioVentaUnitario,
+    mostrar: tpl.mostrar ?? true,
+    cobrar: tpl.cobrar ?? true,
+  }))
+}
 
 export default function NuevaCotizacionPage() {
   const [tipo, setTipo] = useState<TipoCot>('perforacion')
@@ -301,8 +384,7 @@ export default function NuevaCotizacionPage() {
           }))
           setIl(prev => ({
             ...prev,
-            precioVentaHora: cfg.precioVentaHoraBase,
-            markupQuimicos: cfg.markupQuimicosLimpieza ?? 1.5,
+            ...inputsServicioDesdeConfig(cfg.servicioCotizacion),
           }))
           if (cfg.preciosLineas) setPl({ ...DEFAULT_PRECIOS_LINEAS, ...cfg.preciosLineas })
           if (cfg.costosBaseOverride) setCostosBaseOverride(cfg.costosBaseOverride)
@@ -407,11 +489,12 @@ export default function NuevaCotizacionPage() {
       if (prev.horasDia <= 0) return prev
       const subtipo = prev.servicioSubtipo ?? 'basico'
       if (subtipo === 'aforo' || subtipo === 'item') return prev
-      const calculado = Math.max(1, Math.ceil(prev.horasLimpieza / prev.horasDia))
+      const horas = Math.max(0, prev.horasLimpieza + (subtipo === 'completo' ? (prev.horasAforo ?? 0) : 0))
+      const calculado = Math.max(1, Math.ceil(horas / prev.horasDia))
       if (calculado === prev.diasTrabajo) return prev
       return { ...prev, diasTrabajo: calculado }
     })
-  }, [il.horasLimpieza, il.horasDia, il.servicioSubtipo])
+  }, [il.horasLimpieza, il.horasAforo, il.horasDia, il.servicioSubtipo])
 
   useEffect(() => {
     if (tipo !== 'limpieza') return
@@ -422,14 +505,40 @@ export default function NuevaCotizacionPage() {
     setIp(prev => ({ ...prev, [key]: val }))
   const patchIl = (key: keyof InputsLimpieza, val: number | boolean | string) =>
     setIl(prev => ({ ...prev, [key]: val }))
+  const setServicioSubtipo = (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => {
+    setIl(prev => {
+      const base: InputsLimpieza = { ...prev, servicioSubtipo: next }
+      if (next === 'basico') return { ...base, trabajoEjecutar: 'Limpieza mecanica', horasLimpieza: prev.horasLimpieza > 0 ? prev.horasLimpieza : 20, servicioTuberiaModo: 'extraccion-instalacion', personal: 2 }
+      if (next === 'equipamiento') return { ...base, trabajoEjecutar: 'Equipamiento', personal: 0 }
+      if (next === 'aforo') return { ...base, trabajoEjecutar: 'Aforo', horasAforo: (prev.horasAforo ?? 0) > 0 ? (prev.horasAforo ?? 24) : 24, personal: 0 }
+      if (next === 'completo') return { ...base, trabajoEjecutar: 'Servicio completo', horasLimpieza: prev.horasLimpieza > 0 ? prev.horasLimpieza : 20, servicioTuberiaModo: 'extraccion-instalacion' }
+      return { ...base, trabajoEjecutar: 'Servicio por item', personal: 0 }
+    })
+
+    if (next === 'equipamiento') {
+      setLineasExtras(prev => prev.some(e => e.rubro === 'equipamiento') ? prev : [...prev, ...crearExtrasDesdeTemplates(EQUIPAMIENTO_EXCEL_TEMPLATES)])
+    } else if (next === 'aforo') {
+      setLineasExtras(prev => prev.some(e => e.rubro === 'aforo') ? prev : [...prev, ...crearExtrasDesdeTemplates(AFORO_EXCEL_TEMPLATES)])
+    }
+  }
 
   const lineasBase = tipo === 'perforacion'
     ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, { pipaPrecioVentaUnitario, camionadaGravaPrecioVentaUnitario, capacidadCamionM3 })
-    : buildLineasLimp(il, resLimp, pl)
+    : buildLineasLimp(il, resLimp)
+
+  const servicioSubtipoActual = il.servicioSubtipo ?? 'basico'
+  const extraAplicaCotizacion = (extra: LineaExtra) => {
+    if (tipo !== 'limpieza') return true
+    if (servicioSubtipoActual === 'equipamiento') return extra.rubro === 'equipamiento'
+    if (servicioSubtipoActual === 'aforo') return extra.rubro === 'aforo'
+    if (servicioSubtipoActual === 'item') return (extra.rubro ?? 'item') === 'item'
+    return false
+  }
+  const lineasExtrasCotizacion = lineasExtras.filter(extraAplicaCotizacion)
 
   // Líneas extras (Fase 2) — ítems libres agregados por el usuario
   // Solo se consideran si tienen nombre, cantidad > 0 y precio > 0 (evita ítems vacíos en el preview/PDF)
-  const lineasExtrasFormateadas: LineaCot[] = lineasExtras
+  const lineasExtrasFormateadas: LineaCot[] = lineasExtrasCotizacion
     .filter(e =>
       e.cantidad > 0 &&
       e.precioVentaUnitario > 0 &&
@@ -452,14 +561,18 @@ export default function NuevaCotizacionPage() {
 
   // Helper para resolver config (línea base usa lineasConfig/lineasActivas; extras usan su propio flag)
   const cfgDe = (key: string): LineaConfig => {
-    const extra = lineasExtras.find(e => e.id === key)
+    const extra = lineasExtrasCotizacion.find(e => e.id === key)
     if (extra) return { mostrar: extra.mostrar, cobrar: extra.cobrar }
     if (lineasConfig[key]) return lineasConfig[key]
     if (lineasActivas[key] === false) return { mostrar: false, cobrar: true }  // backward compat
     return { mostrar: true, cobrar: true }
   }
+  const lineasCobradas = todasLineas.filter(l => cfgDe(l.key).cobrar)
+  const comparativaLimpieza = tipo === 'limpieza'
+    ? buildComparativaLimpieza(il, resLimp, lineasCobradas, lineasExtrasCotizacion)
+    : []
   // subtotal = suma de las que SÍ se cobran (independiente de su visibilidad)
-  const subtotal    = todasLineas.filter(l => cfgDe(l.key).cobrar).reduce((a, b) => a + b.total, 0)
+  const subtotal    = lineasCobradas.reduce((a, b) => a + b.total, 0)
   // Descuento especial — se resta antes de IVA/ISR. No puede exceder el subtotal.
   const descuentoQ  = aplicarDescuento ? Math.min(subtotal, Math.max(0, descuentoMonto)) : 0
   const baseGravable = subtotal - descuentoQ
@@ -476,7 +589,12 @@ export default function NuevaCotizacionPage() {
   const ISR_TIPO         = ISR
   const isrRetenido      = Math.round(subtotal * ISR_TIPO)
   const ingresoNetoTotal = subtotal - isrRetenido
-  const costoProyecto    = tipo === 'perforacion' ? resPerf.costoTotalProyecto : resLimp.costoTotalProyecto
+  const costoLineasExtras = tipo === 'limpieza'
+    ? lineasExtrasCotizacion
+        .filter(e => e.cobrar)
+        .reduce((acc, e) => acc + (e.cantidad * e.costoUnitario), 0)
+    : 0
+  const costoProyecto    = tipo === 'perforacion' ? resPerf.costoTotalProyecto : resLimp.costoTotalProyecto + costoLineasExtras
   const gananciaNeta     = ingresoNetoTotal - costoProyecto
   const margenNeto       = ingresoNetoTotal > 0 ? (gananciaNeta / ingresoNetoTotal) * 100 : 0
 
@@ -533,7 +651,7 @@ export default function NuevaCotizacionPage() {
       comparativaCostosOv,
       condicionesPerfOverride,
       condicionesPerfExtras,
-      lineasExtras,
+      lineasExtras: lineasExtrasCotizacion,
       aplicarIva,
       aplicarIsr,
       aplicarDescuento,
@@ -914,7 +1032,7 @@ export default function NuevaCotizacionPage() {
             {tipo === 'perforacion'
               ? <CalcPerforacion ip={ip} patchIp={patchIp} showCostos={showCostos} setShowCostos={setShowCostos} res={resPerf} rol={rolUsuario}
                   preciosVentaOverride={preciosVentaOverride} />
-              : <CalcServicios il={il} patchIl={patchIl} res={resLimp} />}
+              : <CalcServicios il={il} patchIl={patchIl} setServicioSubtipo={setServicioSubtipo} res={resLimp} />}
 
             {/* Precios de líneas */}
             <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
@@ -1018,10 +1136,11 @@ export default function NuevaCotizacionPage() {
             )}
 
             {/* Líneas Libres — ítems custom que se suman al total */}
-            {(tipo === 'perforacion' || (tipo === 'limpieza' && (il.servicioSubtipo ?? 'basico') === 'item')) && (
+            {(tipo === 'perforacion' || (tipo === 'limpieza' && ['equipamiento', 'aforo', 'item'].includes(il.servicioSubtipo ?? 'basico'))) && (
               <LineasExtrasEditor
                 extras={lineasExtras}
                 setExtras={setLineasExtras}
+                rubroActivo={tipo === 'limpieza' ? (il.servicioSubtipo ?? 'item') : undefined}
               />
             )}
 
@@ -1074,7 +1193,17 @@ export default function NuevaCotizacionPage() {
                   gananciaNeta={gananciaNeta} margenNeto={margenNeto} rol={rolUsuario} />
               : <PanelLimp res={resLimp} subtotal={subtotal} iva={ivaTotal} total={totalConIva}
                   isrRetenido={isrRetenido} ingresoNeto={ingresoNetoTotal}
-                  gananciaNeta={gananciaNeta} margenNeto={margenNeto} rol={rolUsuario} />}
+                  gananciaNeta={gananciaNeta} margenNeto={margenNeto} rol={rolUsuario}
+                  costoProyectoTotal={costoProyecto} />}
+
+            {tipo === 'limpieza' && rolUsuario === 'superadmin' && (
+              <PanelComparativaLimpieza
+                filas={comparativaLimpieza}
+                subtotal={subtotal}
+                total={totalConIva}
+                ingresoNeto={ingresoNetoTotal}
+              />
+            )}
 
             {/* Preview líneas con toggles — rediseño para claridad + mobile */}
             <div className="bg-[#0d1526] rounded-xl border border-white/5 p-4 sm:p-5">
@@ -2227,53 +2356,37 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
 }
 
 // ── Panel Financiero Perforación ─────────────────────────────────────────────
-function CalcServicios({ il, patchIl, res }: {
+function CalcServicios({ il, patchIl, setServicioSubtipo, res }: {
   il: InputsLimpieza
   patchIl: (k: keyof InputsLimpieza, v: number | boolean | string) => void
+  setServicioSubtipo: (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => void
   res: ReturnType<typeof calcularLimpieza>
 }) {
   const subtipo = il.servicioSubtipo ?? 'basico'
-  const diametrosServicio = ['Ninguna', '1"', '1-1/4"', '1-1/2"', '2"', '2-1/2"', '3"', '4"', '5"', '6"', '8"', '10"', '12"']
+  const tablaServicio = il.servicioTuberiaTabla?.length ? il.servicioTuberiaTabla : DEFAULT_SERVICIO_COTIZACION.tablaTuberia
+  const formatDiametroServicio = (diametro: number) => diametro === 2.5 ? '2-1/2"' : `${diametro}"`
+  const diametrosServicio = ['Ninguna', ...tablaServicio.map(r => formatDiametroServicio(r.diametro))]
+  const reglaServicio = getReglaTuberiaServicio(il.diametroTuberiaServicio, tablaServicio)
   const usaLimpieza = subtipo === 'basico' || subtipo === 'completo'
   const usaHorasLimpieza = usaLimpieza || subtipo === 'item'
-  const usaAforo = subtipo === 'aforo' || subtipo === 'completo'
-  const usaTuberiaServicio = subtipo === 'basico' || subtipo === 'aforo' || subtipo === 'completo'
+  const usaAforo = subtipo === 'completo'
+  const usaTuberiaServicio = subtipo === 'basico' || subtipo === 'completo'
+  const modoTuberia = il.servicioTuberiaModo ?? 'extraccion-instalacion'
+  const cantidadTuberia = il.cantidadTuberiaServicio ?? Math.max(il.tubosExtraccion ?? 0, il.tubosInstalacion ?? 0)
+  const tubosExtraccionVista = modoTuberia === 'instalacion' ? 0 : cantidadTuberia
+  const tubosInstalacionVista = modoTuberia === 'extraccion' ? 0 : cantidadTuberia
+  const setTuberiaServicio = (modo: NonNullable<InputsLimpieza['servicioTuberiaModo']>, cantidad = cantidadTuberia) => {
+    patchIl('servicioTuberiaModo', modo)
+    patchIl('cantidadTuberiaServicio', cantidad)
+    patchIl('tubosExtraccion', modo === 'instalacion' ? 0 : cantidad)
+    patchIl('tubosInstalacion', modo === 'extraccion' ? 0 : cantidad)
+  }
   const inputClass = 'w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
   const selectClass = cn(inputClass, 'bg-[#111827] text-white [color-scheme:dark]')
   const toggleClass = (active: boolean) => cn(
     'h-[42px] rounded-lg border px-3 text-sm font-medium transition-colors text-left',
     active ? 'bg-blue-500/15 border-blue-500/40 text-blue-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
   )
-  const round2 = (value: number) => Math.round(value * 100) / 100
-  const tuboMargenPct = il.margenTuboServicioPct ?? 30
-  const tuboCosto = il.costoTuboServicioUnitario ?? 0
-  const tuboPrecioAuto = round2(tuboCosto * (1 + tuboMargenPct / 100))
-  const setCostoTuboServicio = (costo: number) => {
-    patchIl('costoTuboServicioUnitario', costo)
-    patchIl('precioVentaTuboServicioUnitario', round2(costo * (1 + tuboMargenPct / 100)))
-  }
-  const setMargenTuboServicio = (margen: number) => {
-    patchIl('margenTuboServicioPct', margen)
-    patchIl('precioVentaTuboServicioUnitario', round2(tuboCosto * (1 + margen / 100)))
-  }
-  const setServicio = (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => {
-    patchIl('servicioSubtipo', next)
-    if (next === 'basico') {
-      patchIl('trabajoEjecutar', 'Limpieza mecanica')
-      patchIl('personal', il.personal > 0 ? il.personal : 2)
-    }
-    if (next === 'aforo') {
-      patchIl('trabajoEjecutar', 'Aforo')
-      patchIl('horasAforo', (il.horasAforo ?? 0) > 0 ? (il.horasAforo ?? 24) : 24)
-      patchIl('personal', 0)
-    }
-    if (next === 'completo') patchIl('trabajoEjecutar', 'Servicio completo')
-    if (next === 'item') {
-      patchIl('trabajoEjecutar', 'Servicio por item')
-      patchIl('personal', 0)
-    }
-  }
-
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5 space-y-4">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -2286,17 +2399,18 @@ function CalcServicios({ il, patchIl, res }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
         {([
-          ['basico', 'Nuevo Presupuesto Servicio Basico', 'Limpieza mecanica'],
-          ['aforo', 'Nuevo Presupuesto Servicio Aforo', 'Aforo'],
-          ['completo', 'Nuevo Presupuesto Servicio Completo', 'Limpieza + aforo'],
-          ['item', 'Nuevo Presupuesto Servicio por Item', 'Lineas libres'],
+          ['basico', 'Servicio Basico', 'Limpieza mecanica'],
+          ['equipamiento', 'Equipamiento', 'Rubros del Excel'],
+          ['aforo', 'Aforo', 'Rubros de aforo'],
+          ['completo', 'Servicio Completo', 'Limpieza + aforo'],
+          ['item', 'Por Item', 'Lineas libres'],
         ] as const).map(([key, title, desc]) => (
           <button
             key={key}
             type="button"
-            onClick={() => setServicio(key)}
+            onClick={() => setServicioSubtipo(key)}
             className={cn(
               'rounded-lg border px-3 py-2 text-left transition-colors',
               subtipo === key ? 'bg-blue-500/15 border-blue-500/40' : 'bg-white/5 border-white/10 hover:bg-white/8'
@@ -2313,39 +2427,11 @@ function CalcServicios({ il, patchIl, res }: {
           <label className="text-xs text-slate-400 mb-1 block font-medium">Trabajo a ejecutar</label>
           <input value={il.trabajoEjecutar ?? ''} onChange={e => patchIl('trabajoEjecutar', e.target.value)} className={inputClass} />
         </div>
-        <NumInput label="Impuestos (%)" value={il.impuestosPct ?? 17} onChange={v => patchIl('impuestosPct', v)} />
-        <NumInput label="Comision venta (%)" value={il.comisionVentaPct ?? 0} onChange={v => patchIl('comisionVentaPct', v)} />
-        <NumInput label="Dias de trabajo servicio" value={il.diasTrabajo} onChange={v => patchIl('diasTrabajo', v)}
-          hint={usaLimpieza ? `Auto: ceil(${il.horasLimpieza}h / ${il.horasDia}h) = ${il.horasDia > 0 ? Math.max(1, Math.ceil(il.horasLimpieza / il.horasDia)) : 1} dias. Editable.` : 'Editable.'} />
         <NumInput label="Km al sitio" value={il.kilometros} onChange={v => patchIl('kilometros', v)}
           hint={`Ida/vuelta con aumento: ${res.kmIdaVuelta.toFixed(1)} km`} />
-        <NumInput label="% aumento km" value={il.aumentoKmPct ?? 0} onChange={v => patchIl('aumentoKmPct', v)} />
-        <NumInput label="Precio diesel (Q/gal)" value={il.precioDiesel} onChange={v => patchIl('precioDiesel', v)}
-          hint={`${res.galonesTraslado.toFixed(2)} galones a 7 km/gal = ${formatQ(res.costoTraslado)}`} />
-        <NumInput label="Precio gasolina (Q/gal)" value={il.precioGasolina ?? 33} onChange={v => patchIl('precioGasolina', v)} />
-        <div>
-          <label className="text-xs text-slate-400 mb-1 block font-medium">Moneda</label>
-          <select value={il.moneda ?? 'Quetzal'} onChange={e => patchIl('moneda', e.target.value)} className={selectClass}>
-            <option className="bg-[#111827] text-white" value="Quetzal">Quetzal</option>
-            <option className="bg-[#111827] text-white" value="Dolar">Dolar</option>
-          </select>
-        </div>
-        <NumInput label="Tipo de cambio" value={il.tipoCambio ?? 1} onChange={v => patchIl('tipoCambio', v)} />
-        <button type="button" onClick={() => patchIl('dobleTurno', !(il.dobleTurno ?? false))} className={toggleClass(!!il.dobleTurno)}>
-          Doble turno: {il.dobleTurno ? 'Si' : 'No'}
-        </button>
-        <button type="button" onClick={() => patchIl('agregarCondicionesPerforacion', !(il.agregarCondicionesPerforacion ?? false))} className={toggleClass(!!il.agregarCondicionesPerforacion)}>
-          Condiciones perforacion: {il.agregarCondicionesPerforacion ? 'Si' : 'No'}
-        </button>
 
         {usaHorasLimpieza && (
           <>
-            {usaLimpieza && (
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block font-medium">Equipo de servicio</label>
-                <input value="10T1" readOnly className={cn(inputClass, 'cursor-not-allowed text-slate-300')} />
-              </div>
-            )}
             <NumInput label="Horas limpieza mecanica" value={il.horasLimpieza} onChange={v => patchIl('horasLimpieza', v)} />
             {usaLimpieza && (
               <NumInput label="Precio venta/hora (Q)" value={il.precioVentaHora} onChange={v => patchIl('precioVentaHora', v)}
@@ -2364,9 +2450,35 @@ function CalcServicios({ il, patchIl, res }: {
 
         {usaTuberiaServicio && (
           <>
-            <NumInput label="Empleados" value={il.personal} onChange={v => patchIl('personal', v)} />
-            <NumInput label="Cantidad tubos extraccion" value={il.tubosExtraccion ?? 0} onChange={v => patchIl('tubosExtraccion', v)} />
-            <NumInput label="Cantidad tubos instalacion" value={il.tubosInstalacion ?? 0} onChange={v => patchIl('tubosInstalacion', v)} />
+            <div className="sm:col-span-2 md:col-span-3">
+              <label className="text-xs text-slate-400 mb-1 block font-medium">Modalidad de tuberia</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {([
+                  ['extraccion-instalacion', 'Extraccion e instalacion', '25 = 25 + 25'],
+                  ['extraccion', 'Extraccion de tuberia', 'Solo extraccion'],
+                  ['instalacion', 'Instalacion de tuberia', 'Solo instalacion'],
+                ] as const).map(([key, title, desc]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTuberiaServicio(key)}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-left transition-colors',
+                      modoTuberia === key ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                    )}
+                  >
+                    <span className="block text-sm font-semibold">{title}</span>
+                    <span className="block text-[10px] text-slate-500 mt-0.5">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <NumInput
+              label="Cantidad de tubos"
+              value={cantidadTuberia}
+              onChange={v => setTuberiaServicio(modoTuberia, v)}
+              hint={`Se cotiza: ${tubosExtraccionVista} extraccion + ${tubosInstalacionVista} instalacion`}
+            />
             <div>
               <label className="text-xs text-slate-400 mb-1 block font-medium">Diametro tuberia extraccion / instalacion</label>
               <select value={il.diametroTuberiaServicio ?? 'Ninguna'} onChange={e => patchIl('diametroTuberiaServicio', e.target.value)} className={selectClass}>
@@ -2375,12 +2487,24 @@ function CalcServicios({ il, patchIl, res }: {
                 ))}
               </select>
             </div>
-            <NumInput label="Costo tubo unitario (Q)" value={il.costoTuboServicioUnitario ?? 0} onChange={setCostoTuboServicio}
-              hint="Tu costo interno por tubo segun diametro" />
-            <NumInput label="Margen tubo (%)" value={tuboMargenPct} onChange={setMargenTuboServicio}
-              hint={`Auto cliente +${tuboMargenPct}% = ${formatQ(tuboPrecioAuto)}`} />
-            <NumInput label="Precio cliente tubo (Q)" value={(il.precioVentaTuboServicioUnitario ?? 0) > 0 ? (il.precioVentaTuboServicioUnitario ?? 0) : tuboPrecioAuto} onChange={v => patchIl('precioVentaTuboServicioUnitario', v)}
-              accent hint={`Editable. Total tubos: ${formatQ(res.precioVentaTuberiaServicio)}`} />
+            <div className="sm:col-span-2 rounded-lg border border-white/10 bg-white/3 px-3 py-2.5">
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Regla por diametro</p>
+              {reglaServicio ? (
+                <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="text-slate-300">
+                    Extraccion: <b className="text-white">{formatQ(res.precioVentaTuboExtraccionUnitario)}</b>/tubo · {res.tubosHoraExtraccionServicio} tubos/h
+                  </div>
+                  <div className="text-slate-300">
+                    Instalacion: <b className="text-white">{formatQ(res.precioVentaTuboInstalacionUnitario)}</b>/tubo · {res.tubosHoraInstalacionServicio} tubos/h
+                  </div>
+                  <div className="text-slate-500 sm:col-span-2">
+                    Personal automatico: {res.personalServicio} · Costo interno auto por diesel: {formatQ(res.costoTuberiaServicio)}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-slate-500">Selecciona un diametro para cargar precios y ritmo desde Configuracion.</p>
+              )}
+            </div>
             <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
               hint="Linea global del presupuesto de servicio" />
             <NumInput label="Tecnico chequeo equipo (Q)" value={il.precioTecnicoChequeoServicio ?? 0} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
@@ -2391,9 +2515,9 @@ function CalcServicios({ il, patchIl, res }: {
         {usaLimpieza && (
           <>
             <NumInput label="Canecas de quimicos" value={il.canecasQuimicos} onChange={v => patchIl('canecasQuimicos', v)} />
-            <NumInput label="Horas al dia" value={il.horasDia} onChange={v => patchIl('horasDia', v)}
-              hint="Define el ritmo diario del servicio" />
-            <NumInput label="Precio/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
+            <NumInput label="Costo/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
+            <NumInput label="Precio venta/caneca (Q)" value={il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca} onChange={v => patchIl('precioVentaQuimicoCaneca', v)}
+              accent hint={`Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * il.canecasQuimicos)}`} />
           </>
         )}
 
@@ -2403,24 +2527,77 @@ function CalcServicios({ il, patchIl, res }: {
               Inspeccion con camara: {il.inspeccionCamara ? 'Si' : 'No'}
             </button>
             {il.inspeccionCamara && (
-              <NumInput label="Precio inspeccion camara (Q)" value={il.precioInspeccionCamara ?? 0} onChange={v => patchIl('precioInspeccionCamara', v)} />
+              <>
+                <NumInput label="Costo camareo (Q)" value={il.costoInspeccionCamara ?? 4500} onChange={v => patchIl('costoInspeccionCamara', v)}
+                  hint="Costo interno" />
+                <NumInput label="Venta camareo (Q)" value={il.precioInspeccionCamara ?? 8000} onChange={v => patchIl('precioInspeccionCamara', v)}
+                  accent hint={`Aumento: ${res.markupCamaraPct.toFixed(1)}%`} />
+              </>
             )}
           </>
         )}
 
-        {subtipo !== 'item' && (
-          <>
-            <NumInput label="Viaticos/dia (Q)" value={il.viaticosDiarios} onChange={v => patchIl('viaticosDiarios', v)} />
-            <NumInput label="Hospedaje/noche (Q)" value={il.hospedajeDiario} onChange={v => patchIl('hospedajeDiario', v)}
-              hint={`${Math.max(0, res.diasTotales - 1)} noches = ${formatQ(res.costoHospedaje)}`} />
-            <NumInput label="Salario mensual (Q)" value={il.salarioMensual} onChange={v => patchIl('salarioMensual', v)} />
-          </>
-        )}
-
-        <NumInput label="Imprevisto servicio (%)" value={il.imprevistoPctLimpieza * 100}
-          onChange={v => patchIl('imprevistoPctLimpieza', v / 100)}
-          hint={`+${formatQ(res.imprevistoPorHora)}/hora`} />
       </div>
+
+      <details className="rounded-xl border border-white/10 bg-white/2">
+        <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:bg-white/3">
+          Avanzado / costos internos
+        </summary>
+        <div className="px-4 pb-4 pt-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 border-t border-white/5">
+          <div className="rounded-lg border border-white/10 bg-white/3 px-3 py-2.5">
+            <p className="text-xs text-slate-400 font-medium">Dias de trabajo servicio</p>
+            <p className="text-sm font-semibold text-white tabular-nums">{Math.max(1, res.diasTotales - 2)} dias productivos + 2 dias muertos</p>
+            <p className="text-[10px] text-slate-600 mt-1">
+              Auto: ceil({subtipo === 'completo' ? `${il.horasLimpieza}h limpieza + ${il.horasAforo ?? 0}h aforo` : `${il.horasLimpieza}h`} / {il.horasDia}h)
+            </p>
+          </div>
+          <NumInput label="Horas al dia" value={il.horasDia} onChange={v => patchIl('horasDia', v)}
+            hint="Define el ritmo diario del servicio" />
+          <NumInput label="% aumento km" value={il.aumentoKmPct ?? 0} onChange={v => patchIl('aumentoKmPct', v)} />
+          <NumInput label="Precio diesel (Q/gal)" value={il.precioDiesel} onChange={v => patchIl('precioDiesel', v)}
+            hint={`${res.galonesTraslado.toFixed(2)} galones a ${il.servicioTrasladoKmGalon ?? 20} km/gal = ${formatQ(res.costoTraslado)}`} />
+          <NumInput label="Venta traslado servicio (Q)" value={il.servicioTrasladoPrecioVenta ?? 0} onChange={v => patchIl('servicioTrasladoPrecioVenta', v)} />
+          <NumInput label="Km/gal traslado servicio" value={il.servicioTrasladoKmGalon ?? 20} onChange={v => patchIl('servicioTrasladoKmGalon', v)} />
+          <NumInput label="Gal/h extraccion instalacion" value={il.servicioConsumoExtraccionInstalacionGalHora ?? 2.5} onChange={v => patchIl('servicioConsumoExtraccionInstalacionGalHora', v)} />
+          <NumInput label="Gal/h limpieza mecanica" value={il.servicioConsumoLimpiezaGalHora ?? 3} onChange={v => patchIl('servicioConsumoLimpiezaGalHora', v)} />
+          <NumInput label="Precio gasolina (Q/gal)" value={il.precioGasolina ?? 33} onChange={v => patchIl('precioGasolina', v)} />
+          <div className="rounded-lg border border-white/10 bg-white/3 px-3 py-2.5">
+            <p className="text-xs text-slate-400 font-medium">Personal automatico</p>
+            <p className="text-sm font-semibold text-white">{res.personalServicio} personas</p>
+            <p className="text-[10px] text-slate-600 mt-1">Menor a 6&quot; = 2 personas · 6&quot; o mas = 3 personas.</p>
+          </div>
+          <NumInput label="Viaticos/tiempo (Q)" value={il.viaticosDiarios} onChange={v => patchIl('viaticosDiarios', v)} />
+          <NumInput label="Tiempos viaticos/dia" value={il.tiemposViaticosDia ?? 3} onChange={v => patchIl('tiemposViaticosDia', v)} />
+          <NumInput label="Hospedaje/noche (Q)" value={il.hospedajeDiario} onChange={v => patchIl('hospedajeDiario', v)}
+            hint={`${Math.max(0, res.diasTotales - 1)} noches = ${formatQ(res.costoHospedaje)}`} />
+          <NumInput label="Salario mensual (Q)" value={il.salarioMensual} onChange={v => patchIl('salarioMensual', v)} />
+          <NumInput label="Bonificacion/dia (Q)" value={il.bonificacionDiaria ?? 0} onChange={v => patchIl('bonificacionDiaria', v)}
+            hint={`Total bonificaciones: ${formatQ(res.costoBonificaciones)}`} />
+          <NumInput label="Imprevisto servicio (%)" value={il.imprevistoPctLimpieza * 100}
+            onChange={v => patchIl('imprevistoPctLimpieza', v / 100)}
+            hint={`+${formatQ(res.imprevistoPorHora)}/hora`} />
+          <NumInput label="Impuestos (%)" value={il.impuestosPct ?? 17} onChange={v => patchIl('impuestosPct', v)} />
+          <NumInput label="Comision venta (%)" value={il.comisionVentaPct ?? 0} onChange={v => patchIl('comisionVentaPct', v)} />
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block font-medium">Moneda interna</label>
+            <select value={il.moneda ?? 'Quetzal'} onChange={e => patchIl('moneda', e.target.value)} className={selectClass}>
+              <option className="bg-[#111827] text-white" value="Quetzal">Quetzal</option>
+              <option className="bg-[#111827] text-white" value="Dolar">Dolar</option>
+            </select>
+          </div>
+          <NumInput label="Tipo de cambio interno" value={il.tipoCambio ?? 1} onChange={v => patchIl('tipoCambio', v)} />
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block font-medium">Equipo de servicio</label>
+            <input value="10T1" readOnly className={cn(inputClass, 'cursor-not-allowed text-slate-300')} />
+          </div>
+          <button type="button" onClick={() => patchIl('dobleTurno', !(il.dobleTurno ?? false))} className={toggleClass(!!il.dobleTurno)}>
+            Doble turno: {il.dobleTurno ? 'Si' : 'No'}
+          </button>
+          <button type="button" onClick={() => patchIl('agregarCondicionesPerforacion', !(il.agregarCondicionesPerforacion ?? false))} className={toggleClass(!!il.agregarCondicionesPerforacion)}>
+            Condiciones perforacion: {il.agregarCondicionesPerforacion ? 'Si' : 'No'}
+          </button>
+        </div>
+      </details>
 
       {subtipo === 'item' && (
         <p className="text-xs text-slate-500 border-t border-white/5 pt-3">
@@ -2553,17 +2730,17 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
 }
 
 // ── Panel Financiero Limpieza ────────────────────────────────────────────────
-function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananciaNeta, margenNeto, rol }: {
+function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananciaNeta, margenNeto, rol, costoProyectoTotal }: {
   res: ReturnType<typeof calcularLimpieza>
   subtotal: number; iva: number; total: number
   isrRetenido: number; ingresoNeto: number
   gananciaNeta: number; margenNeto: number
   rol: 'admin' | 'superadmin'
+  costoProyectoTotal: number
 }) {
   const m = margenNeto
   // Crédito fiscal IVA — estimado sobre costos no laborales
-  const costoLaboral  = res.costoPersonal + res.costoViaticos + res.costoHospedaje
-  const costoGravable = res.costoTotalProyecto - costoLaboral
+  const costoGravable = costoProyectoTotal
   const ivaCredito    = Math.round(costoGravable * IVA)
   const ivaNeto       = Math.max(0, iva - ivaCredito)
   const cargaFiscal   = ivaNeto + isrRetenido
@@ -2584,7 +2761,7 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
           <FR label="IVA colectado (→ SAT)" value={iva} c="text-slate-500" />
           <FR label="ISR retenido (5%)" value={isrRetenido} c="text-slate-500" />
           <FR label="Ingreso neto (post-ISR)" value={ingresoNeto} c="text-slate-300" />
-          <FR label="Costo total proyecto" value={res.costoTotalProyecto} c="text-red-400" />
+          <FR label="Costo total proyecto" value={costoProyectoTotal} c="text-red-400" />
         </div>
         <div className="bg-white/3 rounded-lg px-3 py-2.5 border border-white/5">
           <div className="flex justify-between">
@@ -2599,7 +2776,7 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
         <IC label="Costo/hora" v={formatQ(res.costoPorHora)} />
         <IC label="Utilidad/hora" v={formatQ(res.utilidadPorHora)} />
         <IC label="Días totales" v={`${res.diasTotales}d`} />
-        <IC label="Imprevistos 10%" v={formatQ(res.imprevisto10pct)} />
+        <IC label="Imprevistos" v={formatQ(res.imprevisto10pct)} />
       </div>
       {rol === 'superadmin' && (
         <div className="mt-3 pt-3 border-t border-purple-500/20 space-y-1.5">
@@ -2636,6 +2813,80 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
 // ── Helpers UI ───────────────────────────────────────────────────────────────
 // NumInput: input numérico con label + hint opcional.
 // Mobile-first: text-base (16px) evita el zoom automático en iOS; tap target cómodo (py-2.5)
+function PanelComparativaLimpieza({
+  filas,
+  subtotal,
+  total,
+  ingresoNeto,
+}: {
+  filas: FilaComparativaLimpieza[]
+  subtotal: number
+  total: number
+  ingresoNeto: number
+}) {
+  const costoTotal = filas.reduce((acc, fila) => acc + fila.costo, 0)
+  const utilidad = ingresoNeto - costoTotal
+  const margen = ingresoNeto > 0 ? (utilidad / ingresoNeto) * 100 : 0
+  const colorUtilidad = utilidad >= 0 ? 'text-emerald-400' : 'text-red-400'
+
+  return (
+    <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2">
+        <BarChart3 className="w-4 h-4 text-cyan-400" />
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Comparativa servicio</p>
+        <span className={cn('ml-auto text-xs font-bold tabular-nums', colorUtilidad)}>
+          {margen.toFixed(1)}%
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 divide-x divide-white/5 border-b border-white/5">
+        <div className="p-3">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Cliente paga</p>
+          <p className="text-sm font-black text-blue-300 tabular-nums">{formatQ(total)}</p>
+        </div>
+        <div className="p-3">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Costo mio</p>
+          <p className="text-sm font-black text-amber-300 tabular-nums">{formatQ(costoTotal)}</p>
+        </div>
+        <div className="p-3">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Utilidad</p>
+          <p className={cn('text-sm font-black tabular-nums', colorUtilidad)}>{formatQ(utilidad)}</p>
+        </div>
+      </div>
+
+      <div className="px-5 py-3 space-y-1 max-h-72 overflow-y-auto">
+        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 text-[9px] uppercase tracking-wider text-slate-600 font-semibold pb-1 border-b border-white/5">
+          <span>Rubro</span>
+          <span className="text-right">Costo</span>
+          <span className="text-right">Cliente</span>
+          <span className="text-right">Dif.</span>
+        </div>
+        {filas.map(fila => {
+          const diff = fila.venta - fila.costo
+          return (
+            <div key={fila.key} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center text-[11px] py-1">
+              <div className="min-w-0">
+                <p className="text-slate-300 truncate">{fila.label}</p>
+                {fila.detalle && <p className="text-[9px] text-slate-600 truncate">{fila.detalle}</p>}
+              </div>
+              <span className="text-amber-300 tabular-nums text-right">{formatQ(fila.costo)}</span>
+              <span className="text-blue-300 tabular-nums text-right">{formatQ(fila.venta)}</span>
+              <span className={cn('tabular-nums text-right font-semibold', diff >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                {formatQ(diff)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="px-5 py-2.5 border-t border-white/5 text-[10px] text-slate-500 flex justify-between">
+        <span>Venta sin impuestos</span>
+        <span className="tabular-nums text-slate-300">{formatQ(subtotal)}</span>
+      </div>
+    </div>
+  )
+}
+
 function NumInput({ label, value, onChange, onBlur, hint, accent }: {
   label: string; value: number; onChange: (v: number) => void
   onBlur?: (v: number) => void
@@ -2791,6 +3042,49 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = 
 
 // ── Líneas de cotización — formato idéntico a Odoo ───────────────────────────
 type LineaCot = { key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }
+type FilaComparativaLimpieza = { key: string; label: string; costo: number; venta: number; detalle?: string }
+
+function buildComparativaLimpieza(
+  il: InputsLimpieza,
+  res: ReturnType<typeof calcularLimpieza>,
+  lineasCobradas: LineaCot[],
+  extras: LineaExtra[],
+): FilaComparativaLimpieza[] {
+  const ventaDe = (key: string) => lineasCobradas.find(l => l.key === key)?.total ?? 0
+  const rows: FilaComparativaLimpieza[] = []
+  const push = (key: string, label: string, costo: number, venta: number, detalle?: string) => {
+    if (Math.abs(costo) < 0.005 && Math.abs(venta) < 0.005) return
+    rows.push({ key, label, costo, venta, detalle })
+  }
+
+  const tubosExtraccion = res.servicioTuberiaModo === 'instalacion' ? 0 : res.cantidadTuberiaServicio
+  const tubosInstalacion = res.servicioTuberiaModo === 'extraccion' ? 0 : res.cantidadTuberiaServicio
+  const subtipo = il.servicioSubtipo ?? 'basico'
+  const usaServicioBasico = subtipo === 'basico' || subtipo === 'completo'
+
+  if (usaServicioBasico) {
+    push('traslado-limp', 'Traslado', res.costoTraslado, ventaDe('traslado-limp'), `${res.kmIdaVuelta.toFixed(1)} km`)
+    push('extraccion-tuberia-servicio', 'Extraccion tuberia', res.costoExtraccionTuberiaServicio, ventaDe('extraccion-tuberia-servicio'), `${tubosExtraccion} tubos`)
+    push('instalacion-tuberia-servicio', 'Instalacion tuberia', res.costoInstalacionTuberiaServicio, ventaDe('instalacion-tuberia-servicio'), `${tubosInstalacion} tubos`)
+    push('quimicos-limp', 'Quimicos', res.costoQuimicos, ventaDe('quimicos-limp'), `${il.canecasQuimicos} canecas`)
+    push('limpieza-horas', 'Limpieza mecanica', res.costoDieselTrabajo, ventaDe('limpieza-horas'), `${il.horasLimpieza} horas`)
+    push('material-instalacion-servicio', 'Material instalacion', res.costoMaterialInstalacionServicio, ventaDe('material-instalacion-servicio'))
+    push('tecnico-chequeo-servicio', 'Tecnico chequeo', res.costoTecnicoChequeoServicio, ventaDe('tecnico-chequeo-servicio'))
+    push('salarios-servicio', 'Salarios', res.costoPersonal, 0, `${res.personalServicio} personas`)
+    push('viaticos-servicio', 'Viaticos', res.costoViaticos, 0, `${res.diasTotales} dias`)
+    push('hospedaje-servicio', 'Hospedaje', res.costoHospedaje, 0, `${Math.max(0, res.diasTotales - 1)} noches`)
+    push('bonificaciones-servicio', 'Bonificaciones', res.costoBonificaciones, 0)
+  }
+  if (subtipo === 'completo') {
+    push('aforo-servicio', 'Aforo', res.costoAforo, ventaDe('aforo-servicio'), `${il.horasAforo ?? 0} horas`)
+    push('inspeccion-camara', 'Inspeccion camara', res.costoInspeccionCamara, ventaDe('inspeccion-camara'))
+  }
+  for (const extra of extras.filter(e => e.cobrar && e.cantidad > 0 && e.precioVentaUnitario > 0)) {
+    push(extra.id, extra.nombre || 'Linea libre', extra.cantidad * extra.costoUnitario, extra.cantidad * extra.precioVentaUnitario, 'Linea libre')
+  }
+  push('imprevistos-servicio', 'Imprevistos', res.imprevisto10pct, 0)
+  return rows
+}
 
 function buildLineasPerf(
   ip: InputsPerforacion,
@@ -2954,17 +3248,18 @@ function buildLineasPerf(
   return built.filter(l => l.total > 0)
 }
 
-function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimpieza>, pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS): LineaCot[] {
+function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimpieza>): LineaCot[] {
   const subtipo = il.servicioSubtipo ?? 'basico'
+  const usaServicioBasico = subtipo === 'basico' || subtipo === 'completo'
   const rows: LineaCot[] = []
 
-  if (res.costoTraslado > 0) {
+  if (usaServicioBasico && res.costoTraslado > 0) {
     rows.push({
       key: 'traslado-limp',
-      nombre: `Traslado de equipo de servicio (${res.kmIdaVuelta.toFixed(1)} km / 7 km gal)`,
+      nombre: `Traslado de maquina al lugar para servicio (${res.kmIdaVuelta.toFixed(1)} km / ${il.servicioTrasladoKmGalon ?? 20} km gal)`,
       unidad: 'Global',
       cant: 1,
-      precio: Math.round(res.costoTraslado),
+      precio: res.precioVentaTrasladoServicio,
       total: 0,
     })
   }
@@ -2972,25 +3267,27 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
   const diametroServicio = il.diametroTuberiaServicio && il.diametroTuberiaServicio !== 'Ninguna'
     ? `, diametro ${il.diametroTuberiaServicio}`
     : ''
+  const tubosExtraccion = res.servicioTuberiaModo === 'instalacion' ? 0 : res.cantidadTuberiaServicio
+  const tubosInstalacion = res.servicioTuberiaModo === 'extraccion' ? 0 : res.cantidadTuberiaServicio
 
-  if ((il.tubosExtraccion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+  if (usaServicioBasico && tubosExtraccion > 0 && res.precioVentaTuboExtraccionUnitario > 0) {
     rows.push({
       key: 'extraccion-tuberia-servicio',
       nombre: `Extraccion de tuberia de descarga y equipo sumergible${diametroServicio}`,
       unidad: 'Unidad',
-      cant: il.tubosExtraccion ?? 0,
-      precio: res.precioVentaTuboServicioUnitario,
+      cant: tubosExtraccion,
+      precio: res.precioVentaTuboExtraccionUnitario,
       total: 0,
     })
   }
 
-  if ((il.tubosInstalacion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+  if (usaServicioBasico && tubosInstalacion > 0 && res.precioVentaTuboInstalacionUnitario > 0) {
     rows.push({
       key: 'instalacion-tuberia-servicio',
       nombre: `Instalacion de tuberia de descarga y equipo sumergible${diametroServicio}`,
       unidad: 'Unidad',
-      cant: il.tubosInstalacion ?? 0,
-      precio: res.precioVentaTuboServicioUnitario,
+      cant: tubosInstalacion,
+      precio: res.precioVentaTuboInstalacionUnitario,
       total: 0,
     })
   }
@@ -3012,12 +3309,12 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
       nombre: 'Canecas de aditivo para limpieza',
       unidad: 'Caneca',
       cant: il.canecasQuimicos,
-      precio: Math.round(il.precioQuimicoCaneca * (il.markupQuimicos ?? 1.5)),
+      precio: res.precioVentaQuimicoCaneca,
       total: 0,
     })
   }
 
-  if (subtipo !== 'item' && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
+  if (usaServicioBasico && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
     rows.push({
       key: 'material-instalacion-servicio',
       nombre: 'Material de instalacion y mano de obra',
@@ -3028,7 +3325,7 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
     })
   }
 
-  if (subtipo !== 'item' && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
+  if (usaServicioBasico && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
     rows.push({
       key: 'tecnico-chequeo-servicio',
       nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
@@ -3039,7 +3336,7 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
     })
   }
 
-  if ((subtipo === 'aforo' || subtipo === 'completo') && (il.horasAforo ?? 0) > 0) {
+  if (subtipo === 'completo' && (il.horasAforo ?? 0) > 0) {
     const horas = il.horasAforo ?? 0
     const totalAforo = il.precioVentaAforoTotal ?? 23000
     rows.push({
@@ -3052,13 +3349,13 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
     })
   }
 
-  if (subtipo === 'completo' && il.inspeccionCamara && (il.precioInspeccionCamara ?? 0) > 0) {
+  if (subtipo === 'completo' && il.inspeccionCamara && res.precioVentaCamara > 0) {
     rows.push({
       key: 'inspeccion-camara',
       nombre: 'Inspeccion con camara',
       unidad: 'Global',
       cant: 1,
-      precio: il.precioInspeccionCamara ?? 0,
+      precio: res.precioVentaCamara,
       total: 0,
     })
   }
@@ -3066,16 +3363,6 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
   return rows
     .map(l => ({ ...l, total: l.cant * l.precio }))
     .filter(l => l.total > 0)
-
-  return [
-    { key: 'traslado-limp',    nombre: 'Traslado de equipo de limpieza',               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 1.2) },
-    { key: 'instalacion-limp', nombre: 'Instalación de equipo de limpieza',            unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
-    { key: 'limpieza-horas',   nombre: `Limpieza mecánica de pozo (${il.horasLimpieza} horas)`, unidad: 'Hora', cant: il.horasLimpieza, precio: il.precioVentaHora },
-    { key: 'quimicos-limp',    nombre: 'Químicos y aditivos de limpieza',              unidad: 'Global', cant: 1,               precio: Math.round(res.costoQuimicos * (il.markupQuimicos ?? 1.5)) },
-    { key: 'desarro-limp',     nombre: 'Desarrollo y limpieza final de pozo',          unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpiezaFinal },
-    { key: 'analisis-limp',    nombre: 'Análisis físico-químico del agua',             unidad: 'Unidad', cant: 1,               precio: pl.analisisFisicoQuimico },
-    { key: 'desinstal-limp',   nombre: 'Desinstalación y retiro de equipo',            unidad: 'Global', cant: 1,               precio: pl.desinstalacion },
-  ].map(l => ({ ...l, total: l.cant * l.precio }))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3555,15 +3842,21 @@ function CondicionesPerfEditor({
 function LineasExtrasEditor({
   extras,
   setExtras,
+  rubroActivo,
 }: {
   extras: LineaExtra[]
   setExtras: React.Dispatch<React.SetStateAction<LineaExtra[]>>
+  rubroActivo?: string
 }) {
   const UNIDADES = ['Unidad', 'Global', 'Pie', 'Hora', 'Saco', 'MT3', 'Kg', 'Día']
+  const extrasVisibles = rubroActivo
+    ? extras.filter(e => (e.rubro ?? 'item') === rubroActivo)
+    : extras
 
   function agregar() {
     const nuevo: LineaExtra = {
       id: `extra-${Date.now()}`,
+      rubro: rubroActivo,
       nombre: 'Ítem nuevo',
       descripcion: '',
       unidad: 'Unidad',
@@ -3590,7 +3883,7 @@ function LineasExtrasEditor({
     patch(id, 'precioVentaUnitario', venta)
   }
 
-  const sumaVenta = extras.filter(e => e.cobrar).reduce((a, e) => a + e.cantidad * e.precioVentaUnitario, 0)
+  const sumaVenta = extrasVisibles.filter(e => e.cobrar).reduce((a, e) => a + e.cantidad * e.precioVentaUnitario, 0)
 
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
@@ -3598,11 +3891,11 @@ function LineasExtrasEditor({
         <div className="flex items-center gap-2">
           <Plus className="w-4 h-4 text-emerald-400" />
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            Líneas Libres
+            {rubroActivo ? `Líneas ${rubroActivo}` : 'Líneas Libres'}
           </p>
-          {extras.length > 0 && (
+          {extrasVisibles.length > 0 && (
             <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 rounded">
-              {extras.length} · {formatQ(sumaVenta)}
+              {extrasVisibles.length} · {formatQ(sumaVenta)}
             </span>
           )}
         </div>
@@ -3614,9 +3907,9 @@ function LineasExtrasEditor({
         </button>
       </div>
 
-      {extras.length > 0 && (
+      {extrasVisibles.length > 0 && (
         <div className="px-5 pb-5 border-t border-white/5 pt-3 space-y-3">
-          {extras.map(e => {
+          {extrasVisibles.map(e => {
             const markup = markupDe(e)
             const totalVenta = e.cantidad * e.precioVentaUnitario
             const utilidad = (e.precioVentaUnitario - e.costoUnitario) * e.cantidad

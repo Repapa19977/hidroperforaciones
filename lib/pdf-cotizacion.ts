@@ -182,19 +182,19 @@ export function buildLineasPerf(
 
 function buildLineasLimp(
   il: InputsLimpieza,
-  res: ReturnType<typeof calcularLimpieza>,
-  pl: PreciosLineas = DEFAULT_PRECIOS_LINEAS
+  res: ReturnType<typeof calcularLimpieza>
 ) {
   const subtipo = il.servicioSubtipo ?? 'basico'
+  const usaServicioBasico = subtipo === 'basico' || subtipo === 'completo'
   const rows: Array<{ key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }> = []
 
-  if (res.costoTraslado > 0) {
+  if (usaServicioBasico && res.costoTraslado > 0) {
     rows.push({
       key: 'traslado-limp',
-      nombre: `Traslado de equipo de servicio (${res.kmIdaVuelta.toFixed(1)} km / 7 km gal)`,
+      nombre: `Traslado de maquina al lugar para servicio (${res.kmIdaVuelta.toFixed(1)} km / ${il.servicioTrasladoKmGalon ?? 20} km gal)`,
       unidad: 'Global',
       cant: 1,
-      precio: Math.round(res.costoTraslado),
+      precio: res.precioVentaTrasladoServicio,
       total: 0,
     })
   }
@@ -202,25 +202,27 @@ function buildLineasLimp(
   const diametroServicio = il.diametroTuberiaServicio && il.diametroTuberiaServicio !== 'Ninguna'
     ? `, diametro ${il.diametroTuberiaServicio}`
     : ''
+  const tubosExtraccion = res.servicioTuberiaModo === 'instalacion' ? 0 : res.cantidadTuberiaServicio
+  const tubosInstalacion = res.servicioTuberiaModo === 'extraccion' ? 0 : res.cantidadTuberiaServicio
 
-  if ((il.tubosExtraccion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+  if (usaServicioBasico && tubosExtraccion > 0 && res.precioVentaTuboExtraccionUnitario > 0) {
     rows.push({
       key: 'extraccion-tuberia-servicio',
       nombre: `Extraccion de tuberia de descarga y equipo sumergible${diametroServicio}`,
       unidad: 'Unidad',
-      cant: il.tubosExtraccion ?? 0,
-      precio: res.precioVentaTuboServicioUnitario,
+      cant: tubosExtraccion,
+      precio: res.precioVentaTuboExtraccionUnitario,
       total: 0,
     })
   }
 
-  if ((il.tubosInstalacion ?? 0) > 0 && res.precioVentaTuboServicioUnitario > 0) {
+  if (usaServicioBasico && tubosInstalacion > 0 && res.precioVentaTuboInstalacionUnitario > 0) {
     rows.push({
       key: 'instalacion-tuberia-servicio',
       nombre: `Instalacion de tuberia de descarga y equipo sumergible${diametroServicio}`,
       unidad: 'Unidad',
-      cant: il.tubosInstalacion ?? 0,
-      precio: res.precioVentaTuboServicioUnitario,
+      cant: tubosInstalacion,
+      precio: res.precioVentaTuboInstalacionUnitario,
       total: 0,
     })
   }
@@ -242,12 +244,12 @@ function buildLineasLimp(
       nombre: 'Canecas de aditivo para limpieza',
       unidad: 'Caneca',
       cant: il.canecasQuimicos,
-      precio: Math.round(il.precioQuimicoCaneca * (il.markupQuimicos ?? 1.5)),
+      precio: res.precioVentaQuimicoCaneca,
       total: 0,
     })
   }
 
-  if (subtipo !== 'item' && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
+  if (usaServicioBasico && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
     rows.push({
       key: 'material-instalacion-servicio',
       nombre: 'Material de instalacion y mano de obra',
@@ -258,7 +260,7 @@ function buildLineasLimp(
     })
   }
 
-  if (subtipo !== 'item' && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
+  if (usaServicioBasico && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
     rows.push({
       key: 'tecnico-chequeo-servicio',
       nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
@@ -269,7 +271,7 @@ function buildLineasLimp(
     })
   }
 
-  if ((subtipo === 'aforo' || subtipo === 'completo') && (il.horasAforo ?? 0) > 0) {
+  if (subtipo === 'completo' && (il.horasAforo ?? 0) > 0) {
     const horas = il.horasAforo ?? 0
     const totalAforo = il.precioVentaAforoTotal ?? 23000
     rows.push({
@@ -282,13 +284,13 @@ function buildLineasLimp(
     })
   }
 
-  if (subtipo === 'completo' && il.inspeccionCamara && (il.precioInspeccionCamara ?? 0) > 0) {
+  if (subtipo === 'completo' && il.inspeccionCamara && res.precioVentaCamara > 0) {
     rows.push({
       key: 'inspeccion-camara',
       nombre: 'Inspeccion con camara',
       unidad: 'Global',
       cant: 1,
-      precio: il.precioInspeccionCamara ?? 0,
+      precio: res.precioVentaCamara,
       total: 0,
     })
   }
@@ -296,16 +298,6 @@ function buildLineasLimp(
   return rows
     .map(r => ({ ...r, total: r.cant * r.precio }))
     .filter(r => r.total > 0)
-
-  return [
-    { key: 'traslado-limp',    nombre: 'Traslado de equipo de limpieza',               unidad: 'Global', cant: 1,               precio: Math.round(res.costoTraslado * 1.2) },
-    { key: 'instalacion-limp', nombre: 'Instalación de equipo de limpieza',            unidad: 'Global', cant: 1,               precio: pl.instalacionEquipo },
-    { key: 'limpieza-horas',   nombre: `Limpieza mecánica de pozo (${il.horasLimpieza} horas)`, unidad: 'Hora', cant: il.horasLimpieza, precio: il.precioVentaHora },
-    { key: 'quimicos-limp',    nombre: 'Químicos y aditivos de limpieza',              unidad: 'Global', cant: 1,               precio: Math.round(res.costoQuimicos * (il.markupQuimicos ?? 1.5)) },
-    { key: 'desarro-limp',     nombre: 'Desarrollo y limpieza final de pozo',          unidad: 'Global', cant: 1,               precio: pl.desarrolloLimpiezaFinal },
-    { key: 'analisis-limp',    nombre: 'Análisis físico-químico del agua',             unidad: 'Unidad', cant: 1,               precio: pl.analisisFisicoQuimico },
-    { key: 'desinstal-limp',   nombre: 'Desinstalación y retiro de equipo',            unidad: 'Global', cant: 1,               precio: pl.desinstalacion },
-  ].map(r => ({ ...r, total: r.cant * r.precio }))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -468,7 +460,7 @@ export async function generarPDF(
   const lineasBase: LineaBase[] = data.tipo === 'perforacion' && ip && resPerf
     ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, opcionesVenta)
     : il && resLimp
-      ? buildLineasLimp(il, resLimp, pl)
+      ? buildLineasLimp(il, resLimp)
       : []
 
   // Líneas extras (custom) agregadas por el usuario — se suman al final de la tabla

@@ -4,7 +4,9 @@ import { Fragment, useEffect, useState, useId } from 'react'
 import Link from 'next/link'
 import {
   getRol, setRol, verificarPinSuperAdmin,
-  DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type Rol
+  DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, DEFAULT_SERVICIO_COTIZACION,
+  normalizeAppConfig,
+  type AppConfig, type PreciosLineas, type Rol, type ServicioCotizacionConfig, type ServicioTuberiaRegla
 } from '@/lib/config-store'
 import { COSTOS_BASE, calcMarkupPct, calcVentaDesdeMarkup } from '@/lib/costos-base'
 import { CATALOGO_TUBERIA, tuberiaKey } from '@/lib/calculator'
@@ -130,7 +132,7 @@ export default function ConfiguracionPage() {
     setRolState(getRol())
     fetch('/api/config', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : DEFAULT_CONFIG)
-      .then(cfg => setConfig({ ...DEFAULT_CONFIG, ...cfg }))
+      .then(cfg => setConfig(normalizeAppConfig(cfg)))
   }, [])
 
   // Cargar usuarios cuando es superadmin
@@ -179,6 +181,27 @@ export default function ConfiguracionPage() {
       ...prev,
       preciosLineas: { ...(prev.preciosLineas ?? DEFAULT_PRECIOS_LINEAS), [key]: val },
     }))
+  }
+
+  function patchServicio<K extends keyof ServicioCotizacionConfig>(key: K, val: ServicioCotizacionConfig[K]) {
+    setConfig(prev => ({
+      ...prev,
+      servicioCotizacion: {
+        ...(prev.servicioCotizacion ?? DEFAULT_SERVICIO_COTIZACION),
+        [key]: val,
+      },
+    }))
+  }
+
+  function patchServicioTuberia(index: number, key: keyof ServicioTuberiaRegla, val: number) {
+    setConfig(prev => {
+      const base = prev.servicioCotizacion ?? DEFAULT_SERVICIO_COTIZACION
+      const tabla = [...(base.tablaTuberia ?? DEFAULT_SERVICIO_COTIZACION.tablaTuberia)]
+      const actual = tabla[index]
+      if (!actual) return prev
+      tabla[index] = { ...actual, [key]: val }
+      return { ...prev, servicioCotizacion: { ...base, tablaTuberia: tabla } }
+    })
   }
 
   function patchCostoRubro(rubroKey: string, val: number) {
@@ -401,7 +424,7 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-[800px]">
+    <div className="p-4 sm:p-6 space-y-6 max-w-[1100px]">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -514,9 +537,9 @@ export default function ConfiguracionPage() {
       </Section>
 
       {/* PRECIOS DE VENTA */}
-      <Section title="Precios de Venta Base" icon={<DollarSign className="w-4 h-4" />} locked={!isSuperAdmin}>
+      <Section title="Cotización de Perforación - Precios Base" icon={<DollarSign className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Estos son los precios mínimos de referencia. El Admin <strong className="text-slate-300">no puede</strong> modificarlos al crear una cotización.
+          Precios mínimos de referencia para perforación de pozo. No afectan la cotización de servicio.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <ConfigInput
@@ -528,22 +551,13 @@ export default function ConfiguracionPage() {
             hint="Precio de venta al cliente (sin IVA)"
             accent
           />
-          <ConfigInput
-            label="Precio por hora - Limpieza"
-            value={config.precioVentaHoraBase}
-            onChange={v => patch('precioVentaHoraBase', v)}
-            unit="Q/hora"
-            locked={!isSuperAdmin}
-            hint="Precio de venta al cliente (sin IVA)"
-            accent
-          />
         </div>
       </Section>
 
       {/* COSTOS OPERATIVOS */}
-      <Section title="Costos Operativos" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
+      <Section title="Cotización de Perforación - Costos Operativos" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
-          Costos fijos de operación. Basados en los Excel reales de la empresa.
+          Costos fijos de perforación. Esta sección no mueve las fórmulas de limpieza mecánica.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <ConfigInput label="Maquinaria/día" value={config.costomaquinariaDia} onChange={v => patch('costomaquinariaDia', v)} unit="Q/día" locked={!isSuperAdmin} />
@@ -553,14 +567,6 @@ export default function ConfiguracionPage() {
           <ConfigInput label="Aforo base" value={config.costoAforoBase} onChange={v => patch('costoAforoBase', v)} unit="Q" locked={!isSuperAdmin} />
           <ConfigInput label="Grava (total)" value={config.costoGravaDefault} onChange={v => patch('costoGravaDefault', v)} unit="Q" locked={!isSuperAdmin} />
           <ConfigInput label="Comisión vendedor" value={config.comisionVendedorPct} onChange={v => patch('comisionVendedorPct', v)} unit="%" locked={!isSuperAdmin} />
-          <ConfigInput
-            label="Markup Químicos - Limpieza"
-            value={config.markupQuimicosLimpieza}
-            onChange={v => patch('markupQuimicosLimpieza', v)}
-            unit="×"
-            locked={!isSuperAdmin}
-            hint="Multiplicador sobre costo de químicos (1.5 = +50%)"
-          />
           <ConfigInput
             label="Pipa agua - Costo"
             value={config.pipaCostoUnitario}
@@ -606,6 +612,55 @@ export default function ConfiguracionPage() {
         </div>
       </Section>
 
+      {/* COTIZACION DE SERVICIO */}
+      <Section title="Cotización de Servicio - Limpieza Mecánica" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
+        <p className="text-xs text-slate-500 mb-4">
+          Precios y consumos usados solo por el cotizador de servicios. No afectan perforación de pozo.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-5">
+          <ConfigInput label="Diésel servicio" value={config.servicioCotizacion.dieselGalon} onChange={v => patchServicio('dieselGalon', v)} unit="Q/gal" locked={!isSuperAdmin} />
+          <ConfigInput label="Traslado consumo" value={config.servicioCotizacion.trasladoKmPorGalon} onChange={v => patchServicio('trasladoKmPorGalon', v)} unit="km/gal" locked={!isSuperAdmin} hint="Excel final: maquina servicio 10T" />
+          <ConfigInput label="Traslado venta cliente" value={config.servicioCotizacion.trasladoPrecioVenta} onChange={v => patchServicio('trasladoPrecioVenta', v)} unit="Q" locked={!isSuperAdmin} accent />
+          <ConfigInput label="Limpieza venta/hora" value={config.servicioCotizacion.precioLimpiezaHora} onChange={v => patchServicio('precioLimpiezaHora', v)} unit="Q/h" locked={!isSuperAdmin} accent />
+          <ConfigInput label="Limpieza consumo" value={config.servicioCotizacion.consumoLimpiezaGalHora} onChange={v => patchServicio('consumoLimpiezaGalHora', v)} unit="gal/h" locked={!isSuperAdmin} />
+          <ConfigInput label="Extracción/instalación consumo" value={config.servicioCotizacion.consumoExtraccionInstalacionGalHora} onChange={v => patchServicio('consumoExtraccionInstalacionGalHora', v)} unit="gal/h" locked={!isSuperAdmin} />
+          <ConfigInput label="Costo químico/caneca" value={config.servicioCotizacion.costoQuimicoCaneca} onChange={v => patchServicio('costoQuimicoCaneca', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Venta químico/caneca" value={config.servicioCotizacion.precioVentaQuimicoCaneca} onChange={v => patchServicio('precioVentaQuimicoCaneca', v)} unit="Q" locked={!isSuperAdmin} accent />
+          <ConfigInput label="Horas por día" value={config.servicioCotizacion.horasDiaLimpieza} onChange={v => patchServicio('horasDiaLimpieza', v)} unit="h" locked={!isSuperAdmin} />
+          <ConfigInput label="Personal base" value={config.servicioCotizacion.personalServicio} onChange={v => patchServicio('personalServicio', v)} unit="personas" locked={!isSuperAdmin} />
+          <ConfigInput label="Material instalación venta" value={config.servicioCotizacion.materialInstalacionPrecio} onChange={v => patchServicio('materialInstalacionPrecio', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Material instalación costo" value={config.servicioCotizacion.materialInstalacionCosto} onChange={v => patchServicio('materialInstalacionCosto', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Técnico chequeo venta" value={config.servicioCotizacion.tecnicoChequeoPrecio} onChange={v => patchServicio('tecnicoChequeoPrecio', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Técnico chequeo costo" value={config.servicioCotizacion.tecnicoChequeoCosto} onChange={v => patchServicio('tecnicoChequeoCosto', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Camareo venta" value={config.servicioCotizacion.camaraInspeccionPrecio} onChange={v => patchServicio('camaraInspeccionPrecio', v)} unit="Q" locked={!isSuperAdmin} accent />
+          <ConfigInput label="Camareo costo" value={config.servicioCotizacion.camaraInspeccionCosto} onChange={v => patchServicio('camaraInspeccionCosto', v)} unit="Q" locked={!isSuperAdmin} />
+        </div>
+
+        <div className="hidden lg:grid grid-cols-[90px_repeat(5,1fr)] gap-3 px-3 pb-2 text-[10px] uppercase tracking-wider text-slate-600 font-semibold">
+          <div>Diámetro</div>
+          <div>Venta extracción</div>
+          <div>Tubos/h extracción</div>
+          <div>Venta instalación</div>
+          <div>Tubos/h instalación</div>
+          <div>Personal</div>
+        </div>
+        <div className="space-y-2">
+          {(config.servicioCotizacion.tablaTuberia ?? DEFAULT_SERVICIO_COTIZACION.tablaTuberia).map((regla, idx) => (
+            <div key={`${regla.diametro}-${idx}`} className="grid grid-cols-1 lg:grid-cols-[90px_repeat(5,1fr)] gap-3 rounded-lg border border-white/5 bg-white/3 px-3 py-2.5">
+              <div className="flex items-center">
+                <span className="text-sm font-semibold text-slate-200 tabular-nums">{regla.diametro}&quot;</span>
+              </div>
+              <MiniNumber value={regla.precioExtraccion} onChange={v => patchServicioTuberia(idx, 'precioExtraccion', v)} disabled={!isSuperAdmin} prefix="Q" />
+              <MiniNumber value={regla.tubosHoraExtraccion} onChange={v => patchServicioTuberia(idx, 'tubosHoraExtraccion', v)} disabled={!isSuperAdmin} suffix="t/h" />
+              <MiniNumber value={regla.precioInstalacion} onChange={v => patchServicioTuberia(idx, 'precioInstalacion', v)} disabled={!isSuperAdmin} prefix="Q" />
+              <MiniNumber value={regla.tubosHoraInstalacion} onChange={v => patchServicioTuberia(idx, 'tubosHoraInstalacion', v)} disabled={!isSuperAdmin} suffix="t/h" />
+              <MiniNumber value={regla.personal} onChange={v => patchServicioTuberia(idx, 'personal', v)} disabled={!isSuperAdmin} suffix="pers" />
+            </div>
+          ))}
+        </div>
+      </Section>
+
       {/* HORAS ADVERSAS - fórmula del jefe */}
       <Section title="Horas Adversas" icon={<Percent className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
@@ -648,7 +703,7 @@ export default function ConfiguracionPage() {
       </Section>
 
       {/* CATALOGO DE TUBERIAS - costo interno + % markup + precio cliente (sincronizados) */}
-      <Section title="Catálogo de Tuberías" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
+      <Section title="Cotización de Perforación - Catálogo de Tuberías" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-2">
           Tres campos sincronizados por tubo (sin IVA): <b className="text-slate-300">costo interno</b> nuestro, luego <b className="text-slate-300">%</b> markup (default 30), luego <b className="text-slate-300">precio cliente</b>.
         </p>
@@ -827,7 +882,7 @@ export default function ConfiguracionPage() {
               const r2 = await fetch('/api/config', { cache: 'no-store' })
               if (r2.ok) {
                 const actualizado = await r2.json()
-                setConfig({ ...DEFAULT_CONFIG, ...actualizado })
+                setConfig(normalizeAppConfig(actualizado))
               }
             } catch (err) {
               // Revertir + alertar
@@ -1949,6 +2004,33 @@ function ConfigInput({ label, value, onChange, unit, locked, hint, accent }: {
         {locked && <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-700" />}
       </div>
       {hint && <p id={hintId} className="text-[10px] text-slate-600 mt-1">{hint}</p>}
+    </div>
+  )
+}
+
+function MiniNumber({ value, onChange, disabled, prefix, suffix }: {
+  value: number
+  onChange: (v: number) => void
+  disabled: boolean
+  prefix?: string
+  suffix?: string
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {prefix && <span className="text-xs text-slate-500">{prefix}</span>}
+      <input
+        type="number"
+        step="0.01"
+        min={0}
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        className={cn(
+          'w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-sm text-white outline-none tabular-nums focus:border-violet-500/50',
+          disabled && 'opacity-40 cursor-not-allowed'
+        )}
+      />
+      {suffix && <span className="text-xs text-slate-500">{suffix}</span>}
     </div>
   )
 }

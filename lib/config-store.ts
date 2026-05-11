@@ -56,6 +56,65 @@ export const DEFAULT_PRECIOS_LINEAS: PreciosLineas = {
   analisisCombinado:       1500,  // Instrucción jefe 2026-04-20: análisis físico-químico unificado Q1500 venta (Q1000 costo interno)
 }
 
+export interface ServicioTuberiaRegla {
+  diametro: number
+  precioExtraccion: number
+  tubosHoraExtraccion: number
+  precioInstalacion: number
+  tubosHoraInstalacion: number
+  personal: number
+}
+
+export interface ServicioCotizacionConfig {
+  dieselGalon: number
+  trasladoKmPorGalon: number
+  trasladoPrecioVenta: number
+  consumoExtraccionInstalacionGalHora: number
+  consumoLimpiezaGalHora: number
+  precioLimpiezaHora: number
+  costoQuimicoCaneca: number
+  precioVentaQuimicoCaneca: number
+  horasDiaLimpieza: number
+  personalServicio: number
+  tablaTuberia: ServicioTuberiaRegla[]
+  materialInstalacionPrecio: number
+  materialInstalacionCosto: number
+  tecnicoChequeoPrecio: number
+  tecnicoChequeoCosto: number
+  camaraInspeccionPrecio: number
+  camaraInspeccionCosto: number
+}
+
+export const DEFAULT_SERVICIO_TUBERIA: ServicioTuberiaRegla[] = [
+  { diametro: 2,   precioExtraccion: 110, tubosHoraExtraccion: 8, precioInstalacion: 110, tubosHoraInstalacion: 8, personal: 2 },
+  { diametro: 2.5, precioExtraccion: 115, tubosHoraExtraccion: 8, precioInstalacion: 115, tubosHoraInstalacion: 8, personal: 2 },
+  { diametro: 3,   precioExtraccion: 120, tubosHoraExtraccion: 6, precioInstalacion: 120, tubosHoraInstalacion: 6, personal: 2 },
+  { diametro: 4,   precioExtraccion: 140, tubosHoraExtraccion: 5, precioInstalacion: 140, tubosHoraInstalacion: 5, personal: 2 },
+  { diametro: 6,   precioExtraccion: 180, tubosHoraExtraccion: 4, precioInstalacion: 180, tubosHoraInstalacion: 4, personal: 3 },
+  { diametro: 8,   precioExtraccion: 200, tubosHoraExtraccion: 3, precioInstalacion: 200, tubosHoraInstalacion: 3, personal: 3 },
+  { diametro: 10,  precioExtraccion: 220, tubosHoraExtraccion: 2, precioInstalacion: 220, tubosHoraInstalacion: 2, personal: 3 },
+]
+
+export const DEFAULT_SERVICIO_COTIZACION: ServicioCotizacionConfig = {
+  dieselGalon: 30,
+  trasladoKmPorGalon: 20,
+  trasladoPrecioVenta: 1800,
+  consumoExtraccionInstalacionGalHora: 2.5,
+  consumoLimpiezaGalHora: 3,
+  precioLimpiezaHora: 375,
+  costoQuimicoCaneca: 700,
+  precioVentaQuimicoCaneca: 1400,
+  horasDiaLimpieza: 10,
+  personalServicio: 2,
+  tablaTuberia: DEFAULT_SERVICIO_TUBERIA,
+  materialInstalacionPrecio: 1500,
+  materialInstalacionCosto: 700,
+  tecnicoChequeoPrecio: 2500,
+  tecnicoChequeoCosto: 0,
+  camaraInspeccionPrecio: 8000,
+  camaraInspeccionCosto: 4500,
+}
+
 export interface AppConfig {
   // ── Impuestos ─────────────────────────────────────────────────────
   iva: number              // 0.12  (12% — IVA Guatemala)
@@ -64,6 +123,8 @@ export interface AppConfig {
   // ── Precios de venta base ─────────────────────────────────────────
   precioPorPieBase: number       // Q/pie perforación (ej: 700)
   precioVentaHoraBase: number    // Q/hora limpieza   (ej: 375)
+  servicioCotizacion: ServicioCotizacionConfig
+  servicioCotizacionConfigVersion?: number
 
   // ── Costos operativos fijos ───────────────────────────────────────
   costomaquinariaDia: number     // Q4,000
@@ -141,7 +202,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   iva: 0.12,
   isr: 0.05,
   precioPorPieBase: 700,
-  precioVentaHoraBase: 400,
+  precioVentaHoraBase: 375,
+  servicioCotizacion: DEFAULT_SERVICIO_COTIZACION,
+  servicioCotizacionConfigVersion: 2,
   costomaquinariaDia: 0,       // Excel reunión: Q 0 (editable — margen reservado)
   costoDieselDia: 2300,        // Excel reunión: Q 2,300/día
   bonificacionPorPie: 15,      // Excel reunión: Q 15/pie
@@ -176,9 +239,43 @@ export const DEFAULT_CONFIG: AppConfig = {
 }
 
 export const HORAS_ADVERSAS_CONFIG_VERSION = 2
+export const SERVICIO_COTIZACION_CONFIG_VERSION = 2
 
 export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
   const cfg: AppConfig = { ...DEFAULT_CONFIG, ...(raw ?? {}) }
+  cfg.preciosLineas = { ...DEFAULT_PRECIOS_LINEAS, ...(raw?.preciosLineas ?? {}) }
+  const rawServicio = raw?.servicioCotizacion
+  cfg.servicioCotizacion = {
+    ...DEFAULT_SERVICIO_COTIZACION,
+    ...(rawServicio ?? {}),
+    tablaTuberia: Array.isArray(rawServicio?.tablaTuberia) && rawServicio.tablaTuberia.length > 0
+      ? rawServicio.tablaTuberia.map((r, idx) => {
+          const fallback = DEFAULT_SERVICIO_TUBERIA[idx] ?? DEFAULT_SERVICIO_TUBERIA[0]
+          return {
+            diametro: Number(r.diametro) || fallback.diametro,
+            precioExtraccion: Number(r.precioExtraccion) || 0,
+            tubosHoraExtraccion: Number(r.tubosHoraExtraccion) || fallback.tubosHoraExtraccion,
+            precioInstalacion: Number(r.precioInstalacion) || 0,
+            tubosHoraInstalacion: Number(r.tubosHoraInstalacion) || fallback.tubosHoraInstalacion,
+            personal: (Number(r.diametro) || fallback.diametro) >= 6 ? 3 : 2,
+          }
+        })
+      : DEFAULT_SERVICIO_TUBERIA,
+  }
+  const rawServicioVersion = Number(raw?.servicioCotizacionConfigVersion ?? 0)
+  if (rawServicioVersion < SERVICIO_COTIZACION_CONFIG_VERSION) {
+    cfg.servicioCotizacion = {
+      ...cfg.servicioCotizacion,
+      precioVentaQuimicoCaneca: DEFAULT_SERVICIO_COTIZACION.precioVentaQuimicoCaneca,
+      materialInstalacionPrecio: DEFAULT_SERVICIO_COTIZACION.materialInstalacionPrecio,
+      materialInstalacionCosto: DEFAULT_SERVICIO_COTIZACION.materialInstalacionCosto,
+      tecnicoChequeoPrecio: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoPrecio,
+      tecnicoChequeoCosto: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoCosto,
+      camaraInspeccionPrecio: DEFAULT_SERVICIO_COTIZACION.camaraInspeccionPrecio,
+      camaraInspeccionCosto: DEFAULT_SERVICIO_COTIZACION.camaraInspeccionCosto,
+    }
+  }
+  cfg.servicioCotizacionConfigVersion = SERVICIO_COTIZACION_CONFIG_VERSION
   const rawVersion = Number(raw?.horasAdversasConfigVersion ?? 0)
 
   // Migracion suave: configs guardadas antes de v2 traian 10h como default.
@@ -248,4 +345,17 @@ export const CAMPOS_SOLO_SUPERADMIN_LIMP: (string)[] = [
   'hospedajeDiario',
   'precioDiesel',
   'precioQuimicoCaneca',
+  'precioVentaQuimicoCaneca',
+  'precioMaterialInstalacionServicio',
+  'costoMaterialInstalacionServicio',
+  'precioTecnicoChequeoServicio',
+  'costoTecnicoChequeoServicio',
+  'precioInspeccionCamara',
+  'costoInspeccionCamara',
+  'bonificacionDiaria',
+  'tiemposViaticosDia',
+  'servicioTrasladoKmGalon',
+  'servicioTrasladoPrecioVenta',
+  'servicioConsumoExtraccionInstalacionGalHora',
+  'servicioConsumoLimpiezaGalHora',
 ]

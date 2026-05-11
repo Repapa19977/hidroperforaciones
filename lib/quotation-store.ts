@@ -98,6 +98,7 @@ export interface CondicionExtraPerf {
 /** Línea libre / ítem custom agregado por el usuario a la cotización. */
 export interface LineaExtra {
   id: string                  // auto-generado
+  rubro?: string              // bloque/rubro del Excel: basico, equipamiento, aforo, libre
   nombre: string              // título corto
   descripcion?: string        // descripción extendida opcional (se concatena al nombre en el PDF)
   unidad: string              // Global, Unidad, Hora, Pie, etc.
