@@ -114,6 +114,7 @@ model Contacto {
   telefono     String   @default("")
   email        String   @default("")
   tipo         String   @default("cliente") // "cliente" | "prospecto" | "proveedor"
+  tipoPersona  String   @default("individual") // "individual" | "empresa"
   pais         String   @default("Guatemala")
   departamento String   @default("")
   municipio    String   @default("")
@@ -131,6 +132,7 @@ model Contacto {
 
   @@index([vendedor])
   @@index([tipo])
+  @@index([tipoPersona])
   @@index([eliminadoEn])
 }
 

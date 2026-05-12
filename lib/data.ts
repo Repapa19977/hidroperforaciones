@@ -33,6 +33,7 @@ export interface Contacto {
   nombre: string
   empresa: string
   tipo: 'cliente' | 'proveedor' | 'prospecto'
+  tipoPersona?: 'individual' | 'empresa'
   email: string
   telefono: string
   pais: string

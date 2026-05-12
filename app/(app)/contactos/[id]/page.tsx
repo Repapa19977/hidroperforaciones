@@ -12,6 +12,7 @@ import {
   ArrowLeft, Building2, Phone, Mail, MapPin, Briefcase, FileText,
   Plus, Edit3, Loader2, ClipboardList, Clock, Calendar, AlertCircle, ShieldCheck,
   TrendingUp, Activity, CheckCircle2, XCircle, Send, FileEdit, Award, Target,
+  UserRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AccesoClienteCard } from '@/components/acceso-cliente-card'
@@ -23,6 +24,7 @@ interface Contacto {
   telefono: string
   email: string
   tipo: string
+  tipoPersona?: 'individual' | 'empresa'
   pais: string
   departamento: string
   municipio: string
@@ -56,6 +58,14 @@ const TIPO_COLORS: Record<string, string> = {
   prospecto:  'bg-blue-500/20 text-blue-400 border-blue-500/30',
   proveedor:  'bg-amber-500/20 text-amber-400 border-amber-500/30',
 }
+
+const TIPO_PERSONA_LABELS: Record<'individual' | 'empresa', string> = {
+  individual: 'Persona individual',
+  empresa: 'Empresa',
+}
+
+const tipoPersonaContacto = (contacto: Contacto) =>
+  contacto.tipoPersona === 'empresa' || (!contacto.tipoPersona && contacto.empresa) ? 'empresa' : 'individual'
 
 const ESTADO_COLORS: Record<string, string> = {
   borrador:   'bg-slate-500/20 text-slate-400',
@@ -170,6 +180,7 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
 
   const iniciales = contacto.nombre.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
   const nuevaCotURL = `/cotizaciones/nueva?contactoId=${encodeURIComponent(contacto.id)}`
+  const tipoPersona = tipoPersonaContacto(contacto)
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-[1200px]">
@@ -196,6 +207,10 @@ export default function PerfilContactoPage({ params }: { params: Promise<{ id: s
               <span className={cn('text-[11px] px-2 py-0.5 rounded-full font-medium border capitalize',
                 TIPO_COLORS[contacto.tipo] ?? 'bg-slate-500/20 text-slate-400')}>
                 {contacto.tipo}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium border bg-white/5 text-slate-300 border-white/10">
+                {tipoPersona === 'empresa' ? <Building2 className="w-3 h-3" /> : <UserRound className="w-3 h-3" />}
+                {TIPO_PERSONA_LABELS[tipoPersona]}
               </span>
             </div>
             {contacto.empresa && (
