@@ -868,6 +868,8 @@ export interface InputsLimpieza {
   costoAnalisisAguaServicio?: number
   dobleTurno?: boolean
   inspeccionCamara?: boolean
+  incluirMedicionNivelServicio?: boolean
+  incluirAnalisisAguaServicio?: boolean
   precioGasolina?: number
   moneda?: 'Quetzal' | 'Dolar'
   tipoCambio?: number
@@ -1067,10 +1069,12 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const costoMaterialInstalacionServicio = usarLineasServicioBase ? Math.max(0, inp.costoMaterialInstalacionServicio ?? precioMaterialInstalacionServicio) : 0
   const precioTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.precioTecnicoChequeoServicio ?? 0) : 0
   const costoTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.costoTecnicoChequeoServicio ?? precioTecnicoChequeoServicio) : 0
-  const precioMedicionNivelServicio = usarLineasServicioBase ? Math.max(0, inp.precioMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio) : 0
-  const costoMedicionNivelServicio = usarLineasServicioBase ? Math.max(0, inp.costoMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelCosto) : 0
-  const precioAnalisisAguaServicio = usarLineasServicioBase ? Math.max(0, inp.precioAnalisisAguaServicio ?? DEFAULT_SERVICIO_COTIZACION.analisisAguaPrecio) : 0
-  const costoAnalisisAguaServicio = usarLineasServicioBase ? Math.max(0, inp.costoAnalisisAguaServicio ?? DEFAULT_SERVICIO_COTIZACION.analisisAguaCosto) : 0
+  const usarMedicionNivelServicio = usarLineasServicioBase && !!inp.incluirMedicionNivelServicio
+  const usarAnalisisAguaServicio = usarLineasServicioBase && !!inp.incluirAnalisisAguaServicio
+  const precioMedicionNivelServicio = usarMedicionNivelServicio ? Math.max(0, inp.precioMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio) : 0
+  const costoMedicionNivelServicio = usarMedicionNivelServicio ? Math.max(0, inp.costoMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelCosto) : 0
+  const precioAnalisisAguaServicio = usarAnalisisAguaServicio ? Math.max(0, inp.precioAnalisisAguaServicio ?? DEFAULT_SERVICIO_COTIZACION.analisisAguaPrecio) : 0
+  const costoAnalisisAguaServicio = usarAnalisisAguaServicio ? Math.max(0, inp.costoAnalisisAguaServicio ?? DEFAULT_SERVICIO_COTIZACION.analisisAguaCosto) : 0
   const costoPersonal  = personalServicio * inp.salarioMensual * diasTotales / 30
   const costoViaticos  = personalServicio * diasTotales * (inp.tiemposViaticosDia ?? 3) * inp.viaticosDiarios
   // Hospedaje: noches = díasTotales - 1 (Excel "LIMPIEZA MECANICA COSTO (3)": 2 pers × 5 noches × Q100 = Q1,000)
@@ -1272,6 +1276,8 @@ export const defaultInputsLimpieza: InputsLimpieza = {
   costoAnalisisAguaServicio: DEFAULT_SERVICIO_COTIZACION.analisisAguaCosto,
   dobleTurno: false,
   inspeccionCamara: false,
+  incluirMedicionNivelServicio: false,
+  incluirAnalisisAguaServicio: false,
   precioGasolina: 33,
   moneda: 'Quetzal',
   tipoCambio: 1,

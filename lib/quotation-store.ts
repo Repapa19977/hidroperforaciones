@@ -32,10 +32,16 @@ export interface QuotationData {
   cliente: string
   contactoId?: string | null  // FK al Contacto seleccionado — necesario para que el portal del cliente vea sus cotizaciones/proyectos
   empresa: string
+  tipoCliente?: 'individual' | 'empresa'
+  nombreComercial?: string
+  razonSocial?: string
   nit: string
   telefono: string
   email: string
   proyecto: string
+  departamento?: string
+  municipio?: string
+  aldea?: string
   direccion: string
   duracion: string
   vendedor: string
