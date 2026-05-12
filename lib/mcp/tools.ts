@@ -124,7 +124,7 @@ async function contactoByPhone(telefono: string) {
   // traemos candidatos y filtramos. El volumen de contactos es manejable (<10k).
   const candidates = await prisma.contacto.findMany({
     where: { eliminadoEn: null, telefono: { not: '' } },
-    select: { id: true, nombre: true, telefono: true, email: true, empresa: true },
+    select: { id: true, nombre: true, telefono: true, email: true, empresa: true, tipoPersona: true },
     take: 500,
   })
   return candidates.find(c => normalize(c.telefono) === target || normalize(c.telefono).endsWith(target)) ?? null
@@ -164,7 +164,7 @@ const buscarOportunidad: ToolDef = {
     const contacto = o.contactoId
       ? await prisma.contacto.findUnique({
           where: { id: o.contactoId },
-          select: { id: true, nombre: true, telefono: true, email: true, empresa: true },
+          select: { id: true, nombre: true, telefono: true, email: true, empresa: true, tipoPersona: true },
         })
       : null
 
@@ -179,6 +179,7 @@ const buscarOportunidad: ToolDef = {
       contacto_id: contacto?.id ?? null,
       contacto_telefono: contacto?.telefono ?? null,
       contacto_email: contacto?.email ?? null,
+      contacto_tipo_persona: contacto?.tipoPersona ?? null,
       asesor: o.vendedor,
       proyecto: o.proyecto,
       profundidad: o.profundidad,
@@ -311,7 +312,7 @@ const historialCliente: ToolDef = {
         eliminadoEn: null,
         nombre: { contains: nombre, mode: 'insensitive' },
       },
-      select: { id: true, nombre: true, telefono: true, email: true, empresa: true },
+      select: { id: true, nombre: true, telefono: true, email: true, empresa: true, tipoPersona: true },
       take: 10,
     })
     if (contactos.length === 0) return []
@@ -351,6 +352,7 @@ const historialCliente: ToolDef = {
         nombre: c.nombre,
         telefono: c.telefono,
         empresa: c.empresa,
+        tipo_persona: c.tipoPersona,
         proyectos_count: proyectos.filter(p => matchesContacto(p, c)).length,
         cotizaciones_count: cotizaciones.filter(q => matchesContacto(q, c)).length,
         ultima_interaccion: op?.createdAt.toISOString() ?? null,

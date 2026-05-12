@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Search, Plus, Building2, Phone, Mail, MapPin, Loader2,
-  X, Save, Trash2, ShieldCheck, Edit3, ChevronRight, Calendar
+  X, Save, Trash2, ShieldCheck, Edit3, ChevronRight, Calendar, UserRound
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,7 @@ interface Contacto {
   telefono: string
   email: string
   tipo: string
+  tipoPersona?: 'individual' | 'empresa'
   pais: string
   departamento: string
   municipio: string
@@ -41,6 +42,13 @@ const TIPO_COLORS: Record<string, string> = {
   proveedor:  'bg-amber-500/20 text-amber-400',
 }
 
+const TIPO_FILTER_LABELS: Record<'todos' | 'cliente' | 'prospecto' | 'proveedor', string> = {
+  todos: 'Todos',
+  cliente: 'Clientes',
+  prospecto: 'Prospectos',
+  proveedor: 'Proveedores',
+}
+
 const AVATAR_COLORS: Record<string, string> = {
   RD: 'from-blue-500 to-blue-700',
   GG: 'from-violet-500 to-purple-700',
@@ -48,9 +56,17 @@ const AVATAR_COLORS: Record<string, string> = {
   CS: 'from-cyan-500 to-teal-600',
 }
 
+const TIPO_PERSONA_LABELS: Record<'individual' | 'empresa', string> = {
+  individual: 'Individual',
+  empresa: 'Empresa',
+}
+
+const tipoPersonaContacto = (c: Pick<Contacto, 'tipoPersona' | 'empresa'>) =>
+  c.tipoPersona === 'empresa' || (!c.tipoPersona && c.empresa) ? 'empresa' : 'individual'
+
 const EMPTY: Omit<Contacto, 'id'> = {
   nombre: '', alias: '', empresa: '', telefono: '', email: '',
-  tipo: 'cliente', pais: 'Guatemala', departamento: '', municipio: '',
+  tipo: 'cliente', tipoPersona: 'individual', pais: 'Guatemala', departamento: '', municipio: '',
   proyectoNombre: '', notas: '', vendedor: '',
 }
 
@@ -59,6 +75,7 @@ export default function ContactosPage() {
   const [loading, setLoading]         = useState(true)
   const [search, setSearch]           = useState('')
   const [filterTipo, setFilterTipo]   = useState('todos')
+  const [filterPersona, setFilterPersona] = useState<'todos' | 'individual' | 'empresa'>('todos')
   const [filterVend, setFilterVend]   = useState('Todos')
   const [role, setRole]               = useState<Rol>('admin')
   const [myVendedor, setMyVendedor]   = useState('')
@@ -157,6 +174,7 @@ export default function ContactosPage() {
     const q = search.toLowerCase()
     if (search && !c.nombre.toLowerCase().includes(q) && !(c.empresa || '').toLowerCase().includes(q)) return false
     if (filterTipo !== 'todos' && c.tipo !== filterTipo) return false
+    if (filterPersona !== 'todos' && tipoPersonaContacto(c) !== filterPersona) return false
     if (isSuperAdmin && filterVend !== 'Todos' && c.vendedor !== filterVend) return false
     return true
   })
@@ -172,7 +190,7 @@ export default function ContactosPage() {
     setEditing(c)
     setSaveError('')
     setForm({ nombre: c.nombre, alias: c.alias ?? '', empresa: c.empresa, telefono: c.telefono, email: c.email,
-              tipo: c.tipo, pais: c.pais, departamento: c.departamento ?? '', municipio: c.municipio ?? '',
+              tipo: c.tipo, tipoPersona: tipoPersonaContacto(c), pais: c.pais, departamento: c.departamento ?? '', municipio: c.municipio ?? '',
               proyectoNombre: c.proyectoNombre ?? '',
               notas: c.notas, vendedor: c.vendedor })
     setShowForm(true)
@@ -281,9 +299,24 @@ export default function ContactosPage() {
               'px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all',
               filterTipo === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
             )}>
-            {t === 'todos' ? 'Todos' : t.charAt(0).toUpperCase() + t.slice(1) + 's'}
+            {TIPO_FILTER_LABELS[t]}
           </button>
         ))}
+        <div className="flex gap-1.5 border-l border-white/10 pl-3">
+          {([
+            ['todos', 'Todos'],
+            ['individual', 'Individuales'],
+            ['empresa', 'Empresas'],
+          ] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setFilterPersona(key)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                filterPersona === key ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              )}>
+              {label}
+            </button>
+          ))}
+        </div>
         {isSuperAdmin && (
           <div className="flex gap-1.5 ml-2 border-l border-white/10 pl-3">
             {vendedores.map(v => {
@@ -327,6 +360,7 @@ export default function ContactosPage() {
             const ini = c.nombre.split(' ').map(n => n[0]).join('').slice(0, 2)
             const avatarGrad = AVATAR_COLORS[c.vendedor.split(' ').map(n => n[0]).join('')] ?? 'from-blue-500 to-violet-600'
             const canEdit = isSuperAdmin || c.vendedor === myVendedor
+            const tipoPersona = tipoPersonaContacto(c)
 
             return (
               <Link key={c.id} href={`/contactos/${c.id}`}
@@ -342,6 +376,10 @@ export default function ContactosPage() {
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-medium', TIPO_COLORS[c.tipo] ?? 'bg-slate-500/20 text-slate-400')}>
                           {c.tipo}
+                        </span>
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-white/5 text-slate-400 border border-white/5">
+                          {tipoPersona === 'empresa' ? <Building2 className="w-2.5 h-2.5" /> : <UserRound className="w-2.5 h-2.5" />}
+                          {TIPO_PERSONA_LABELS[tipoPersona]}
                         </span>
                         {canEdit && (
                           <button
@@ -451,6 +489,27 @@ export default function ContactosPage() {
               <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-1 sm:col-span-2">
+                  <label className="text-xs text-slate-500 mb-1.5 block">Naturaleza del contacto</label>
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+                    {(['individual', 'empresa'] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, tipoPersona: t }))}
+                        className={cn(
+                          'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors',
+                          form.tipoPersona === t
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                            : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                        )}
+                      >
+                        {t === 'empresa' ? <Building2 className="w-3.5 h-3.5" /> : <UserRound className="w-3.5 h-3.5" />}
+                        {TIPO_PERSONA_LABELS[t]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="col-span-1 sm:col-span-2">
                   <FormInput
                     label="Nombre *"
                     value={form.nombre}
@@ -470,7 +529,7 @@ export default function ContactosPage() {
                 </div>
                 <FormInput label="Alias (opcional)" value={form.alias} onChange={v => p('alias', v)} placeholder="Don Luis, Doña Mari…" />
                 <FormInput
-                  label="Empresa"
+                  label={form.tipoPersona === 'empresa' ? 'Empresa / nombre comercial' : 'Empresa (opcional)'}
                   value={form.empresa}
                   onChange={v => p('empresa', v)}
                   placeholder="Empresa S.A."

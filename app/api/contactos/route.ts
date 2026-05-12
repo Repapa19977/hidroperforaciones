@@ -7,6 +7,9 @@ import {
   findContactoDuplicate,
 } from '@/lib/contactos-dedup'
 
+const normalizeTipoPersona = (value: unknown, empresa = '') =>
+  value === 'empresa' || (!value && empresa.trim()) ? 'empresa' : 'individual'
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
@@ -16,9 +19,11 @@ export async function GET(request: NextRequest) {
     ? auth.user.vendedor
     : searchParams.get('vendedor')
   const papelera = searchParams.get('papelera') === '1'
+  const tipoPersona = searchParams.get('tipoPersona')
 
   const where: Record<string, unknown> = { eliminadoEn: papelera ? { not: null } : null }
   if (vendedor) where.vendedor = vendedor
+  if (tipoPersona === 'individual' || tipoPersona === 'empresa') where.tipoPersona = tipoPersona
 
   const rows = await prisma.contacto.findMany({
     where,
@@ -38,6 +43,7 @@ export async function POST(request: NextRequest) {
   const empresa = (body.empresa ?? '').trim()
   const telefono = (body.telefono ?? '').trim()
   const email = (body.email ?? '').trim()
+  const tipoPersona = normalizeTipoPersona(body.tipoPersona, empresa)
 
   if (!nombre) {
     return NextResponse.json({ error: 'El nombre es obligatorio.' }, { status: 400 })
@@ -61,6 +67,7 @@ export async function POST(request: NextRequest) {
         telefono,
         email,
         tipo: body.tipo ?? 'cliente',
+        tipoPersona,
         pais: body.pais ?? 'Guatemala',
         departamento: body.departamento ?? '',
         municipio: body.municipio ?? '',

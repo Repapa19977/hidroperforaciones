@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth, requireSuperAdmin, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
+
 import {
   contactoDuplicateLockKey,
   contactoDuplicateMessage,
@@ -13,6 +14,9 @@ import {
 // GET /api/contactos/[id] → contacto + su expediente (cotizaciones y proyectos relacionados)
 // Match: 1) contactoId si está seteado (FK), 2) fallback por nombre/empresa (backwards compat).
 // Filtra soft-deleted por default (excepto si ?incluirEliminados=1).
+const normalizeTipoPersona = (value: unknown, empresa = '') =>
+  value === 'empresa' || (!value && empresa.trim()) ? 'empresa' : 'individual'
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
@@ -87,6 +91,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const empresa = (body.empresa ?? '').trim()
   const telefono = (body.telefono ?? '').trim()
   const email = (body.email ?? '').trim()
+  const tipoPersona = normalizeTipoPersona(body.tipoPersona, empresa)
 
   const result = await prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${contactoDuplicateLockKey({ nombre })})::bigint)`
@@ -109,6 +114,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         telefono,
         email,
         tipo:         body.tipo,
+        tipoPersona,
         pais:         body.pais,
         departamento: body.departamento ?? '',
         municipio:    body.municipio    ?? '',

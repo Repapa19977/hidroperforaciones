@@ -25,6 +25,9 @@ async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption
   return null
 }
 
+const normalizeTipoPersona = (value: unknown, empresa = '') =>
+  value === 'empresa' || value === 'juridica' || (!value && empresa.trim()) ? 'empresa' : 'individual'
+
 // Lee del JWT el rol y nombre del vendedor. Si el rol es admin, usamos ese
 // nombre para forzar la propiedad de la cotización (admin NO puede asignar
 // a otro vendedor aunque lo intente desde el body).
@@ -115,6 +118,10 @@ export async function POST(request: NextRequest) {
   const departamento:   string = (datosCotizacion.departamento ?? '') as string
   const municipio:      string = (datosCotizacion.municipio ?? '') as string
   const proyectoNombre: string = (datosCotizacion.proyecto ?? proyecto ?? '') as string
+  const tipoPersona = normalizeTipoPersona(
+    datosCotizacion.tipoPersona ?? datosCotizacion.tipoCliente,
+    empresa ?? '',
+  )
   if (cliente && telefono) {
     const contactoAutoId = await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${contactoDuplicateLockKey({ nombre: cliente })})::bigint)`
@@ -123,7 +130,8 @@ export async function POST(request: NextRequest) {
         where: { eliminadoEn: null },
         select: {
           id: true, nombre: true, empresa: true, telefono: true, email: true,
-          vendedor: true, createdAt: true, departamento: true, municipio: true, proyectoNombre: true,
+          vendedor: true, createdAt: true, departamento: true, municipio: true,
+          proyectoNombre: true, tipoPersona: true,
         },
       })
       const existing = findContactoDuplicate({ nombre: cliente, empresa, telefono, email }, candidatos)
@@ -136,6 +144,7 @@ export async function POST(request: NextRequest) {
         if (!existing.departamento && departamento)   parche.departamento   = departamento
         if (!existing.municipio    && municipio)      parche.municipio      = municipio
         if (!existing.proyectoNombre && proyectoNombre) parche.proyectoNombre = proyectoNombre
+        if (tipoPersona === 'empresa' && existing.tipoPersona !== 'empresa') parche.tipoPersona = 'empresa'
         if (Object.keys(parche).length > 0) {
           await tx.contacto.update({ where: { id: existing.id }, data: parche })
         }
@@ -148,6 +157,7 @@ export async function POST(request: NextRequest) {
           empresa: empresa ?? '',
           telefono,
           email,
+          tipoPersona,
           departamento,
           municipio,
           proyectoNombre,
