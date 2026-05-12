@@ -496,6 +496,11 @@
     will-change: transform;
     contain: layout paint;
   }
+
+  body.hidro-modal-open .mobile-bottom-nav,
+  body.hidro-modal-open .mobile-top-header {
+    display: none !important;
+  }
 }
 
 /* ── Page transition ───────────────────────────────────────────────── */

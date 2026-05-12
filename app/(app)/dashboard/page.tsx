@@ -264,12 +264,17 @@ export default function DashboardPage() {
   } | null>(null)
 
   const [refreshTick, setRefreshTick] = useState(0)
+  const [generatedAtLabel, setGeneratedAtLabel] = useState('')
 
   // Read auth cookies once
   useEffect(() => {
     const r = getCookie('user_role') as Rol || 'admin'
     const v = getCookie('user_vendedor') || ''
     setRole(r); setVendedor(v); setInit(true)
+  }, [])
+
+  useEffect(() => {
+    setGeneratedAtLabel(format(new Date(), "dd 'de' MMMM yyyy HH:mm", { locale: es }))
   }, [])
 
   // Auto-refresh: revalida cuando el tab vuelve a estar visible o recupera foco
@@ -551,7 +556,7 @@ export default function DashboardPage() {
       <div className="hidden print:block px-6 py-4 border-b border-slate-200">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard — Hidroperforaciones Guatemala</h1>
         <p className="text-slate-600 mt-1">Período: {periodLabel}</p>
-        <p className="text-slate-500 text-sm">Generado el {format(new Date(), "dd 'de' MMMM yyyy HH:mm", { locale: es })}</p>
+        <p className="text-slate-500 text-sm">{generatedAtLabel ? `Generado el ${generatedAtLabel}` : 'Generado el ...'}</p>
       </div>
 
       {/* ── CONTENT ─────────────────────────────────────────────────── */}

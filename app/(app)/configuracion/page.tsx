@@ -635,6 +635,10 @@ export default function ConfiguracionPage() {
           <ConfigInput label="Técnico chequeo costo" value={config.servicioCotizacion.tecnicoChequeoCosto} onChange={v => patchServicio('tecnicoChequeoCosto', v)} unit="Q" locked={!isSuperAdmin} />
           <ConfigInput label="Camareo venta" value={config.servicioCotizacion.camaraInspeccionPrecio} onChange={v => patchServicio('camaraInspeccionPrecio', v)} unit="Q" locked={!isSuperAdmin} accent />
           <ConfigInput label="Camareo costo" value={config.servicioCotizacion.camaraInspeccionCosto} onChange={v => patchServicio('camaraInspeccionCosto', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Medición nivel venta" value={config.servicioCotizacion.medicionNivelPrecio} onChange={v => patchServicio('medicionNivelPrecio', v)} unit="Q" locked={!isSuperAdmin} accent />
+          <ConfigInput label="Medición nivel costo" value={config.servicioCotizacion.medicionNivelCosto} onChange={v => patchServicio('medicionNivelCosto', v)} unit="Q" locked={!isSuperAdmin} />
+          <ConfigInput label="Análisis agua venta" value={config.servicioCotizacion.analisisAguaPrecio} onChange={v => patchServicio('analisisAguaPrecio', v)} unit="Q" locked={!isSuperAdmin} accent />
+          <ConfigInput label="Análisis agua costo" value={config.servicioCotizacion.analisisAguaCosto} onChange={v => patchServicio('analisisAguaCosto', v)} unit="Q" locked={!isSuperAdmin} />
         </div>
 
         <div className="hidden lg:grid grid-cols-[90px_repeat(5,1fr)] gap-3 px-3 pb-2 text-[10px] uppercase tracking-wider text-slate-600 font-semibold">

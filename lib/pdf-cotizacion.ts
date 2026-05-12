@@ -182,19 +182,25 @@ export function buildLineasPerf(
 
 function buildLineasLimp(
   il: InputsLimpieza,
-  res: ReturnType<typeof calcularLimpieza>
+  res: ReturnType<typeof calcularLimpieza>,
+  preciosVentaOverride: Record<string, number> = {},
 ) {
   const subtipo = il.servicioSubtipo ?? 'basico'
   const usaServicioBasico = subtipo === 'basico' || subtipo === 'completo'
+  const usaAforo = subtipo === 'aforo' || subtipo === 'completo'
   const rows: Array<{ key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }> = []
+  const precioDe = (key: string, fallback: number) => {
+    const override = preciosVentaOverride[key]
+    return typeof override === 'number' && Number.isFinite(override) ? Math.max(0, override) : Math.max(0, fallback)
+  }
 
-  if (usaServicioBasico && res.costoTraslado > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'traslado-limp',
-      nombre: `Traslado de maquina al lugar para servicio (${res.kmIdaVuelta.toFixed(1)} km / ${il.servicioTrasladoKmGalon ?? 20} km gal)`,
+      nombre: `Traslado de maquinaria al lugar del servicio (${res.kmIdaVuelta.toFixed(1)} km / ${il.servicioTrasladoKmGalon ?? 20} km gal)`,
       unidad: 'Global',
       cant: 1,
-      precio: res.precioVentaTrasladoServicio,
+      precio: precioDe('traslado-limp', res.precioVentaTrasladoServicio),
       total: 0,
     })
   }
@@ -205,99 +211,119 @@ function buildLineasLimp(
   const tubosExtraccion = res.servicioTuberiaModo === 'instalacion' ? 0 : res.cantidadTuberiaServicio
   const tubosInstalacion = res.servicioTuberiaModo === 'extraccion' ? 0 : res.cantidadTuberiaServicio
 
-  if (usaServicioBasico && tubosExtraccion > 0 && res.precioVentaTuboExtraccionUnitario > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'extraccion-tuberia-servicio',
-      nombre: `Extraccion de tuberia de descarga y equipo sumergible${diametroServicio}`,
-      unidad: 'Unidad',
+      nombre: `Extraccion de tuberia de HG de columna y equipo sumergible: bomba, motor y cable${diametroServicio}`,
+      unidad: 'Tubo',
       cant: tubosExtraccion,
-      precio: res.precioVentaTuboExtraccionUnitario,
+      precio: precioDe('extraccion-tuberia-servicio', res.precioVentaTuboExtraccionUnitario),
       total: 0,
     })
   }
 
-  if (usaServicioBasico && tubosInstalacion > 0 && res.precioVentaTuboInstalacionUnitario > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'instalacion-tuberia-servicio',
-      nombre: `Instalacion de tuberia de descarga y equipo sumergible${diametroServicio}`,
-      unidad: 'Unidad',
+      nombre: `Instalacion de tuberia de HG de columna y equipo sumergible: bomba, motor y cable${diametroServicio}`,
+      unidad: 'Tubo',
       cant: tubosInstalacion,
-      precio: res.precioVentaTuboInstalacionUnitario,
+      precio: precioDe('instalacion-tuberia-servicio', res.precioVentaTuboInstalacionUnitario),
       total: 0,
     })
   }
 
-  if ((subtipo === 'basico' || subtipo === 'completo') && il.horasLimpieza > 0) {
-    rows.push({
-      key: 'limpieza-horas',
-      nombre: `Limpieza mecanica de pozo (${il.horasLimpieza} horas)`,
-      unidad: 'Hora',
-      cant: il.horasLimpieza,
-      precio: il.precioVentaHora,
-      total: 0,
-    })
-  }
-
-  if ((subtipo === 'basico' || subtipo === 'completo') && res.canecasQuimicosServicio > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'quimicos-limp',
-      nombre: 'Canecas de aditivo para limpieza',
+      nombre: 'Caneca de quimico calera para limpieza de incrustacion y eliminacion de ferrobacteria',
       unidad: 'Caneca',
       cant: res.canecasQuimicosServicio,
-      precio: res.precioVentaQuimicoCaneca,
+      precio: precioDe('quimicos-limp', res.precioVentaQuimicoCaneca),
       total: 0,
     })
   }
 
-  if (usaServicioBasico && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
+  if (usaServicioBasico) {
     rows.push({
-      key: 'material-instalacion-servicio',
-      nombre: 'Material de instalacion y mano de obra',
-      unidad: 'Global',
-      cant: 1,
-      precio: il.precioMaterialInstalacionServicio ?? 0,
+      key: 'limpieza-horas',
+      nombre: `Limpieza mecanica que incluye cubeteado, cepillado y pistoneado (${il.horasLimpieza} horas)`,
+      unidad: 'Hora',
+      cant: Math.max(0, il.horasLimpieza),
+      precio: precioDe('limpieza-horas', il.precioVentaHora),
       total: 0,
     })
   }
 
-  if (usaServicioBasico && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'tecnico-chequeo-servicio',
       nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
       unidad: 'Global',
       cant: 1,
-      precio: il.precioTecnicoChequeoServicio ?? 0,
+      precio: precioDe('tecnico-chequeo-servicio', il.precioTecnicoChequeoServicio ?? 0),
       total: 0,
     })
   }
 
-  if (subtipo === 'completo' && (il.horasAforo ?? 0) > 0) {
-    const horas = il.horasAforo ?? 0
-    const totalAforo = il.precioVentaAforoTotal ?? 23000
+  if (usaServicioBasico) {
     rows.push({
-      key: 'aforo-servicio',
-      nombre: `Aforo (${horas} horas)`,
-      unidad: 'Hora',
-      cant: horas,
-      precio: Math.round((totalAforo / Math.max(1, horas)) * 100) / 100,
-      total: 0,
-    })
-  }
-
-  if (subtipo === 'completo' && il.inspeccionCamara && res.precioVentaCamara > 0) {
-    rows.push({
-      key: 'inspeccion-camara',
-      nombre: 'Inspeccion con camara',
+      key: 'material-instalacion-servicio',
+      nombre: 'Material de instalacion y mano de obra',
       unidad: 'Global',
       cant: 1,
-      precio: res.precioVentaCamara,
+      precio: precioDe('material-instalacion-servicio', il.precioMaterialInstalacionServicio ?? 0),
       total: 0,
     })
   }
 
-  return rows
-    .map(r => ({ ...r, total: r.cant * r.precio }))
-    .filter(r => r.total > 0)
+  if (usaServicioBasico) {
+    rows.push({
+      key: 'inspeccion-camara',
+      nombre: 'Camareo: introduccion de sonda con camara para evaluar el pozo y tuberia de ADEME. Incluye quimico clasificador',
+      unidad: 'Global',
+      cant: 1,
+      precio: precioDe('inspeccion-camara', il.inspeccionCamara ? res.precioVentaCamara : 0),
+      total: 0,
+    })
+  }
+
+  if (usaServicioBasico) {
+    rows.push({
+      key: 'medicion-nivel-agua',
+      nombre: 'Medicion de nivel del agua por sonda en linea piezometrica o linea de aire',
+      unidad: 'Global',
+      cant: 1,
+      precio: precioDe('medicion-nivel-agua', il.precioMedicionNivelServicio ?? 0),
+      total: 0,
+    })
+  }
+
+  if (usaServicioBasico) {
+    rows.push({
+      key: 'analisis-agua-servicio',
+      nombre: 'Analisis fisico-quimico y bacteriologico del agua',
+      unidad: 'Unidad',
+      cant: 1,
+      precio: precioDe('analisis-agua-servicio', il.precioAnalisisAguaServicio ?? 0),
+      total: 0,
+    })
+  }
+
+  if (usaAforo) {
+    const horas = il.horasAforo ?? 0
+    rows.push(
+      { key: 'aforo-personal-servicio', nombre: 'Personal', unidad: 'Global', cant: 1, precio: precioDe('aforo-personal-servicio', 0), total: 0 },
+      { key: 'aforo-traslado-generador', nombre: 'Traslado de generador', unidad: 'Global', cant: 1, precio: precioDe('aforo-traslado-generador', 0), total: 0 },
+      { key: 'aforo-regreso-generador', nombre: 'Regreso del generador', unidad: 'Global', cant: 1, precio: precioDe('aforo-regreso-generador', 0), total: 0 },
+      { key: 'aforo-instalacion-tuberia', nombre: 'Instalacion de tuberia de columna para aforo', unidad: 'Global', cant: 1, precio: precioDe('aforo-instalacion-tuberia', 0), total: 0 },
+      { key: 'aforo-horas-servicio', nombre: `Horas de aforo (${horas} horas)`, unidad: 'Global', cant: 1, precio: precioDe('aforo-horas-servicio', il.precioVentaAforoTotal ?? 23000), total: 0 },
+      { key: 'aforo-generador-servicio', nombre: 'Generador', unidad: 'Global', cant: 1, precio: precioDe('aforo-generador-servicio', 0), total: 0 },
+      { key: 'aforo-desinstalacion-tuberia', nombre: 'Desinstalacion de tuberia de columna para aforo', unidad: 'Global', cant: 1, precio: precioDe('aforo-desinstalacion-tuberia', 0), total: 0 },
+    )
+  }
+
+  return rows.map(r => ({ ...r, total: r.cant * r.precio }))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -460,7 +486,7 @@ export async function generarPDF(
   const lineasBase: LineaBase[] = data.tipo === 'perforacion' && ip && resPerf
     ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, opcionesVenta)
     : il && resLimp
-      ? buildLineasLimp(il, resLimp)
+      ? buildLineasLimp(il, resLimp, preciosVentaOverride)
       : []
 
   // Líneas extras (custom) agregadas por el usuario — se suman al final de la tabla
@@ -468,7 +494,6 @@ export async function generarPDF(
   const extras: LineaFinal[] = (data.lineasExtras ?? [])
     .filter(e =>
       e.cantidad > 0 &&
-      e.precioVentaUnitario > 0 &&
       (e.nombre || '').trim().length > 0
     )
     .map(e => {

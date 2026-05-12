@@ -135,6 +135,20 @@ export default function ContactosPage() {
     return () => { ctrl.abort(); clearTimeout(timer) }
   }, [form.nombre, form.empresa, showForm, editing])
 
+  useEffect(() => {
+    if (!showForm) return
+    const previous = document.body.style.overflow
+    const previousOverscroll = document.body.style.overscrollBehavior
+    document.body.style.overflow = 'hidden'
+    document.body.style.overscrollBehavior = 'contain'
+    document.body.classList.add('hidro-modal-open')
+    return () => {
+      document.body.style.overflow = previous
+      document.body.style.overscrollBehavior = previousOverscroll
+      document.body.classList.remove('hidro-modal-open')
+    }
+  }, [showForm])
+
   const isSuperAdmin = role === 'superadmin'
 
   const vendedores = ['Todos', ...vendedoresDB]
@@ -415,24 +429,27 @@ export default function ContactosPage() {
 
       {/* ── Modal / Formulario ────────────────────────────────────────────── */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 sm:flex sm:items-center sm:justify-center sm:p-4">
+        <div className="fixed inset-0 z-[80] flex h-[100dvh] w-screen overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
           {/* Móvil: modal ocupa toda la pantalla con fixed inset-0 (evita problemas de h-screen + notch/URL bar iOS) */}
           {/* Desktop: relative con max-w-lg centrado */}
-          <div className="fixed inset-0 bg-[#0d1526] sm:relative sm:inset-auto sm:rounded-2xl sm:border border-white/10 sm:w-full sm:max-w-lg sm:max-h-[90vh] shadow-2xl flex flex-col"
-               style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div
+            className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-full flex-col overflow-hidden bg-[#0d1526] shadow-2xl sm:h-auto sm:max-h-[min(90dvh,760px)] sm:w-full sm:max-w-lg sm:rounded-2xl sm:border sm:border-white/10"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+          >
             {/* Header modal (sticky arriba) */}
             <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-white/5 shrink-0">
               <h2 className="text-base font-semibold text-white">
                 {editing ? 'Editar Contacto' : 'Nuevo Contacto'}
               </h2>
-              <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white transition-colors p-1 -mr-1">
+              <button onClick={() => setShowForm(false)} className="h-10 w-10 flex items-center justify-center text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-white/5" aria-label="Cerrar modal de contacto">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Campos (scrolleables) */}
-            <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4 overflow-y-auto flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+              <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-1 sm:col-span-2">
                   <FormInput
                     label="Nombre *"
@@ -522,7 +539,7 @@ export default function ContactosPage() {
                   </>
                 )}
 
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block">
                     Nombre del proyecto <span className="text-slate-600 text-[10px]">(opcional)</span>
                   </label>
@@ -544,24 +561,39 @@ export default function ContactosPage() {
                     </select>
                   </div>
                 )}
-                <div className={isSuperAdmin ? '' : 'col-span-2'}>
+                <div className={isSuperAdmin ? '' : 'col-span-1 sm:col-span-2'}>
                   <label className="text-xs text-slate-500 mb-1.5 block">Notas</label>
                   <textarea value={form.notas} onChange={e => p('notas', e.target.value)}
                     rows={2} placeholder="Información adicional..."
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors resize-none" />
                 </div>
+                <div className="col-span-1 sm:hidden rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => setShowForm(false)}
+                      className="h-11 rounded-lg border border-white/10 text-sm font-medium text-slate-300 hover:text-white hover:border-white/20 transition-all">
+                      Cancelar
+                    </button>
+                    <button onClick={handleSave} disabled={!form.nombre.trim() || saving || dupCheck.status === 'exists'}
+                      className="h-11 rounded-lg bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
+                      {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      {editing ? 'Guardar' : 'Crear'}
+                    </button>
+                  </div>
+                </div>
+                </div>
+
+                {saveError && (
+                  <div className="px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs leading-relaxed">
+                    {saveError}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Banner de error (duplicado o validación) */}
-            {saveError && (
-              <div className="mx-4 sm:mx-6 mb-3 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs leading-relaxed">
-                {saveError}
-              </div>
-            )}
-
-            {/* Footer modal (sticky, siempre visible) */}
-            <div className="flex items-center justify-end gap-2 sm:gap-3 px-5 sm:px-6 py-3 sm:py-4 border-t border-white/5 shrink-0 bg-[#0d1526] rounded-b-2xl">
+            <div
+              className="sticky bottom-0 z-10 hidden shrink-0 items-center justify-end gap-2 border-t border-white/5 bg-[#0d1526] px-5 py-3 shadow-[0_-10px_24px_rgba(0,0,0,0.28)] sm:flex sm:gap-3 sm:rounded-b-2xl sm:px-6 sm:py-4"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+            >
               <button onClick={() => setShowForm(false)}
                 className="px-3 sm:px-4 py-2 text-sm text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all">
                 Cancelar

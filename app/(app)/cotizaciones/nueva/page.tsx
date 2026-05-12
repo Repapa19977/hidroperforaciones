@@ -51,6 +51,10 @@ function inputsServicioDesdeConfig(servicio?: Partial<ServicioCotizacionConfig>)
     costoTecnicoChequeoServicio: s.tecnicoChequeoCosto,
     precioInspeccionCamara: s.camaraInspeccionPrecio,
     costoInspeccionCamara: s.camaraInspeccionCosto,
+    precioMedicionNivelServicio: s.medicionNivelPrecio,
+    costoMedicionNivelServicio: s.medicionNivelCosto,
+    precioAnalisisAguaServicio: s.analisisAguaPrecio,
+    costoAnalisisAguaServicio: s.analisisAguaCosto,
     servicioTrasladoKmGalon: s.trasladoKmPorGalon,
     servicioTrasladoPrecioVenta: s.trasladoPrecioVenta,
     servicioConsumoExtraccionInstalacionGalHora: s.consumoExtraccionInstalacionGalHora,
@@ -89,19 +93,6 @@ const EQUIPAMIENTO_EXCEL_TEMPLATES: LineaExtraTemplate[] = [
   { key: 'cable-argos', rubro: 'equipamiento', nombre: 'Cable sumergible marca Argos de doble forro', descripcion: 'Introducir especificaciones.', unidad: 'Metro', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
   { key: 'material-instalacion-cintas-cable', rubro: 'equipamiento', nombre: 'Material de instalacion, cintas y cable', unidad: 'Global', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
   { key: 'instalacion-tuberia-hg-equipamiento', rubro: 'equipamiento', nombre: 'Instalacion de tuberia de HG de columna y equipo sumergible', descripcion: 'Bomba, motor y cable. Introducir especificaciones.', unidad: 'Tubo', cantidad: 1, costoUnitario: 0, precioVentaUnitario: 0 },
-]
-
-const AFORO_EXCEL_TEMPLATES: LineaExtraTemplate[] = [
-  {
-    key: 'servicio-aforo-condensado',
-    rubro: 'aforo',
-    nombre: 'Servicio de aforo',
-    descripcion: 'Incluye personal, traslado y regreso de generador, instalacion y desinstalacion de tuberia de columna, horas de aforo y generador.',
-    unidad: 'Global',
-    cantidad: 1,
-    costoUnitario: 0,
-    precioVentaUnitario: 0,
-  },
 ]
 
 function crearExtrasDesdeTemplates(templates: LineaExtraTemplate[]): LineaExtra[] {
@@ -510,21 +501,25 @@ export default function NuevaCotizacionPage() {
       const base: InputsLimpieza = { ...prev, servicioSubtipo: next }
       if (next === 'basico') return { ...base, trabajoEjecutar: 'Limpieza mecanica', horasLimpieza: prev.horasLimpieza > 0 ? prev.horasLimpieza : 20, servicioTuberiaModo: 'extraccion-instalacion', personal: 2 }
       if (next === 'equipamiento') return { ...base, trabajoEjecutar: 'Equipamiento', personal: 0 }
-      if (next === 'aforo') return { ...base, trabajoEjecutar: 'Aforo', horasAforo: (prev.horasAforo ?? 0) > 0 ? (prev.horasAforo ?? 24) : 24, personal: 0 }
-      if (next === 'completo') return { ...base, trabajoEjecutar: 'Servicio completo', horasLimpieza: prev.horasLimpieza > 0 ? prev.horasLimpieza : 20, servicioTuberiaModo: 'extraccion-instalacion' }
+      if (next === 'aforo') return { ...base, trabajoEjecutar: 'Aforo', horasAforo: (prev.horasAforo ?? 0) > 0 ? (prev.horasAforo ?? 24) : 24, personal: 3 }
+      if (next === 'completo') return {
+        ...base,
+        trabajoEjecutar: 'Servicio completo',
+        horasLimpieza: prev.horasLimpieza > 0 ? prev.horasLimpieza : 20,
+        horasAforo: (prev.horasAforo ?? 0) > 0 ? (prev.horasAforo ?? 24) : 24,
+        servicioTuberiaModo: 'extraccion-instalacion',
+      }
       return { ...base, trabajoEjecutar: 'Servicio por item', personal: 0 }
     })
 
     if (next === 'equipamiento') {
       setLineasExtras(prev => prev.some(e => e.rubro === 'equipamiento') ? prev : [...prev, ...crearExtrasDesdeTemplates(EQUIPAMIENTO_EXCEL_TEMPLATES)])
-    } else if (next === 'aforo') {
-      setLineasExtras(prev => prev.some(e => e.rubro === 'aforo') ? prev : [...prev, ...crearExtrasDesdeTemplates(AFORO_EXCEL_TEMPLATES)])
     }
   }
 
   const lineasBase = tipo === 'perforacion'
     ? buildLineasPerf(ip, resPerf, pl, mostrarEspesor, descripcionSimple, preciosVentaOverride, { pipaPrecioVentaUnitario, camionadaGravaPrecioVentaUnitario, capacidadCamionM3 })
-    : buildLineasLimp(il, resLimp)
+    : buildLineasLimp(il, resLimp, preciosVentaOverride)
 
   const servicioSubtipoActual = il.servicioSubtipo ?? 'basico'
   const extraAplicaCotizacion = (extra: LineaExtra) => {
@@ -537,11 +532,10 @@ export default function NuevaCotizacionPage() {
   const lineasExtrasCotizacion = lineasExtras.filter(extraAplicaCotizacion)
 
   // Líneas extras (Fase 2) — ítems libres agregados por el usuario
-  // Solo se consideran si tienen nombre, cantidad > 0 y precio > 0 (evita ítems vacíos en el preview/PDF)
+  // En servicios se permiten precios Q0 para que los rubros del Excel puedan mostrarse y editarse.
   const lineasExtrasFormateadas: LineaCot[] = lineasExtrasCotizacion
     .filter(e =>
       e.cantidad > 0 &&
-      e.precioVentaUnitario > 0 &&
       (e.nombre || '').trim().length > 0
     )
     .map(e => {
@@ -709,7 +703,7 @@ export default function NuevaCotizacionPage() {
       body: JSON.stringify({
         correlativo: data.correlativo, cliente: data.cliente, contactoId: data.contactoId ?? null,
         empresa: data.empresa, proyecto: data.proyecto, tipo: data.tipo,
-        estado: 'enviada', monto: totalConIva, fecha: data.fecha, vendedor: data.vendedor,
+        estado: 'borrador', monto: totalConIva, fecha: data.fecha, vendedor: data.vendedor,
         datos: data,
       }),
     })
@@ -718,8 +712,7 @@ export default function NuevaCotizacionPage() {
       alert(err.error ?? 'No se pudo guardar')
       return
     }
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    window.location.href = `/imprimir?mode=send&returnTo=${encodeURIComponent('/cotizaciones')}`
   }
 
   async function handlePDF() {
@@ -807,7 +800,7 @@ export default function NuevaCotizacionPage() {
             disabled={bloqueada}
             title={bloqueada ? `Cotización ${estadoActual}: usá la lista para cambiar estado` : ''}
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-colors shadow-lg shadow-blue-500/20">
-            <Send className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Marcar como</span> Enviada
+            <Send className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Enviar</span>
           </button>
         </div>
       </div>
@@ -1276,12 +1269,25 @@ export default function NuevaCotizacionPage() {
               {/* Filas de líneas */}
               <div className="space-y-0.5 max-h-72 sm:max-h-80 overflow-y-auto overscroll-contain mt-1">
                 {todasLineas.map((l) => {
+                  const extraLinea = lineasExtrasCotizacion.find(e => e.id === l.key)
                   const cfg = cfgDe(l.key)
                   const toggleCampo = (campo: 'mostrar' | 'cobrar') => {
-                    setLineasConfig(prev => ({
-                      ...prev,
-                      [l.key]: { ...cfg, [campo]: !cfg[campo] }
-                    }))
+                    if (extraLinea) {
+                      setLineasExtras(prev => prev.map(e => e.id === l.key ? { ...e, [campo]: !cfg[campo] } : e))
+                    } else {
+                      setLineasConfig(prev => ({
+                        ...prev,
+                        [l.key]: { ...cfg, [campo]: !cfg[campo] }
+                      }))
+                    }
+                  }
+                  const setPrecioLinea = (precio: number) => {
+                    const limpio = Math.max(0, precio)
+                    if (extraLinea) {
+                      setLineasExtras(prev => prev.map(e => e.id === l.key ? { ...e, precioVentaUnitario: limpio } : e))
+                    } else {
+                      setPreciosVentaOverride(prev => ({ ...prev, [l.key]: limpio }))
+                    }
                   }
                   const activaVisual = cfg.mostrar && cfg.cobrar
                   // Etiqueta visual del estado (para que quede obvio en cada línea)
@@ -1355,10 +1361,29 @@ export default function NuevaCotizacionPage() {
                         )}
                       </div>
                       {/* Total */}
-                      <span className={cn('font-semibold shrink-0 tabular-nums text-right',
-                        !cfg.cobrar ? 'text-amber-400/70 line-through' : 'text-white')}>
-                        {formatCotizacionMoney(l.total)}
-                      </span>
+                      {tipo === 'limpieza' ? (
+                        <div className="w-[92px] sm:w-[112px] shrink-0 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={Number.isFinite(l.precio) ? l.precio : 0}
+                            onChange={e => setPrecioLinea(parseFloat(e.target.value) || 0)}
+                            className={cn('w-full rounded border bg-white/5 px-1.5 py-1 text-right text-[11px] tabular-nums outline-none focus:border-emerald-500/50',
+                              !cfg.cobrar ? 'border-amber-500/30 text-amber-300 line-through' : 'border-white/10 text-white')}
+                            title="Precio de venta al cliente"
+                          />
+                          <span className={cn('mt-0.5 block text-[9px] tabular-nums',
+                            !cfg.cobrar ? 'text-amber-400/70 line-through' : 'text-slate-500')}>
+                            {formatCotizacionMoney(l.total)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className={cn('font-semibold shrink-0 tabular-nums text-right',
+                          !cfg.cobrar ? 'text-amber-400/70 line-through' : 'text-white')}>
+                          {formatCotizacionMoney(l.total)}
+                        </span>
+                      )}
                     </div>
                   )
                 })}
@@ -1642,9 +1667,16 @@ export default function NuevaCotizacionPage() {
             </button>
             <button
               onClick={handlePDF}
-              className="px-4 flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-semibold text-xs rounded-r-2xl active:scale-95 transition-transform"
+              className="px-3 flex items-center gap-1.5 bg-blue-600 text-white font-semibold text-xs active:scale-95 transition-transform"
             >
               <FileDown className="w-[16px] h-[16px]" /> PDF
+            </button>
+            <button
+              onClick={handleEnviar}
+              disabled={bloqueada}
+              className="px-4 flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-semibold text-xs rounded-r-2xl active:scale-95 transition-transform disabled:opacity-40"
+            >
+              <Send className="w-[16px] h-[16px]" /> Enviar
             </button>
           </div>
         </div>
@@ -2378,7 +2410,7 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
   const reglaServicio = getReglaTuberiaServicio(il.diametroTuberiaServicio, tablaServicio)
   const usaLimpieza = subtipo === 'basico' || subtipo === 'completo'
   const usaHorasLimpieza = usaLimpieza || subtipo === 'item'
-  const usaAforo = subtipo === 'completo'
+  const usaAforo = subtipo === 'aforo' || subtipo === 'completo'
   const usaTuberiaServicio = subtipo === 'basico' || subtipo === 'completo'
   const modoTuberia = il.servicioTuberiaModo ?? 'extraccion-instalacion'
   const cantidadTuberia = il.cantidadTuberiaServicio ?? Math.max(il.tubosExtraccion ?? 0, il.tubosInstalacion ?? 0)
@@ -2585,7 +2617,7 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
           </>
         )}
 
-        {subtipo === 'completo' && (
+        {usaLimpieza && (
           <>
             <button type="button" onClick={() => patchIl('inspeccionCamara', !(il.inspeccionCamara ?? false))} className={toggleClass(!!il.inspeccionCamara)}>
               Inspeccion con camara: {il.inspeccionCamara ? 'Si' : 'No'}
@@ -2598,6 +2630,14 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
                   accent hint={`Aumento: ${res.markupCamaraPct.toFixed(1)}%`} />
               </>
             )}
+            <NumInput label="Costo medicion nivel (Q)" value={il.costoMedicionNivelServicio ?? 0} onChange={v => patchIl('costoMedicionNivelServicio', v)}
+              hint="Costo interno de sonda" />
+            <NumInput label="Venta medicion nivel (Q)" value={il.precioMedicionNivelServicio ?? 0} onChange={v => patchIl('precioMedicionNivelServicio', v)}
+              accent hint="Linea 9 del servicio basico" />
+            <NumInput label="Costo analisis agua (Q)" value={il.costoAnalisisAguaServicio ?? 0} onChange={v => patchIl('costoAnalisisAguaServicio', v)}
+              hint="Costo interno laboratorio" />
+            <NumInput label="Venta analisis agua (Q)" value={il.precioAnalisisAguaServicio ?? 0} onChange={v => patchIl('precioAnalisisAguaServicio', v)}
+              accent hint="Linea 10 del servicio basico" />
           </>
         )}
 
@@ -3134,16 +3174,27 @@ function buildComparativaLimpieza(
     push('limpieza-horas', 'Limpieza mecanica', res.costoDieselTrabajo, ventaDe('limpieza-horas'), `${il.horasLimpieza} horas`)
     push('material-instalacion-servicio', 'Material instalacion', res.costoMaterialInstalacionServicio, ventaDe('material-instalacion-servicio'))
     push('tecnico-chequeo-servicio', 'Tecnico chequeo', res.costoTecnicoChequeoServicio, ventaDe('tecnico-chequeo-servicio'))
+    push('inspeccion-camara', 'Camareo', res.costoInspeccionCamara, ventaDe('inspeccion-camara'))
+    push('medicion-nivel-agua', 'Medicion nivel agua', res.costoMedicionNivelServicio, ventaDe('medicion-nivel-agua'))
+    push('analisis-agua-servicio', 'Analisis agua', res.costoAnalisisAguaServicio, ventaDe('analisis-agua-servicio'))
     push('salarios-servicio', 'Salarios', res.costoPersonal, 0, `${res.personalServicio} personas`)
     push('viaticos-servicio', 'Viaticos', res.costoViaticos, 0, `${res.diasTotales} dias`)
     push('hospedaje-servicio', 'Hospedaje', res.costoHospedaje, 0, `${Math.max(0, res.diasTotales - 1)} noches`)
     push('bonificaciones-servicio', 'Bonificaciones', res.costoBonificaciones, 0)
   }
-  if (subtipo === 'completo') {
-    push('aforo-servicio', 'Aforo', res.costoAforo, ventaDe('aforo-servicio'), `${il.horasAforo ?? 0} horas`)
-    push('inspeccion-camara', 'Inspeccion camara', res.costoInspeccionCamara, ventaDe('inspeccion-camara'))
+  if (subtipo === 'aforo' || subtipo === 'completo') {
+    const ventaAforo = [
+      'aforo-personal-servicio',
+      'aforo-traslado-generador',
+      'aforo-regreso-generador',
+      'aforo-instalacion-tuberia',
+      'aforo-horas-servicio',
+      'aforo-generador-servicio',
+      'aforo-desinstalacion-tuberia',
+    ].reduce((acc, key) => acc + ventaDe(key), 0)
+    push('aforo-horas-servicio', 'Aforo', res.costoAforo, ventaAforo, `${il.horasAforo ?? 0} horas`)
   }
-  for (const extra of extras.filter(e => e.cobrar && e.cantidad > 0 && e.precioVentaUnitario > 0)) {
+  for (const extra of extras.filter(e => e.cobrar && e.cantidad > 0)) {
     push(extra.id, extra.nombre || 'Linea libre', extra.cantidad * extra.costoUnitario, extra.cantidad * extra.precioVentaUnitario, 'Linea libre')
   }
   push('imprevistos-servicio', 'Imprevistos', res.imprevisto10pct, 0)
@@ -3312,18 +3363,27 @@ function buildLineasPerf(
   return built.filter(l => l.total > 0)
 }
 
-function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimpieza>): LineaCot[] {
+function buildLineasLimp(
+  il: InputsLimpieza,
+  res: ReturnType<typeof calcularLimpieza>,
+  preciosVentaOverride: Record<string, number> = {},
+): LineaCot[] {
   const subtipo = il.servicioSubtipo ?? 'basico'
   const usaServicioBasico = subtipo === 'basico' || subtipo === 'completo'
+  const usaAforo = subtipo === 'aforo' || subtipo === 'completo'
   const rows: LineaCot[] = []
+  const precioDe = (key: string, fallback: number) => {
+    const override = preciosVentaOverride[key]
+    return typeof override === 'number' && Number.isFinite(override) ? Math.max(0, override) : Math.max(0, fallback)
+  }
 
-  if (usaServicioBasico && res.costoTraslado > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'traslado-limp',
-      nombre: `Traslado de maquina al lugar para servicio (${res.kmIdaVuelta.toFixed(1)} km / ${il.servicioTrasladoKmGalon ?? 20} km gal)`,
+      nombre: `Traslado de maquinaria al lugar del servicio (${res.kmIdaVuelta.toFixed(1)} km / ${il.servicioTrasladoKmGalon ?? 20} km gal)`,
       unidad: 'Global',
       cant: 1,
-      precio: res.precioVentaTrasladoServicio,
+      precio: precioDe('traslado-limp', res.precioVentaTrasladoServicio),
       total: 0,
     })
   }
@@ -3334,99 +3394,169 @@ function buildLineasLimp(il: InputsLimpieza, res: ReturnType<typeof calcularLimp
   const tubosExtraccion = res.servicioTuberiaModo === 'instalacion' ? 0 : res.cantidadTuberiaServicio
   const tubosInstalacion = res.servicioTuberiaModo === 'extraccion' ? 0 : res.cantidadTuberiaServicio
 
-  if (usaServicioBasico && tubosExtraccion > 0 && res.precioVentaTuboExtraccionUnitario > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'extraccion-tuberia-servicio',
-      nombre: `Extraccion de tuberia de descarga y equipo sumergible${diametroServicio}`,
-      unidad: 'Unidad',
+      nombre: `Extraccion de tuberia de HG de columna y equipo sumergible: bomba, motor y cable${diametroServicio}`,
+      unidad: 'Tubo',
       cant: tubosExtraccion,
-      precio: res.precioVentaTuboExtraccionUnitario,
+      precio: precioDe('extraccion-tuberia-servicio', res.precioVentaTuboExtraccionUnitario),
       total: 0,
     })
   }
 
-  if (usaServicioBasico && tubosInstalacion > 0 && res.precioVentaTuboInstalacionUnitario > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'instalacion-tuberia-servicio',
-      nombre: `Instalacion de tuberia de descarga y equipo sumergible${diametroServicio}`,
-      unidad: 'Unidad',
+      nombre: `Instalacion de tuberia de HG de columna y equipo sumergible: bomba, motor y cable${diametroServicio}`,
+      unidad: 'Tubo',
       cant: tubosInstalacion,
-      precio: res.precioVentaTuboInstalacionUnitario,
+      precio: precioDe('instalacion-tuberia-servicio', res.precioVentaTuboInstalacionUnitario),
       total: 0,
     })
   }
 
-  if ((subtipo === 'basico' || subtipo === 'completo') && il.horasLimpieza > 0) {
-    rows.push({
-      key: 'limpieza-horas',
-      nombre: `Limpieza mecanica de pozo (${il.horasLimpieza} horas)`,
-      unidad: 'Hora',
-      cant: il.horasLimpieza,
-      precio: il.precioVentaHora,
-      total: 0,
-    })
-  }
-
-  if ((subtipo === 'basico' || subtipo === 'completo') && res.canecasQuimicosServicio > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'quimicos-limp',
-      nombre: 'Canecas de aditivo para limpieza',
+      nombre: 'Caneca de quimico calera para limpieza de incrustacion y eliminacion de ferrobacteria',
       unidad: 'Caneca',
       cant: res.canecasQuimicosServicio,
-      precio: res.precioVentaQuimicoCaneca,
+      precio: precioDe('quimicos-limp', res.precioVentaQuimicoCaneca),
       total: 0,
     })
   }
 
-  if (usaServicioBasico && (il.precioMaterialInstalacionServicio ?? 0) > 0) {
+  if (usaServicioBasico) {
     rows.push({
-      key: 'material-instalacion-servicio',
-      nombre: 'Material de instalacion y mano de obra',
-      unidad: 'Global',
-      cant: 1,
-      precio: il.precioMaterialInstalacionServicio ?? 0,
+      key: 'limpieza-horas',
+      nombre: `Limpieza mecanica que incluye cubeteado, cepillado y pistoneado (${il.horasLimpieza} horas)`,
+      unidad: 'Hora',
+      cant: Math.max(0, il.horasLimpieza),
+      precio: precioDe('limpieza-horas', il.precioVentaHora),
       total: 0,
     })
   }
 
-  if (usaServicioBasico && (il.precioTecnicoChequeoServicio ?? 0) > 0) {
+  if (usaServicioBasico) {
     rows.push({
       key: 'tecnico-chequeo-servicio',
       nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
       unidad: 'Global',
       cant: 1,
-      precio: il.precioTecnicoChequeoServicio ?? 0,
+      precio: precioDe('tecnico-chequeo-servicio', il.precioTecnicoChequeoServicio ?? 0),
       total: 0,
     })
   }
 
-  if (subtipo === 'completo' && (il.horasAforo ?? 0) > 0) {
-    const horas = il.horasAforo ?? 0
-    const totalAforo = il.precioVentaAforoTotal ?? 23000
+  if (usaServicioBasico) {
     rows.push({
-      key: 'aforo-servicio',
-      nombre: `Aforo (${horas} horas)`,
-      unidad: 'Hora',
-      cant: horas,
-      precio: Math.round((totalAforo / Math.max(1, horas)) * 100) / 100,
-      total: 0,
-    })
-  }
-
-  if (subtipo === 'completo' && il.inspeccionCamara && res.precioVentaCamara > 0) {
-    rows.push({
-      key: 'inspeccion-camara',
-      nombre: 'Inspeccion con camara',
+      key: 'material-instalacion-servicio',
+      nombre: 'Material de instalacion y mano de obra',
       unidad: 'Global',
       cant: 1,
-      precio: res.precioVentaCamara,
+      precio: precioDe('material-instalacion-servicio', il.precioMaterialInstalacionServicio ?? 0),
       total: 0,
     })
   }
 
-  return rows
-    .map(l => ({ ...l, total: l.cant * l.precio }))
-    .filter(l => l.total > 0)
+  if (usaServicioBasico) {
+    rows.push({
+      key: 'inspeccion-camara',
+      nombre: 'Camareo: introduccion de sonda con camara para evaluar el pozo y tuberia de ADEME. Incluye quimico clasificador',
+      unidad: 'Global',
+      cant: 1,
+      precio: precioDe('inspeccion-camara', il.inspeccionCamara ? res.precioVentaCamara : 0),
+      total: 0,
+    })
+  }
+
+  if (usaServicioBasico) {
+    rows.push({
+      key: 'medicion-nivel-agua',
+      nombre: 'Medicion de nivel del agua por sonda en linea piezometrica o linea de aire',
+      unidad: 'Global',
+      cant: 1,
+      precio: precioDe('medicion-nivel-agua', il.precioMedicionNivelServicio ?? 0),
+      total: 0,
+    })
+  }
+
+  if (usaServicioBasico) {
+    rows.push({
+      key: 'analisis-agua-servicio',
+      nombre: 'Analisis fisico-quimico y bacteriologico del agua',
+      unidad: 'Unidad',
+      cant: 1,
+      precio: precioDe('analisis-agua-servicio', il.precioAnalisisAguaServicio ?? 0),
+      total: 0,
+    })
+  }
+
+  if (usaAforo) {
+    const horas = Math.max(0, il.horasAforo ?? 0)
+    const totalAforo = precioDe('aforo-horas-servicio', il.precioVentaAforoTotal ?? 23000)
+    rows.push(
+      {
+        key: 'aforo-personal-servicio',
+        nombre: 'Personal',
+        unidad: 'Global',
+        cant: 1,
+        precio: precioDe('aforo-personal-servicio', 0),
+        total: 0,
+      },
+      {
+        key: 'aforo-traslado-generador',
+        nombre: 'Traslado de generador',
+        unidad: 'Global',
+        cant: 1,
+        precio: precioDe('aforo-traslado-generador', 0),
+        total: 0,
+      },
+      {
+        key: 'aforo-regreso-generador',
+        nombre: 'Regreso del generador',
+        unidad: 'Global',
+        cant: 1,
+        precio: precioDe('aforo-regreso-generador', 0),
+        total: 0,
+      },
+      {
+        key: 'aforo-instalacion-tuberia',
+        nombre: 'Instalacion de tuberia de columna para aforo',
+        unidad: 'Global',
+        cant: 1,
+        precio: precioDe('aforo-instalacion-tuberia', 0),
+        total: 0,
+      },
+      {
+        key: 'aforo-horas-servicio',
+        nombre: `Horas de aforo (${horas} horas)`,
+        unidad: 'Global',
+        cant: 1,
+        precio: totalAforo,
+        total: 0,
+      },
+      {
+        key: 'aforo-generador-servicio',
+        nombre: 'Generador',
+        unidad: 'Global',
+        cant: 1,
+        precio: precioDe('aforo-generador-servicio', 0),
+        total: 0,
+      },
+      {
+        key: 'aforo-desinstalacion-tuberia',
+        nombre: 'Desinstalacion de tuberia de columna para aforo',
+        unidad: 'Global',
+        cant: 1,
+        precio: precioDe('aforo-desinstalacion-tuberia', 0),
+        total: 0,
+      },
+    )
+  }
+
+  return rows.map(l => ({ ...l, total: l.cant * l.precio }))
 }
 
 // ════════════════════════════════════════════════════════════════════════════

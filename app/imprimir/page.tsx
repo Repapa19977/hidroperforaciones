@@ -9,8 +9,22 @@
 
 import { useEffect, useState } from 'react'
 import { loadQuotation, type QuotationData } from '@/lib/quotation-store'
-import { ArrowLeft, Download, Loader2, Mail } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Download, Loader2, Mail, Send, X } from 'lucide-react'
 import type { CuentaBancaria } from '@/lib/config-store'
+
+function buildMensajeEmail(q: QuotationData) {
+  const cliente = q.cliente?.trim() || 'cliente'
+  const empresa = q.empresa?.trim()
+  const empresaLine = empresa ? `\nEmpresa: ${empresa}` : ''
+  return (
+    `Estimado/a ${cliente},\n\n` +
+    `Reciba un cordial saludo.\n\n` +
+    `Por este medio le compartimos la cotizacion ${q.correlativo} correspondiente al proyecto "${q.proyecto}".${empresaLine}\n\n` +
+    `Adjunto encontrara el PDF con el detalle tecnico, alcance y condiciones comerciales de la propuesta.\n\n` +
+    `Quedamos atentos a cualquier consulta o ajuste que considere necesario.\n\n` +
+    `Saludos cordiales,\n${q.vendedor}\nHidroperforaciones`
+  )
+}
 
 export default function ImprimirPage() {
   const [data, setData] = useState<QuotationData | null>(null)
@@ -23,6 +37,14 @@ export default function ImprimirPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailMessage, setEmailMessage] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [markingSent, setMarkingSent] = useState(false)
+  const [pendingWhatsappConfirm, setPendingWhatsappConfirm] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   // 1) Cargar cotización
   useEffect(() => {
@@ -30,6 +52,13 @@ export default function ImprimirPage() {
     setData(q)
     if (!q) { setLoading(false); setError('No hay cotización para mostrar.') }
   }, [])
+
+  useEffect(() => {
+    if (!data) return
+    setEmailTo((data.email ?? '').trim())
+    setEmailSubject(`Cotizacion ${data.correlativo} - Hidroperforaciones`)
+    setEmailMessage(buildMensajeEmail(data))
+  }, [data])
 
   // Cleanup del blob URL al desmontar (evita memory leak)
   useEffect(() => {
@@ -116,23 +145,71 @@ export default function ImprimirPage() {
 
   function buildMensajeWhatsApp() {
     if (!data) return ''
+    const cliente = data.cliente?.trim() || 'cliente'
     return (
-      `Estimado cliente, le compartimos la cotización *${data.correlativo}* de Hidroperforaciones, Sociedad Anónima.\n\n` +
-      `Proyecto: ${data.proyecto}\nVendedor: ${data.vendedor}\n\n` +
-      `Adjuntamos el PDF. Quedamos a sus órdenes para cualquier consulta.`
+      `Estimado/a ${cliente}, buen dia.\n\n` +
+      `Le compartimos la cotizacion *${data.correlativo}* correspondiente al proyecto "${data.proyecto}".\n\n` +
+      `Adjunto encontrara el PDF con el detalle tecnico y condiciones de la propuesta.\n\n` +
+      `Quedamos atentos a cualquier consulta.\n\n` +
+      `${data.vendedor}\nHidroperforaciones`
     )
   }
 
   // Siempre abrimos WhatsApp SIN número pre-seleccionado, así el user elige el contacto.
   // (Evita mandar al contacto equivocado si data.telefono está desactualizado.)
+  function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const result = String(reader.result ?? '')
+        resolve(result.replace(/^data:application\/pdf;base64,/i, ''))
+      }
+      reader.onerror = () => reject(new Error('No se pudo leer el PDF'))
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  async function marcarEnviada(canal: 'correo' | 'whatsapp') {
+    if (!data) return false
+    setMarkingSent(true)
+    try {
+      const res = await fetch(`/api/cotizaciones/${encodeURIComponent(data.correlativo)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: 'enviada', usuario: data.vendedor || canal }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error ?? 'No se pudo marcar como enviada')
+        return false
+      }
+      setNotice(`Cotizacion marcada como enviada por ${canal}.`)
+      return true
+    } finally {
+      setMarkingSent(false)
+    }
+  }
+
   function urlWhatsApp() {
     if (!data) return 'https://wa.me/'
     return `https://wa.me/?text=${encodeURIComponent(buildMensajeWhatsApp())}`
   }
 
+  async function copiarMensajeWhatsApp() {
+    try {
+      if (!navigator.clipboard?.writeText) return false
+      await navigator.clipboard.writeText(buildMensajeWhatsApp())
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function fallbackWhatsApp() {
     descargarPdf()
+    void copiarMensajeWhatsApp()
     window.open(urlWhatsApp(), '_blank', 'noopener,noreferrer')
+    setPendingWhatsappConfirm(true)
   }
 
   // Primero intenta compartir texto + PDF juntos en móviles compatibles.
@@ -168,7 +245,9 @@ export default function ImprimirPage() {
 
     setSharing(true)
     try {
+      await copiarMensajeWhatsApp()
       await nav.share(shareData)
+      await marcarEnviada('whatsapp')
     } catch (e) {
       const err = e as { name?: string }
       if (err.name !== 'AbortError') {
@@ -180,18 +259,46 @@ export default function ImprimirPage() {
     }
   }
 
-  function compartirEmail() {
-    if (!data) return
-    descargarPdf()
-    const asunto = `Cotización ${data.correlativo} - Hidroperforaciones, Sociedad Anónima`
-    const cuerpo =
-      `Estimado cliente,\n\n` +
-      `Le compartimos la cotización ${data.correlativo} correspondiente al proyecto "${data.proyecto}".\n\n` +
-      `Adjuntamos el PDF con el detalle completo. Quedamos a sus órdenes para cualquier consulta.\n\n` +
-      `Saludos cordiales,\n${data.vendedor}\nHidroperforaciones, Sociedad Anónima`
-    const destinatario = (data.email ?? '').trim()
-    const mailto = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`
-    window.location.href = mailto
+  async function enviarCorreo() {
+    if (!data || !pdfBlob) {
+      alert('El PDF aun se esta generando. Espera un segundo.')
+      return
+    }
+    const destino = emailTo.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destino)) {
+      alert('Revisa el correo destino antes de enviar.')
+      return
+    }
+
+    setSendingEmail(true)
+    try {
+      const pdfBase64 = await blobToBase64(pdfBlob)
+      const res = await fetch('/api/email/cotizacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdfBase64,
+          emailTo: destino,
+          subject: emailSubject.trim(),
+          message: emailMessage.trim(),
+          correlativo: data.correlativo,
+          cliente: data.cliente,
+          empresa: data.empresa,
+          fecha: data.fecha,
+          vendedor: data.vendedor,
+          filename: nombreArchivo(),
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error ?? 'No se pudo enviar el correo')
+        return
+      }
+      setEmailOpen(false)
+      setNotice(`Correo enviado a ${destino}. Cotizacion marcada como enviada.`)
+    } finally {
+      setSendingEmail(false)
+    }
   }
 
   function volver() {
@@ -224,9 +331,9 @@ export default function ImprimirPage() {
             <span className="hidden sm:inline">Descargar PDF</span>
             <span className="sm:hidden">PDF</span>
           </button>
-          <button onClick={compartirEmail} disabled={!pdfBlob || loading}
+          <button onClick={() => setEmailOpen(true)} disabled={!pdfBlob || loading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
-            title={data?.email ? `Enviar a ${data.email}` : 'Abrir tu cliente de correo (puedes elegir destinatario)'}>
+            title={data?.email ? `Enviar a ${data.email}` : 'Elegir correo destino'}>
             <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span className="hidden sm:inline">Correo</span>
             <span className="sm:hidden">@</span>
@@ -246,6 +353,95 @@ export default function ImprimirPage() {
           </button>
         </div>
       </div>
+
+      {notice && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 max-w-[92vw] rounded-xl border border-emerald-200 bg-white px-4 py-2.5 shadow-lg text-sm text-emerald-700 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4" />
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="ml-2 text-slate-400 hover:text-slate-700" aria-label="Cerrar aviso">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {pendingWhatsappConfirm && (
+        <div className="mx-auto mt-3 w-[calc(100%-1.5rem)] max-w-[900px] rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            Se descargo el PDF y se abrio WhatsApp con el mensaje listo. Tambien se copio el mensaje por si WhatsApp no lo pega junto al PDF.
+          </div>
+          <button
+            onClick={async () => {
+              const ok = await marcarEnviada('whatsapp')
+              if (ok) setPendingWhatsappConfirm(false)
+            }}
+            disabled={markingSent}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            {markingSent ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+            Ya fue enviada
+          </button>
+        </div>
+      )}
+
+      {emailOpen && data && (
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex items-center justify-center px-3">
+          <div className="w-full max-w-2xl rounded-2xl bg-white text-slate-900 shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div>
+                <p className="text-sm font-bold text-slate-900">Enviar cotizacion por correo</p>
+                <p className="text-xs text-slate-500">{data.correlativo} · PDF adjunto automaticamente</p>
+              </div>
+              <button onClick={() => setEmailOpen(false)} disabled={sendingEmail} className="text-slate-400 hover:text-slate-700 disabled:opacity-50" aria-label="Cerrar">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <label className="block">
+                <span className="text-xs font-semibold text-slate-600">Correo destino</span>
+                <input
+                  value={emailTo}
+                  onChange={e => setEmailTo(e.target.value)}
+                  type="email"
+                  inputMode="email"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="cliente@ejemplo.com"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-slate-600">Asunto</span>
+                <input
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-slate-600">Mensaje</span>
+                <textarea
+                  value={emailMessage}
+                  onChange={e => setEmailMessage(e.target.value)}
+                  rows={8}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Archivo adjunto: <span className="font-mono font-semibold text-slate-900">{nombreArchivo()}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-200 bg-slate-50">
+              <button onClick={() => setEmailOpen(false)} disabled={sendingEmail}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={enviarCorreo} disabled={sendingEmail || !pdfBlob}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Enviar con PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Preview — renderiza cada página como imagen (compatible 100% con iOS/Android) */}
       <div className="flex-1 flex flex-col items-center py-3 sm:py-6 px-2 sm:px-4 gap-3 sm:gap-4">

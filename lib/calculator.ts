@@ -845,6 +845,7 @@ export interface InputsLimpieza {
   aumentoKmPct?: number
   equipoServicio?: string
   horasAforo?: number
+  aforoDetallado?: InputsAforoDetallado
   tubosExtraccion?: number
   tubosInstalacion?: number
   cantidadTuberiaServicio?: number
@@ -861,6 +862,10 @@ export interface InputsLimpieza {
   costoMaterialInstalacionServicio?: number
   precioTecnicoChequeoServicio?: number
   costoTecnicoChequeoServicio?: number
+  precioMedicionNivelServicio?: number
+  costoMedicionNivelServicio?: number
+  precioAnalisisAguaServicio?: number
+  costoAnalisisAguaServicio?: number
   dobleTurno?: boolean
   inspeccionCamara?: boolean
   precioGasolina?: number
@@ -928,6 +933,10 @@ export interface ResultadosLimpieza {
   precioMaterialInstalacionServicio: number
   costoTecnicoChequeoServicio: number
   precioTecnicoChequeoServicio: number
+  costoMedicionNivelServicio: number
+  precioMedicionNivelServicio: number
+  costoAnalisisAguaServicio: number
+  precioAnalisisAguaServicio: number
   costoQuimicos: number
   costoPersonal: number
   costoViaticos: number
@@ -972,7 +981,7 @@ export function getReglaTuberiaServicio(
 export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const servicioSubtipo = inp.servicioSubtipo ?? 'basico'
   const usaLimpieza = (servicioSubtipo === 'basico' || servicioSubtipo === 'completo') && inp.horasLimpieza > 0
-  const usaAforo = servicioSubtipo === 'completo' && (inp.horasAforo ?? 0) > 0
+  const usaAforo = (servicioSubtipo === 'aforo' || servicioSubtipo === 'completo') && (inp.horasAforo ?? 0) > 0
   const usaServicioBasico = servicioSubtipo === 'basico' || servicioSubtipo === 'completo'
   const aumentoKmPct = inp.aumentoKmPct ?? 0
   const horasLimpieza = usaLimpieza ? Math.max(0, inp.horasLimpieza) : 0
@@ -1000,13 +1009,23 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
 
   // Operativo (Hoja: 1.5 gal/hora × 20h × Q41 = Q1,230)
   const costoDieselTrabajo = consumoLimpiezaGalHora * horasLimpieza * inp.precioDiesel
-  const costoDieselAforo = 5 * horasAforo * inp.precioDiesel
+  const aforoBase = inp.aforoDetallado ?? defaultInputsAforoDetallado
+  const aforoDetalle = usaAforo
+    ? calcularAforoDetallado({
+        ...aforoBase,
+        kilometros: Math.max(0, inp.kilometros),
+        precioDiesel: inp.precioDiesel,
+        horasAforo,
+        precioVentaTotal: Math.max(0, inp.precioVentaAforoTotal ?? aforoBase.precioVentaTotal),
+      })
+    : null
+  const costoDieselAforo = aforoDetalle ? aforoDetalle.costoCombustible : 0
 
   // ── OTROS COSTOS ─────────────────────────────────────────────────────────────
   const canecasQuimicosServicio = usaLimpieza ? (diametroServicio && diametroServicio >= 6 ? 4 : 2) : 0
   const costoQuimicos  = usaLimpieza ? inp.precioQuimicoCaneca * canecasQuimicosServicio : 0
-  const costoAforo = costoDieselAforo
-  const costoInspeccionCamara = servicioSubtipo === 'completo' && inp.inspeccionCamara
+  const costoAforo = aforoDetalle ? aforoDetalle.costoConImpuestos : 0
+  const costoInspeccionCamara = usaServicioBasico && inp.inspeccionCamara
     ? Math.max(0, inp.costoInspeccionCamara ?? DEFAULT_SERVICIO_COTIZACION.camaraInspeccionCosto)
     : 0
   const servicioTuberiaModo: ServicioTuberiaModo = inp.servicioTuberiaModo ?? 'extraccion-instalacion'
@@ -1048,6 +1067,10 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const costoMaterialInstalacionServicio = usarLineasServicioBase ? Math.max(0, inp.costoMaterialInstalacionServicio ?? precioMaterialInstalacionServicio) : 0
   const precioTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.precioTecnicoChequeoServicio ?? 0) : 0
   const costoTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.costoTecnicoChequeoServicio ?? precioTecnicoChequeoServicio) : 0
+  const precioMedicionNivelServicio = usarLineasServicioBase ? Math.max(0, inp.precioMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio) : 0
+  const costoMedicionNivelServicio = usarLineasServicioBase ? Math.max(0, inp.costoMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelCosto) : 0
+  const precioAnalisisAguaServicio = usarLineasServicioBase ? Math.max(0, inp.precioAnalisisAguaServicio ?? DEFAULT_SERVICIO_COTIZACION.analisisAguaPrecio) : 0
+  const costoAnalisisAguaServicio = usarLineasServicioBase ? Math.max(0, inp.costoAnalisisAguaServicio ?? DEFAULT_SERVICIO_COTIZACION.analisisAguaCosto) : 0
   const costoPersonal  = personalServicio * inp.salarioMensual * diasTotales / 30
   const costoViaticos  = personalServicio * diasTotales * (inp.tiemposViaticosDia ?? 3) * inp.viaticosDiarios
   // Hospedaje: noches = díasTotales - 1 (Excel "LIMPIEZA MECANICA COSTO (3)": 2 pers × 5 noches × Q100 = Q1,000)
@@ -1055,8 +1078,9 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const costoBonificaciones = personalServicio * diasTotales * Math.max(0, inp.bonificacionDiaria ?? 0)
 
   const costoTrasladoCotizado = usaServicioBasico ? costoTraslado : 0
-  const subtotalSinImprevistos = costoTrasladoCotizado + costoDieselTrabajo + costoDieselAforo + costoInspeccionCamara + costoTuberiaServicio +
+  const subtotalSinImprevistos = costoTrasladoCotizado + costoDieselTrabajo + costoAforo + costoInspeccionCamara + costoTuberiaServicio +
     costoMaterialInstalacionServicio + costoTecnicoChequeoServicio +
+    costoMedicionNivelServicio + costoAnalisisAguaServicio +
     costoQuimicos + costoPersonal + costoViaticos + costoHospedaje + costoBonificaciones
 
   // ── IMPREVISTOS — fórmula exacta Hoja LIMPIEZA MECÁNICA ─────────────────────
@@ -1080,12 +1104,12 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const precioVentaQuimicos = usaLimpieza ? precioVentaQuimicoCaneca * canecasQuimicosServicio : 0
   const precioVentaTraslado = usaServicioBasico && costoTraslado > 0 ? precioVentaTrasladoServicio : 0
   const precioVentaAforo = usaAforo ? (inp.precioVentaAforoTotal ?? 23000) : 0
-  const precioVentaCamara = servicioSubtipo === 'completo' && inp.inspeccionCamara
+  const precioVentaCamara = usaServicioBasico && inp.inspeccionCamara
     ? Math.max(0, inp.precioInspeccionCamara ?? DEFAULT_SERVICIO_COTIZACION.camaraInspeccionPrecio)
     : 0
   const markupCamaraPct = costoInspeccionCamara > 0 ? ((precioVentaCamara - costoInspeccionCamara) / costoInspeccionCamara) * 100 : 0
   const precioVentaTotal    = precioVentaTraslado + precioVentaLimpieza + precioVentaQuimicos + precioVentaAforo + precioVentaCamara + precioVentaTuberiaServicio +
-    precioMaterialInstalacionServicio + precioTecnicoChequeoServicio
+    precioMaterialInstalacionServicio + precioTecnicoChequeoServicio + precioMedicionNivelServicio + precioAnalisisAguaServicio
   const ivaSobreVenta       = precioVentaTotal * IVA
   const isrSobreVenta       = precioVentaTotal * 0.05  // ISR limpieza = 5%
   const precioNetoVendedor  = precioVentaTotal - ivaSobreVenta - isrSobreVenta
@@ -1105,6 +1129,7 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
     personalServicio, canecasQuimicosServicio, cantidadTuberiaServicio, servicioTuberiaModo,
     costoTuberiaServicio, precioVentaTuberiaServicio,
     costoMaterialInstalacionServicio, precioMaterialInstalacionServicio, costoTecnicoChequeoServicio, precioTecnicoChequeoServicio,
+    costoMedicionNivelServicio, precioMedicionNivelServicio, costoAnalisisAguaServicio, precioAnalisisAguaServicio,
     costoQuimicos,
     costoPersonal, costoViaticos, costoHospedaje, costoBonificaciones, precioVentaCamara, markupCamaraPct,
     subtotalSinImprevistos, imprevisto10pct, imprevistoPorHora, costoNetoHora,
@@ -1228,6 +1253,7 @@ export const defaultInputsLimpieza: InputsLimpieza = {
   aumentoKmPct: 0,
   equipoServicio: '10T1',
   horasAforo: 0,
+  aforoDetallado: defaultInputsAforoDetallado,
   cantidadTuberiaServicio: 0,
   servicioTuberiaModo: 'extraccion-instalacion',
   tubosExtraccion: 0,
@@ -1240,6 +1266,10 @@ export const defaultInputsLimpieza: InputsLimpieza = {
   costoMaterialInstalacionServicio: DEFAULT_SERVICIO_COTIZACION.materialInstalacionCosto,
   precioTecnicoChequeoServicio: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoPrecio,
   costoTecnicoChequeoServicio: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoCosto,
+  precioMedicionNivelServicio: DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio,
+  costoMedicionNivelServicio: DEFAULT_SERVICIO_COTIZACION.medicionNivelCosto,
+  precioAnalisisAguaServicio: DEFAULT_SERVICIO_COTIZACION.analisisAguaPrecio,
+  costoAnalisisAguaServicio: DEFAULT_SERVICIO_COTIZACION.analisisAguaCosto,
   dobleTurno: false,
   inspeccionCamara: false,
   precioGasolina: 33,

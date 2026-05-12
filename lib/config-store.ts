@@ -83,6 +83,10 @@ export interface ServicioCotizacionConfig {
   tecnicoChequeoCosto: number
   camaraInspeccionPrecio: number
   camaraInspeccionCosto: number
+  medicionNivelPrecio: number
+  medicionNivelCosto: number
+  analisisAguaPrecio: number
+  analisisAguaCosto: number
 }
 
 export const DEFAULT_SERVICIO_TUBERIA: ServicioTuberiaRegla[] = [
@@ -113,6 +117,10 @@ export const DEFAULT_SERVICIO_COTIZACION: ServicioCotizacionConfig = {
   tecnicoChequeoCosto: 1200,
   camaraInspeccionPrecio: 8000,
   camaraInspeccionCosto: 4500,
+  medicionNivelPrecio: 0,
+  medicionNivelCosto: 0,
+  analisisAguaPrecio: 0,
+  analisisAguaCosto: 0,
 }
 
 export interface AppConfig {
@@ -239,7 +247,7 @@ export const DEFAULT_CONFIG: AppConfig = {
 }
 
 export const HORAS_ADVERSAS_CONFIG_VERSION = 2
-export const SERVICIO_COTIZACION_CONFIG_VERSION = 3
+export const SERVICIO_COTIZACION_CONFIG_VERSION = 4
 
 export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
   const cfg: AppConfig = { ...DEFAULT_CONFIG, ...(raw ?? {}) }
@@ -273,6 +281,10 @@ export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
       tecnicoChequeoCosto: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoCosto,
       camaraInspeccionPrecio: DEFAULT_SERVICIO_COTIZACION.camaraInspeccionPrecio,
       camaraInspeccionCosto: DEFAULT_SERVICIO_COTIZACION.camaraInspeccionCosto,
+      medicionNivelPrecio: DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio,
+      medicionNivelCosto: DEFAULT_SERVICIO_COTIZACION.medicionNivelCosto,
+      analisisAguaPrecio: DEFAULT_SERVICIO_COTIZACION.analisisAguaPrecio,
+      analisisAguaCosto: DEFAULT_SERVICIO_COTIZACION.analisisAguaCosto,
     }
   }
   cfg.servicioCotizacionConfigVersion = SERVICIO_COTIZACION_CONFIG_VERSION
