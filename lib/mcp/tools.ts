@@ -8,6 +8,7 @@ import { createHash, timingSafeEqual } from 'crypto'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS } from '@/lib/config-store'
+import { DEFAULT_PLAN_PAGOS } from '@/lib/quotation-store'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -747,19 +748,13 @@ const misPagos: ToolDef = {
     }
 
     // Plan: si el proyecto tiene planPagos JSON override, usarlo; si no, plan por defecto
-    let plan: Array<{ id: string; label: string; pct: number; fijo?: number; visible?: boolean }> = []
+    let plan: Array<{ id: string; label: string; pct: number; fijo?: boolean; visible?: boolean; montoFijo?: number }> = []
     try {
       if (proyecto.planPagos) plan = JSON.parse(proyecto.planPagos)
     } catch { /* ignore parse errors */ }
     plan = plan.filter(h => h.visible !== false)
     if (plan.length === 0) {
-      // Plan default: reserva 20%, mitad 30%, entubado 30%, aforo 20%
-      plan = [
-        { id: 'reserva',    label: 'Reserva',    pct: 0.20 },
-        { id: 'mitad-perf', label: 'Mitad perf', pct: 0.30 },
-        { id: 'entubar',    label: 'Entubado',   pct: 0.30 },
-        { id: 'prueba',     label: 'Aforo/prueba', pct: 0.20 },
-      ]
+      plan = DEFAULT_PLAN_PAGOS.filter(h => h.visible !== false)
     }
 
     const pagos = await prisma.pago.findMany({
@@ -774,7 +769,7 @@ const misPagos: ToolDef = {
     }
 
     const hitos = plan.map(h => {
-      const esperado = h.fijo ?? proyecto.monto * h.pct
+      const esperado = typeof h.montoFijo === 'number' ? h.montoFijo : proyecto.monto * h.pct / 100
       const cobrado = montoPorHito.get(h.id) ?? 0
       return {
         id: h.id,
