@@ -398,7 +398,7 @@ export default function CrmPage() {
                     className="w-full bg-white/5 border border-white/10 text-slate-200 text-sm rounded-xl px-3 py-2 outline-none focus:border-blue-500/60"
                   >
                     <option value="Perforación de Pozo">Perforación de Pozo</option>
-                    <option value="Limpieza Mecánica">Limpieza Mecánica</option>
+                    <option value="Limpieza Mecánica">Servicios de Mantenimiento</option>
                   </select>
                 </div>
                 <div>

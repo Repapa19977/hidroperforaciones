@@ -36,10 +36,18 @@ import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
 import { crearVendedorOption, resolverEmailVendedor, type VendedorOption } from '@/lib/vendedores'
 
 type TipoCot = 'perforacion' | 'limpieza'
+type TipoClienteCot = 'individual' | 'empresa'
+
 const SERVICIO_MANTENIMIENTO_LABEL = 'Servicios de Mantenimiento'
 const PROYECTO_PERFORACION_DEFAULT = 'Perforación de pozo mecánico'
 const PROYECTO_SERVICIO_DEFAULT = 'Servicios de mantenimiento'
 const vendedoresDefaultOptions: VendedorOption[] = VENDEDORES.map(nombre => crearVendedorOption(nombre))
+
+const SERVICIO_OPTIONAL_LINE_KEYS = new Set([
+  'inspeccion-camara',
+  'medicion-nivel-agua',
+  'analisis-agua-servicio',
+])
 
 const hitoPagoVisible = (hito: HitoPago) => hito.visible !== false
 const sumaPlanPagosVisible = (plan: HitoPago[]) =>
@@ -216,7 +224,10 @@ export default function NuevaCotizacionPage() {
           if (!data?.contacto) return
           const c = data.contacto
           if (c.nombre)       setCliente(c.nombre)
-          if (c.empresa)      setEmpresa(c.empresa)
+          if (c.empresa) {
+            setEmpresa(c.empresa)
+            setTipoCliente('empresa')
+          }
           if (c.telefono)     setTelefono(c.telefono)
           if (c.email)        setEmail(c.email)
           const partesDir = [c.municipio, c.departamento].filter(Boolean).join(', ')
@@ -261,6 +272,8 @@ export default function NuevaCotizacionPage() {
             if (d.cliente)    setCliente(d.cliente)
             if (d.contactoId) setContactoId(d.contactoId)
             if (d.empresa)    setEmpresa(d.empresa)
+            if (d.tipoCliente === 'empresa' || d.tipoCliente === 'individual') setTipoCliente(d.tipoCliente)
+            if (d.razonSocial) setRazonSocial(d.razonSocial)
             if (d.nit)        setNit(d.nit)
             if (d.telefono)   setTelefono(d.telefono)
             if (d.email)      setEmail(d.email)
@@ -268,6 +281,7 @@ export default function NuevaCotizacionPage() {
             if (d.direccion)  setDireccion(d.direccion)
             if (d.departamento) setDepartamento(d.departamento)
             if (d.municipio)    setMunicipio(d.municipio)
+            if (d.aldea)      setAldea(d.aldea)
             if (d.duracion)   setDuracion(d.duracion)
             if (d.vendedor) {
               setVendedor(d.vendedor)
@@ -340,6 +354,8 @@ export default function NuevaCotizacionPage() {
             if (d.cliente)    setCliente(d.cliente)
             if (d.contactoId) setContactoId(d.contactoId)
             if (d.empresa)    setEmpresa(d.empresa)
+            if (d.tipoCliente === 'empresa' || d.tipoCliente === 'individual') setTipoCliente(d.tipoCliente)
+            if (d.razonSocial) setRazonSocial(d.razonSocial)
             if (d.nit)        setNit(d.nit)
             if (d.telefono)   setTelefono(d.telefono)
             if (d.email)      setEmail(d.email)
@@ -347,6 +363,7 @@ export default function NuevaCotizacionPage() {
             if (d.direccion)  setDireccion(d.direccion)
             if (d.departamento) setDepartamento(d.departamento)
             if (d.municipio)    setMunicipio(d.municipio)
+            if (d.aldea)      setAldea(d.aldea)
             if (d.duracion)   setDuracion(d.duracion)
             // vendedor NO se copia — lo fuerza el JWT al guardar (admin) o el default (superadmin)
             if (d.notas)      setNotas(d.notas)
@@ -421,6 +438,8 @@ export default function NuevaCotizacionPage() {
   const [cliente, setCliente] = useState('')
   const [contactoId, setContactoId] = useState<string | null>(null)  // FK al Contacto seleccionado (necesario para portal cliente)
   const [empresa, setEmpresa] = useState('')
+  const [tipoCliente, setTipoCliente] = useState<TipoClienteCot>('individual')
+  const [razonSocial, setRazonSocial] = useState('')
   const [nit, setNit] = useState('')
   const [telefono, setTelefono] = useState('')
   const [email, setEmail]         = useState('')
@@ -429,6 +448,7 @@ export default function NuevaCotizacionPage() {
   // Ubicación — usada para auto-crear el contacto con depto+municipio ya poblados.
   const [departamento, setDepartamento] = useState('')
   const [municipio, setMunicipio] = useState('')
+  const [aldea, setAldea] = useState('')
   const [duracion, setDuracion] = useState('')  // auto-sincroniza con totalDiasMaquinaria
   const [vendedor, setVendedor] = useState(VENDEDORES[0])
   const [vendedorEmail, setVendedorEmail] = useState(resolverEmailVendedor(VENDEDORES[0]))
@@ -591,6 +611,14 @@ export default function NuevaCotizacionPage() {
   const cfgDe = (key: string): LineaConfig => {
     const extra = lineasExtrasCotizacion.find(e => e.id === key)
     if (extra) return { mostrar: extra.mostrar, cobrar: extra.cobrar }
+    if (tipo === 'limpieza' && SERVICIO_OPTIONAL_LINE_KEYS.has(key)) {
+      const seleccionada =
+        key === 'inspeccion-camara' ? !!il.inspeccionCamara :
+        key === 'medicion-nivel-agua' ? !!il.incluirMedicionNivelServicio :
+        key === 'analisis-agua-servicio' ? !!il.incluirAnalisisAguaServicio :
+        false
+      if (!seleccionada) return { mostrar: false, cobrar: false }
+    }
     if (lineasConfig[key]) return lineasConfig[key]
     if (lineasActivas[key] === false) return { mostrar: false, cobrar: true }  // backward compat
     return { mostrar: true, cobrar: true }
@@ -670,7 +698,8 @@ export default function NuevaCotizacionPage() {
     return {
       correlativo, tipo, fecha: new Date().toLocaleDateString('es-GT'),
       validezDias: 15, cliente, contactoId, empresa, nit, telefono, email, proyecto,
-      departamento, municipio, direccion, duracion,
+      tipoCliente, nombreComercial: empresa, razonSocial,
+      departamento, municipio, aldea, direccion, duracion,
       vendedor,
       vendedorEmail,
       ip: tipo === 'perforacion' ? ip : undefined,
@@ -877,7 +906,7 @@ export default function NuevaCotizacionPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {([
                   { id: 'perforacion' as const, icon: <Drill className="w-5 h-5" />, label: 'Perforación de Pozo', sub: '19 líneas · precio por pie', color: 'blue' },
-                  { id: 'limpieza' as const, icon: <Wrench className="w-5 h-5" />, label: SERVICIO_MANTENIMIENTO_LABEL, sub: '7 líneas · precio por hora', color: 'cyan' },
+                  { id: 'limpieza' as const, icon: <Wrench className="w-5 h-5" />, label: SERVICIO_MANTENIMIENTO_LABEL, sub: 'Servicios · precio por hora', color: 'cyan' },
                 ]).map(t => (
                   <button key={t.id} onClick={() => cambiarTipoCotizacion(t.id)}
                     className={cn('flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left',
@@ -915,6 +944,7 @@ export default function NuevaCotizacionPage() {
                     setContactoId(c.id ?? null)  // vincula al portal cliente
                     setCliente(c.nombre || '')
                     setEmpresa(c.empresa || '')
+                    if (c.empresa) setTipoCliente('empresa')
                     setTelefono(c.telefono || '')
                     setEmail(c.email || '')
                     if (c.departamento) setDepartamento(c.departamento)
@@ -924,10 +954,33 @@ export default function NuevaCotizacionPage() {
                   }}
                 />
               )}
+              <div className="mb-4 rounded-lg border border-white/10 bg-white/3 p-2">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-2">Tipo de cliente</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['individual', 'Persona individual'],
+                    ['empresa', 'Empresa'],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTipoCliente(key)}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
+                        tipoCliente === key
+                          ? 'border-blue-500/50 bg-blue-500/15 text-blue-200'
+                          : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block">
-                    Cliente * {errors.cliente && <span className="text-red-400 ml-1">{errors.cliente}</span>}
+                    {tipoCliente === 'empresa' ? 'Contacto / Atencion a *' : 'Cliente *'} {errors.cliente && <span className="text-red-400 ml-1">{errors.cliente}</span>}
                   </label>
                   <input value={cliente} onChange={e => { setCliente(e.target.value); setErrors(p => ({ ...p, cliente: '' })) }}
                     placeholder="Ej: Juan Pérez"
@@ -935,10 +988,19 @@ export default function NuevaCotizacionPage() {
                       errors.cliente ? 'border-red-500/50' : 'border-white/10')} />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-500 mb-1.5 block">Empresa / Organización</label>
+                  <label className="text-xs text-slate-500 mb-1.5 block">
+                    {tipoCliente === 'empresa' ? 'Nombre comercial' : 'Empresa / Organizacion'}
+                  </label>
                   <input value={empresa} onChange={e => setEmpresa(e.target.value)} placeholder="Ej: Finca El Paraíso S.A."
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
                 </div>
+                {tipoCliente === 'empresa' && (
+                  <div className="sm:col-span-2">
+                    <label className="text-xs text-slate-500 mb-1.5 block">Razon social</label>
+                    <input value={razonSocial} onChange={e => setRazonSocial(e.target.value)} placeholder="Ej: Papelera Internacional Sociedad Anonima"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block">NIT / DPI</label>
                   <input value={nit} onChange={e => setNit(e.target.value)} placeholder="Ej: 1234567-8"
@@ -1017,6 +1079,14 @@ export default function NuevaCotizacionPage() {
                     className={cn('w-full bg-white/5 border rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors',
                       errors.proyecto ? 'border-red-500/50' : 'border-white/10')} />
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Direccion exacta del proyecto
+                  </label>
+                  <input value={direccion} onChange={e => setDireccion(e.target.value)}
+                    placeholder="Ej. km. 16 carretera a El Salvador, lotificacion Arrazola 1"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
+                </div>
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <MapPin className="w-3 h-3" /> Departamento *
@@ -1026,7 +1096,7 @@ export default function NuevaCotizacionPage() {
                     value={departamento}
                     onChange={e => {
                       setDepartamento(e.target.value)
-                      setMunicipio('')  // reset municipio al cambiar depto
+                      setMunicipio('')
                       setErrors(p => ({ ...p, departamento: '' }))
                     }}
                     style={{ colorScheme: 'dark' }}
@@ -1046,7 +1116,7 @@ export default function NuevaCotizacionPage() {
                     <MapPin className="w-3 h-3" /> Municipio *
                     {errors.municipio && <span className="text-red-400 ml-1">{errors.municipio}</span>}
                     {!departamento && (
-                      <span className="text-[10px] text-slate-600 ml-auto">elegí depto primero</span>
+                      <span className="text-[10px] text-slate-600 ml-auto">elegi depto primero</span>
                     )}
                   </label>
                   <select
@@ -1066,12 +1136,12 @@ export default function NuevaCotizacionPage() {
                     ))}
                   </select>
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Dirección exacta del proyecto
+                    <MapPin className="w-3 h-3" /> Aldea
                   </label>
-                  <input value={direccion} onChange={e => setDireccion(e.target.value)}
-                    placeholder="Ej. Finca El Paraíso, km 35 ruta al pacífico"
+                  <input value={aldea} onChange={e => setAldea(e.target.value)}
+                    placeholder="Opcional"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
                 </div>
               </div>
@@ -1450,13 +1520,13 @@ export default function NuevaCotizacionPage() {
               <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-1.5 flex-wrap">
                 <button
                   onClick={() => setAplicarIva(v => !v)}
-                  className={cn('text-[10px] px-2 py-1 rounded border transition-colors',
+                  className={cn('text-[11px] px-3 py-2 rounded-lg border font-semibold transition-colors shadow-sm',
                     aplicarIva
-                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                      : 'border-white/10 text-slate-500 hover:border-white/20')}
+                      ? 'border-amber-500/50 bg-amber-500/20 text-amber-200 shadow-amber-500/10'
+                      : 'border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60')}
                   title={aplicarIva ? 'IVA 12% se suma al total' : 'Total SIN IVA'}
                 >
-                  IVA 12% {aplicarIva ? '✓' : '—'}
+                  {aplicarIva ? 'Con IVA 12%' : 'Sin IVA'}
                 </button>
                 <button
                   onClick={() => setAplicarIsr(v => !v)}
@@ -2453,7 +2523,14 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
 }
 
 // ── Panel Financiero Perforación ─────────────────────────────────────────────
-function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, setLineasConfig }: {
+function CalcServicios({
+  il,
+  patchIl,
+  setServicioSubtipo,
+  res,
+  lineasConfig,
+  setLineasConfig,
+}: {
   il: InputsLimpieza
   patchIl: (k: keyof InputsLimpieza, v: number | boolean | string) => void
   setServicioSubtipo: (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => void
@@ -2491,6 +2568,22 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
       [tecnicoKey]: { ...tecnicoCfg, [campo]: !tecnicoCfg[campo] },
     }))
   }
+  const optionalCfg = (key: string, enabled: boolean): LineaConfig =>
+    lineasConfig[key] ?? { mostrar: enabled, cobrar: enabled }
+  const setOptionalEnabled = (key: string, inputKey: keyof InputsLimpieza, enabled: boolean) => {
+    patchIl(inputKey, enabled)
+    setLineasConfig(prev => ({
+      ...prev,
+      [key]: { mostrar: enabled, cobrar: enabled },
+    }))
+  }
+  const toggleOptionalCampo = (key: string, enabled: boolean, campo: 'mostrar' | 'cobrar') => {
+    const cfg = optionalCfg(key, enabled)
+    setLineasConfig(prev => ({
+      ...prev,
+      [key]: { ...cfg, [campo]: !cfg[campo] },
+    }))
+  }
   const setMarkupTecnico = (pct: number) => {
     patchIl('precioTecnicoChequeoServicio', Math.round(costoTecnico * (1 + pct / 100) * 100) / 100)
   }
@@ -2514,7 +2607,9 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
+      <div>
+        <p className="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wider">Trabajo a ejecutar</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
         {([
           ['basico', 'Servicio Basico', 'Servicios de mantenimiento'],
           ['equipamiento', 'Equipamiento', 'Rubros del Excel'],
@@ -2535,14 +2630,15 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
             <p className="text-[10px] text-slate-500 mt-0.5">{desc}</p>
           </button>
         ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        <div>
-          <label className="text-xs text-slate-400 mb-1 block font-medium">Trabajo a ejecutar</label>
+        <div className="sm:col-span-2 md:col-span-3">
+          <label className="text-xs text-slate-400 mb-1 block font-medium">Descripcion del trabajo</label>
           <input value={il.trabajoEjecutar ?? ''} onChange={e => patchIl('trabajoEjecutar', e.target.value)} className={inputClass} />
         </div>
-        <NumInput label="Km al sitio" value={il.kilometros} onChange={v => patchIl('kilometros', v)}
+        <NumInput label="Km al punto" value={il.kilometros} onChange={v => patchIl('kilometros', v)}
           hint={`Ida/vuelta con aumento: ${res.kmIdaVuelta.toFixed(1)} km`} />
 
         {usaHorasLimpieza && (
@@ -2677,25 +2773,94 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
 
         {usaLimpieza && (
           <>
-            <button type="button" onClick={() => patchIl('inspeccionCamara', !(il.inspeccionCamara ?? false))} className={toggleClass(!!il.inspeccionCamara)}>
-              Inspeccion con camara: {il.inspeccionCamara ? 'Si' : 'No'}
-            </button>
-            {il.inspeccionCamara && (
-              <>
-                <NumInput label="Costo camareo (Q)" value={il.costoInspeccionCamara ?? 4500} onChange={v => patchIl('costoInspeccionCamara', v)}
-                  hint="Costo interno" />
-                <NumInput label="Venta camareo (Q)" value={il.precioInspeccionCamara ?? 8000} onChange={v => patchIl('precioInspeccionCamara', v)}
-                  accent hint={`Aumento: ${res.markupCamaraPct.toFixed(1)}%`} />
-              </>
-            )}
-            <NumInput label="Costo medicion nivel (Q)" value={il.costoMedicionNivelServicio ?? 0} onChange={v => patchIl('costoMedicionNivelServicio', v)}
-              hint="Costo interno de sonda" />
-            <NumInput label="Venta medicion nivel (Q)" value={il.precioMedicionNivelServicio ?? 0} onChange={v => patchIl('precioMedicionNivelServicio', v)}
-              accent hint="Linea 9 del servicio basico" />
-            <NumInput label="Costo analisis agua (Q)" value={il.costoAnalisisAguaServicio ?? 0} onChange={v => patchIl('costoAnalisisAguaServicio', v)}
-              hint="Costo interno laboratorio" />
-            <NumInput label="Venta analisis agua (Q)" value={il.precioAnalisisAguaServicio ?? 0} onChange={v => patchIl('precioAnalisisAguaServicio', v)}
-              accent hint="Linea 10 del servicio basico" />
+            {([
+              {
+                key: 'inspeccion-camara',
+                inputKey: 'inspeccionCamara',
+                enabled: !!il.inspeccionCamara,
+                title: 'Camareo',
+                hint: 'Camara + quimico clasificador',
+                costLabel: 'Costo camareo (Q)',
+                saleLabel: 'Venta camareo (Q)',
+                costValue: il.costoInspeccionCamara ?? 4500,
+                saleValue: il.precioInspeccionCamara ?? 8000,
+                costInput: 'costoInspeccionCamara',
+                saleInput: 'precioInspeccionCamara',
+                saleHint: `Aumento: ${res.markupCamaraPct.toFixed(1)}%`,
+              },
+              {
+                key: 'medicion-nivel-agua',
+                inputKey: 'incluirMedicionNivelServicio',
+                enabled: !!il.incluirMedicionNivelServicio,
+                title: 'Medicion de nivel',
+                hint: 'Linea 9 del servicio basico',
+                costLabel: 'Costo medicion nivel (Q)',
+                saleLabel: 'Venta medicion nivel (Q)',
+                costValue: il.costoMedicionNivelServicio ?? 0,
+                saleValue: il.precioMedicionNivelServicio ?? 0,
+                costInput: 'costoMedicionNivelServicio',
+                saleInput: 'precioMedicionNivelServicio',
+                saleHint: 'Solo sale en PDF si esta incluido y cobrado',
+              },
+              {
+                key: 'analisis-agua-servicio',
+                inputKey: 'incluirAnalisisAguaServicio',
+                enabled: !!il.incluirAnalisisAguaServicio,
+                title: 'Analisis de agua',
+                hint: 'Fisico-quimico y bacteriologico',
+                costLabel: 'Costo analisis agua (Q)',
+                saleLabel: 'Venta analisis agua (Q)',
+                costValue: il.costoAnalisisAguaServicio ?? 0,
+                saleValue: il.precioAnalisisAguaServicio ?? 0,
+                costInput: 'costoAnalisisAguaServicio',
+                saleInput: 'precioAnalisisAguaServicio',
+                saleHint: 'Solo sale en PDF si esta incluido y cobrado',
+              },
+            ] as const).map(item => {
+              const cfg = optionalCfg(item.key, item.enabled)
+              return (
+                <div key={item.key} className="sm:col-span-2 md:col-span-3 rounded-lg border border-white/10 bg-white/3 p-3 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOptionalEnabled(item.key, item.inputKey, !item.enabled)}
+                      className={cn(toggleClass(item.enabled), '!h-auto min-h-[58px] w-full sm:w-auto min-w-[220px] py-2')}
+                    >
+                      {item.title}: {item.enabled ? 'Si' : 'No'}
+                      <span className="block text-[10px] text-slate-500 mt-0.5">{item.hint}</span>
+                    </button>
+                    {item.enabled && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleOptionalCampo(item.key, item.enabled, 'mostrar')}
+                          className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
+                            cfg.mostrar ? 'bg-blue-500 border-blue-500 shadow-sm shadow-blue-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
+                          title={cfg.mostrar ? 'Visible en PDF' : 'Oculto del PDF'}
+                        >
+                          {cfg.mostrar ? <Eye className="w-3.5 h-3.5 text-white" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleOptionalCampo(item.key, item.enabled, 'cobrar')}
+                          className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
+                            cfg.cobrar ? 'bg-emerald-500 border-emerald-500 shadow-sm shadow-emerald-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
+                          title={cfg.cobrar ? 'Se cobra al cliente' : 'No se cobra'}
+                        >
+                          <DollarSign className={cn('w-3.5 h-3.5', cfg.cobrar ? 'text-white' : 'text-slate-500')} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {item.enabled && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <NumInput label={item.costLabel} value={item.costValue} onChange={v => patchIl(item.costInput, v)} hint="Costo interno" />
+                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={item.saleHint} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </>
         )}
 
@@ -3558,7 +3723,7 @@ function buildLineasLimp(
       nombre: 'Medicion de nivel del agua por sonda en linea piezometrica o linea de aire',
       unidad: 'Global',
       cant: 1,
-      precio: precioDe('medicion-nivel-agua', il.precioMedicionNivelServicio ?? 0),
+      precio: precioDe('medicion-nivel-agua', il.incluirMedicionNivelServicio ? (il.precioMedicionNivelServicio ?? 0) : 0),
       total: 0,
     })
   }
@@ -3569,7 +3734,7 @@ function buildLineasLimp(
       nombre: 'Analisis fisico-quimico y bacteriologico del agua',
       unidad: 'Unidad',
       cant: 1,
-      precio: precioDe('analisis-agua-servicio', il.precioAnalisisAguaServicio ?? 0),
+      precio: precioDe('analisis-agua-servicio', il.incluirAnalisisAguaServicio ? (il.precioAnalisisAguaServicio ?? 0) : 0),
       total: 0,
     })
   }

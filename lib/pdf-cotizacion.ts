@@ -295,7 +295,7 @@ function buildLineasLimp(
       nombre: 'Medicion de nivel del agua por sonda en linea piezometrica o linea de aire',
       unidad: 'Global',
       cant: 1,
-      precio: precioDe('medicion-nivel-agua', il.precioMedicionNivelServicio ?? 0),
+      precio: precioDe('medicion-nivel-agua', il.incluirMedicionNivelServicio ? (il.precioMedicionNivelServicio ?? 0) : 0),
       total: 0,
     })
   }
@@ -306,7 +306,7 @@ function buildLineasLimp(
       nombre: 'Analisis fisico-quimico y bacteriologico del agua',
       unidad: 'Unidad',
       cant: 1,
-      precio: precioDe('analisis-agua-servicio', il.precioAnalisisAguaServicio ?? 0),
+      precio: precioDe('analisis-agua-servicio', il.incluirAnalisisAguaServicio ? (il.precioAnalisisAguaServicio ?? 0) : 0),
       total: 0,
     })
   }
@@ -515,13 +515,25 @@ export async function generarPDF(
     })
 
   const todasLineas: LineaFinal[] = [...lineasBase, ...extras]
+  const servicioOptionalLineKeys = new Set(['inspeccion-camara', 'medicion-nivel-agua', 'analisis-agua-servicio'])
+  const servicioOpcionalSeleccionado = (key: string) => {
+    if (!il) return false
+    if (key === 'inspeccion-camara') return !!il.inspeccionCamara
+    if (key === 'medicion-nivel-agua') return !!il.incluirMedicionNivelServicio
+    if (key === 'analisis-agua-servicio') return !!il.incluirAnalisisAguaServicio
+    return false
+  }
 
   const esVisible = (l: LineaFinal) =>
     l.esExtra ? (l.extraMostrar ?? true) : getLineaConfig(l.key, lineasConfig, lineasActivas).mostrar
   const esCobrada = (l: LineaFinal) =>
     l.esExtra ? (l.extraCobrar ?? true) : getLineaConfig(l.key, lineasConfig, lineasActivas).cobrar
+  const ocultarServicioOpcional = (l: LineaFinal) =>
+    data.tipo === 'limpieza' &&
+    servicioOptionalLineKeys.has(l.key) &&
+    (!servicioOpcionalSeleccionado(l.key) || !esCobrada(l) || l.total <= 0)
 
-  const lineas = todasLineas.filter(esVisible)
+  const lineas = todasLineas.filter(l => esVisible(l) && !ocultarServicioOpcional(l))
   const subtotal = todasLineas.filter(esCobrada).reduce((a, b) => a + b.total, 0)
 
   // Toggles de impuestos — controlados por el usuario en la cotización
@@ -653,7 +665,7 @@ export async function generarPDF(
   function drawQuoteInfo(yPos: number) {
     sectionTitle('DATOS DE LA COTIZACION', yPos)
     yPos += 3.5
-    const boxH = 31
+    const boxH = 36
     setFill('#f7f9fc'); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
     doc.roundedRect(mg, yPos, W - 2 * mg, boxH, 2, 2, 'FD')
 
@@ -661,15 +673,25 @@ export async function generarPDF(
     const colW = (W - 2 * mg - gap - 8) / 2
     const x1 = mg + 4
     const x2 = x1 + colW + gap
+    const senores = data.tipoCliente === 'empresa'
+      ? (data.razonSocial || data.empresa || data.cliente)
+      : (data.empresa || data.cliente)
+    const ubicacion = [
+      data.direccion,
+      data.aldea ? `Aldea: ${data.aldea}` : '',
+      data.municipio,
+      data.departamento,
+    ].filter(Boolean).join(', ')
     const left: Array<[string, string]> = [
-      ['SENORES', limpiar(data.empresa || data.cliente)],
+      ['SENORES', limpiar(senores)],
+      ...(data.tipoCliente === 'empresa' && data.empresa ? [['NOMBRE COMERCIAL', limpiar(data.empresa)] as [string, string]] : []),
       ['ATENCION A', limpiar(data.cliente)],
       ['NIT', limpiar(data.nit || '')],
       ['TELEFONO', limpiar(data.telefono || '')],
     ]
     const right: Array<[string, string]> = [
       ['PROYECTO', limpiar(data.proyecto || '')],
-      ['DIRECCION', limpiar(data.direccion || '')],
+      ['DIRECCION', limpiar(ubicacion || '')],
       ['VALIDEZ', `${data.validezDias || 15} dias`],
       ['TIEMPO', limpiar(data.duracion || '')],
       ['PROFUNDIDAD', ip?.profundidad ? `${ip.profundidad} pies` : ''],
@@ -681,7 +703,7 @@ export async function generarPDF(
       doc.text(label, x1, rowY)
       doc.setFont('helvetica', 'normal'); doc.setFontSize(6); setText('#1f2937')
       doc.text(value.slice(0, 42), x1 + 23, rowY)
-      rowY += 6
+      rowY += 5.6
     }
 
     rowY = yPos + 5
