@@ -34,7 +34,7 @@ interface HitoCalculado {
   pagos: Array<{ id: string; fecha: string; monto: number; metodo: string; banco: string; referencia: string }>
 }
 
-interface PlanPagosItem { id: string; label: string; pct: number; fijo?: boolean }
+interface PlanPagosItem { id: string; label: string; pct: number; fijo?: boolean; visible?: boolean }
 
 // ── GET ──────────────────────────────────────────────────────────────────
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -80,6 +80,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     ]
     planSource = 'default'
   }
+  const planPagosActivos = planPagos.filter(h => h.visible !== false)
 
   // Traer pagos activos del proyecto
   const pagos = await prisma.pago.findMany({
@@ -89,7 +90,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
   // ── Calcular estado por hito (con cascada de excedentes) ──
   const totalProyecto = proyecto.monto
-  const hitos: HitoCalculado[] = planPagos.map(h => ({
+  const hitos: HitoCalculado[] = planPagosActivos.map(h => ({
     id: h.id,
     label: h.label,
     pct: h.pct,
@@ -161,7 +162,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       id: proyecto.id, correlativo: proyecto.correlativo, nombre: proyecto.nombre,
       monto: totalProyecto, estado: proyecto.estado,
     },
-    planPagos,        // el plan usado (para que el editor lo cargue)
+    planPagos: planPagosActivos,        // el plan usado (para que el editor lo cargue)
     planSource,       // "proyecto" | "cotizacion" | "default"
     hitos,
     pagos,

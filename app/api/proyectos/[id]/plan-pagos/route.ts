@@ -13,6 +13,7 @@ const hitoSchema = z.object({
   label: z.string().min(1).max(100),
   pct: z.number().min(0).max(100),
   fijo: z.boolean().optional().default(false),
+  visible: z.boolean().optional().default(true),
 })
 
 const bodySchema = z.object({
@@ -36,10 +37,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // Si no es null, validar suma = 100
   if (planPagos) {
-    const suma = planPagos.reduce((a, h) => a + h.pct, 0)
+    const visibles = planPagos.filter(h => h.visible !== false)
+    const suma = visibles.reduce((a, h) => a + h.pct, 0)
+    if (visibles.length === 0) {
+      return NextResponse.json({
+        error: 'Debe haber al menos un hito visible en el plan de pagos',
+      }, { status: 400 })
+    }
     if (Math.abs(suma - 100) > 0.01) {
       return NextResponse.json({
-        error: `La suma de porcentajes debe ser 100% (actual: ${suma.toFixed(1)}%)`,
+        error: `La suma de porcentajes visibles debe ser 100% (actual: ${suma.toFixed(1)}%)`,
       }, { status: 400 })
     }
     // Validar ids únicos

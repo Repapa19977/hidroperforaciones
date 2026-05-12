@@ -53,7 +53,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const pendiente = Math.max(0, proyecto.monto - totalRecibido)
 
   // Plan de pagos (priorizar override del proyecto)
-  let planPagos: Array<{ id: string; label: string; pct: number }> = []
+  let planPagos: Array<{ id: string; label: string; pct: number; visible?: boolean }> = []
   const proyectoFull = await prisma.proyecto.findUnique({ where: { id }, select: { planPagos: true } })
   if (proyectoFull?.planPagos) {
     try { planPagos = JSON.parse(proyectoFull.planPagos) } catch {}
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       pendiente,
       pctCobrado: proyecto.monto > 0 ? (totalRecibido / proyecto.monto) * 100 : 0,
       historial: pagos,
-      planPagos,
+      planPagos: planPagos.filter(h => h.visible !== false),
     },
     bitacora: bitacoras.filter(b => b.notaCliente || b.perforacionDia > 0),  // filtrar entradas sin contenido para el cliente
   })

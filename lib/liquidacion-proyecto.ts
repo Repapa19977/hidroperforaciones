@@ -420,7 +420,8 @@ export function calcularBalanceProyecto(params: {
   const totalVariables = round2(variables.reduce((sum, variable) => sum + variable.total, 0))
   const totalContratoMasVariables = round2(montoCotizacion + totalVariables)
 
-  const plan = Array.isArray(data.planPagos) && data.planPagos.length > 0 ? data.planPagos : DEFAULT_PLAN_PAGOS
+  const plan = (Array.isArray(data.planPagos) && data.planPagos.length > 0 ? data.planPagos : DEFAULT_PLAN_PAGOS)
+    .filter(hito => hito.visible !== false)
   const hitosPago = plan.map((hito, index) => ({
     id: cleanText(hito.id, `hito-${index}`),
     label: cleanText(hito.label, `Pago ${index + 1}`),

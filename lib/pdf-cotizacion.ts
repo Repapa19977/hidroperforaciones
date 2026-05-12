@@ -5,7 +5,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { QuotationData, HitoPago } from './quotation-store'
-import { getLineaConfig } from './quotation-store'
+import { DEFAULT_PLAN_PAGOS, getLineaConfig } from './quotation-store'
 import { calcularPerforacion, calcularLimpieza, defaultInputsPerforacion, defaultInputsLimpieza, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type CuentaBancaria } from './config-store'
@@ -570,13 +570,8 @@ export async function generarPDF(
   const logosBancos = await Promise.all(cuentas.map(c => cargarLogoBanco(c.banco)))
   const hitos: HitoPago[] = (data.planPagos && data.planPagos.length > 0)
     ? data.planPagos
-    : [
-        { id: 'anticipo',   label: 'Anticipo',                  pct: 60, fijo: false },
-        { id: 'mitad-perf', label: 'Al 50% de perforacion',     pct: 20, fijo: false },
-        { id: 'entubar',    label: 'Antes de entubar',          pct: 15, fijo: false },
-        { id: 'prueba',     label: 'Antes de prueba de bombeo', pct: 5,  fijo: false },
-      ]
-  const hitosActivos = hitos.filter(h => h.pct > 0)
+    : DEFAULT_PLAN_PAGOS
+  const hitosActivos = hitos.filter(h => h.visible !== false && h.pct > 0)
 
   const rgb = (hex: string) => hexToRgb(hex)
   const setFill = (hex: string) => doc.setFillColor(...rgb(hex))

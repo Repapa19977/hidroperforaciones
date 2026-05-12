@@ -747,10 +747,11 @@ const misPagos: ToolDef = {
     }
 
     // Plan: si el proyecto tiene planPagos JSON override, usarlo; si no, plan por defecto
-    let plan: Array<{ id: string; label: string; pct: number; fijo?: number }> = []
+    let plan: Array<{ id: string; label: string; pct: number; fijo?: number; visible?: boolean }> = []
     try {
       if (proyecto.planPagos) plan = JSON.parse(proyecto.planPagos)
     } catch { /* ignore parse errors */ }
+    plan = plan.filter(h => h.visible !== false)
     if (plan.length === 0) {
       // Plan default: reserva 20%, mitad 30%, entubado 30%, aforo 20%
       plan = [

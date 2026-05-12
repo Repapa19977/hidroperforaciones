@@ -137,6 +137,19 @@ export async function POST(request: NextRequest) {
     if (found) contactoId = found.id
   }
 
+  const planPagos = typeof datos === 'object' && Array.isArray(datos?.planPagos) ? datos.planPagos : []
+  if (planPagos.length > 0) {
+    const visibles = planPagos.filter((h: { visible?: boolean }) => h.visible !== false)
+    const sumaPlan = visibles.reduce((acc: number, h: { pct?: number }) => acc + Number(h.pct ?? 0), 0)
+    if (visibles.length === 0 || Math.abs(sumaPlan - 100) > 0.01) {
+      return NextResponse.json({
+        error: visibles.length === 0
+          ? 'Debe haber al menos un hito visible en el plan de pagos.'
+          : `El plan de pagos visible debe sumar 100% (actual: ${sumaPlan.toFixed(1)}%).`,
+      }, { status: 400 })
+    }
+  }
+
   const dataRow = {
     cliente,
     empresa: empresa ?? '',

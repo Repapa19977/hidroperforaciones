@@ -11,17 +11,18 @@ export interface HitoPago {
   label: string
   pct: number
   fijo: boolean
+  visible?: boolean
 }
 
 // Plan de pagos — defaults según PDF de referencia P5332.
-// Los 4 hitos son editables por cotización; la UI valida que sumen 100%.
-// fijo=false permite al usuario ajustar porcentajes; fijo=true los bloquea.
+// Todos los hitos son editables; la UI/API validan que los visibles sumen 100%.
+// visible=false oculta el hito del PDF y del plan activo de cobros.
 export const DEFAULT_PLAN_PAGOS: HitoPago[] = [
-  { id: 'reserva',    label: 'Reserva',                    pct: 10, fijo: true  },
-  { id: 'anticipo',   label: 'Anticipo',                   pct: 50, fijo: false },
-  { id: 'mitad-perf', label: 'Al 50% de perforación',      pct: 20, fijo: false },
-  { id: 'entubar',    label: 'Antes de entubar',           pct: 15, fijo: false },
-  { id: 'prueba',     label: 'Antes de prueba de bombeo',  pct: 5,  fijo: false },
+  { id: 'reserva',    label: 'Reserva',                    pct: 10, fijo: false, visible: true },
+  { id: 'anticipo',   label: 'Anticipo',                   pct: 50, fijo: false, visible: true },
+  { id: 'mitad-perf', label: 'Al 50% de perforación',      pct: 20, fijo: false, visible: true },
+  { id: 'entubar',    label: 'Antes de entubar',           pct: 15, fijo: false, visible: true },
+  { id: 'prueba',     label: 'Antes de prueba de bombeo',  pct: 5,  fijo: false, visible: true },
 ]
 
 export interface QuotationData {

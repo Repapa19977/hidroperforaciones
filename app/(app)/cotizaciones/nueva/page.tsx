@@ -36,6 +36,10 @@ import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
 
 type TipoCot = 'perforacion' | 'limpieza'
 
+const hitoPagoVisible = (hito: HitoPago) => hito.visible !== false
+const sumaPlanPagosVisible = (plan: HitoPago[]) =>
+  Math.round(plan.filter(hitoPagoVisible).reduce((acc, hito) => acc + Number(hito.pct || 0), 0) * 100) / 100
+
 function inputsServicioDesdeConfig(servicio?: Partial<ServicioCotizacionConfig>): Partial<InputsLimpieza> {
   const s = { ...DEFAULT_SERVICIO_COTIZACION, ...(servicio ?? {}) }
   return {
@@ -604,6 +608,14 @@ export default function NuevaCotizacionPage() {
 
     // Validar que las tuberías seleccionadas tengan costo interno en el catálogo.
     // Bloquea la cotización si falta algún costo (instrucción René 2026-04-20).
+    const hitosVisibles = planPagos.filter(hitoPagoVisible)
+    const sumaPlan = sumaPlanPagosVisible(planPagos)
+    if (hitosVisibles.length === 0) {
+      e.planPagos = 'Debe haber al menos un hito visible en el PDF.'
+    } else if (Math.abs(sumaPlan - 100) > 0.01) {
+      e.planPagos = `El plan de pagos visible debe sumar 100% (actual: ${sumaPlan}%).`
+    }
+
     if (tipo === 'perforacion') {
       if (ip.tubosLisos > 0) {
         const precioLisa = getPrecioTuberia('lisa', ip.diametroTuberia, ip.espesorLisa, ip.tuberiasOverride, ip.tuberiasExtra)
@@ -1182,6 +1194,8 @@ export default function NuevaCotizacionPage() {
               setPlanPagos={setPlanPagos}
               totalConIva={totalConIva}
               formatMoney={formatCotizacionMoney}
+              error={errors.planPagos}
+              onTouched={() => setErrors(prev => ({ ...prev, planPagos: '' }))}
             />
           </div>
 
@@ -3051,28 +3065,32 @@ function Alert({ type, msg }: { type: 'error' | 'ok'; msg: string }) {
 }
 
 // ── Plan de Pagos — componente ───────────────────────────────────────────────
-function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = formatQ }: {
+function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = formatQ, error, onTouched }: {
   planPagos: HitoPago[]
   setPlanPagos: React.Dispatch<React.SetStateAction<HitoPago[]>>
   totalConIva: number
   formatMoney?: (montoQ: number) => string
+  error?: string
+  onTouched?: () => void
 }) {
   const [showPlan, setShowPlan] = useState(false)
-  const SUMA_FIJA = planPagos.filter(h => h.fijo).reduce((a, h) => a + h.pct, 0)
-  const sumaEdit  = planPagos.filter(h => !h.fijo).reduce((a, h) => a + h.pct, 0)
-  const sumaTotal = SUMA_FIJA + sumaEdit
-  const ok = sumaTotal === 100
+  const hitosVisibles = planPagos.filter(hitoPagoVisible)
+  const sumaTotal = sumaPlanPagosVisible(planPagos)
+  const ok = Math.abs(sumaTotal - 100) <= 0.01 && hitosVisibles.length > 0
 
-  function patchHito(id: string, field: 'pct' | 'label', val: number | string) {
+  function patchHito(id: string, field: 'pct' | 'label' | 'visible', val: number | string | boolean) {
+    onTouched?.()
     setPlanPagos(prev => prev.map(h => h.id === id ? { ...h, [field]: val } : h))
   }
   function addHito() {
     const libre = 100 - sumaTotal
-    setPlanPagos(prev => [...prev.filter(h => !h.fijo), {
-      id: `hito-${Date.now()}`, label: 'Pago adicional', pct: Math.max(0, libre), fijo: false,
-    }, ...prev.filter(h => h.fijo)])
+    onTouched?.()
+    setPlanPagos(prev => [...prev, {
+      id: `hito-${Date.now()}`, label: 'Pago adicional', pct: Math.max(0, libre), fijo: false, visible: true,
+    }])
   }
   function removeHito(id: string) {
+    onTouched?.()
     setPlanPagos(prev => prev.filter(h => h.id !== id))
   }
 
@@ -3092,13 +3110,21 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = 
       {showPlan && (
         <div className="px-5 pb-5 border-t border-white/5 pt-4 space-y-2">
           <p className="text-[10px] text-slate-500 mb-3">
-            {SUMA_FIJA > 0
-              ? <>Los valores en gris son fijos. Los editables deben completar el 100% junto con los fijos ({SUMA_FIJA}%).</>
-              : <>Todos los porcentajes son editables. Deben sumar <strong>exactamente 100%</strong> para que la cotización esté completa.</>}
+            Todos los porcentajes son editables. Solo los hitos visibles se imprimen en el PDF y deben sumar <strong>exactamente 100%</strong>.
           </p>
-          {/* Editables primero */}
-          {planPagos.filter(h => !h.fijo).map(h => (
-            <div key={h.id} className="flex items-center gap-2">
+          {planPagos.map(h => (
+            <div key={h.id} className={cn('flex items-center gap-2', !hitoPagoVisible(h) && 'opacity-60')}>
+              <button
+                type="button"
+                onClick={() => patchHito(h.id, 'visible', !hitoPagoVisible(h))}
+                className={cn(
+                  'h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0',
+                  hitoPagoVisible(h) ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25' : 'bg-white/5 text-slate-500 hover:text-slate-300'
+                )}
+                title={hitoPagoVisible(h) ? 'Visible en PDF' : 'Oculto en PDF'}
+              >
+                {hitoPagoVisible(h) ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              </button>
               <input
                 value={h.label}
                 onChange={e => patchHito(h.id, 'label', e.target.value)}
@@ -3113,22 +3139,17 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = 
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">%</span>
               </div>
-              <span className="text-xs text-slate-400 w-20 text-right tabular-nums">{formatMoney(Math.round(totalConIva * h.pct / 100))}</span>
+              <span className="text-xs text-slate-400 w-20 text-right tabular-nums">
+                {hitoPagoVisible(h) ? formatMoney(Math.round(totalConIva * h.pct / 100)) : 'Oculto'}
+              </span>
               <button onClick={() => removeHito(h.id)} className="text-slate-600 hover:text-red-400 transition-colors text-xs">✕</button>
             </div>
           ))}
-          {/* Fijos al final */}
-          {planPagos.filter(h => h.fijo).map(h => (
-            <div key={h.id} className="flex items-center gap-2 opacity-60">
-              <span className="flex-1 text-xs text-slate-500 bg-white/3 border border-white/5 rounded-lg px-2.5 py-1.5">{h.label}</span>
-              <div className="relative w-16">
-                <span className="w-full block text-xs text-slate-500 text-right pr-5 py-1.5">{h.pct}</span>
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-600">%</span>
-              </div>
-              <span className="text-xs text-slate-500 w-20 text-right tabular-nums">{formatMoney(Math.round(totalConIva * h.pct / 100))}</span>
-              <span className="text-[10px] text-slate-600">fijo</span>
+          {error && (
+            <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {error}
             </div>
-          ))}
+          )}
           <div className="pt-2 border-t border-white/5 flex items-center justify-between">
             <button onClick={addHito}
               className="text-[10px] border border-blue-500/30 text-blue-400 hover:border-blue-500/50 px-2.5 py-1.5 rounded transition-colors">
