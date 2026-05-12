@@ -436,7 +436,7 @@ export default function NuevaCotizacionPage() {
   const [mostrarDesgloseImpuestos, setMostrarDesgloseImpuestos] = useState(false)  // desglose visible en PDF
   const [aplicarDescuento, setAplicarDescuento] = useState(false)  // descuento especial al cliente
   const [descuentoMonto, setDescuentoMonto] = useState(0)          // Q descontado sobre subtotal (antes de IVA/ISR)
-  const [mostrarNotaCheque, setMostrarNotaCheque] = useState(false)  // nota "emitir cheque no negociable..." bajo valor por pie
+  const [mostrarNotaCheque, setMostrarNotaCheque] = useState(false)  // nota de pago bajo valor por pie
   const [monedaCotizacion, setMonedaCotizacion] = useState<CurrencyCode>('GTQ')
   const [tipoCambioUsd, setTipoCambioUsd] = useState(DEFAULT_TIPO_CAMBIO_USD)
 
@@ -1462,10 +1462,10 @@ export default function NuevaCotizacionPage() {
                       ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
                       : 'border-white/10 text-slate-500 hover:border-white/20')}
                   title={(mostrarDesgloseImpuestos && mostrarNotaCheque)
-                    ? 'PDF muestra: desglose de impuestos + nota "emitir cheque No Negociable"'
-                    : 'PDF muestra solo el total (sin desglose ni nota de cheque)'}
+                    ? 'PDF muestra: desglose de impuestos + nota de pago'
+                    : 'PDF muestra solo el total (sin desglose ni nota de pago)'}
                 >
-                  Desglose + nota cheque {(mostrarDesgloseImpuestos && mostrarNotaCheque) ? '✓' : '—'}
+                  Desglose + nota pago {(mostrarDesgloseImpuestos && mostrarNotaCheque) ? '✓' : '—'}
                 </button>
               </div>
 
@@ -3097,8 +3097,8 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = 
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 overflow-hidden">
       <button onClick={() => setShowPlan(!showPlan)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/2 transition-colors">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-4 hover:bg-white/2 transition-colors">
+        <p className="min-w-0 text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2 flex-wrap">
           Plan de Pagos
           <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-normal',
             ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400')}>
@@ -3108,54 +3108,70 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = 
         <ChevronRight className={cn('w-4 h-4 text-slate-600 transition-transform', showPlan && 'rotate-90')} />
       </button>
       {showPlan && (
-        <div className="px-5 pb-5 border-t border-white/5 pt-4 space-y-2">
+        <div className="px-4 sm:px-5 pb-5 border-t border-white/5 pt-4 space-y-2">
           <p className="text-[10px] text-slate-500 mb-3">
             Todos los porcentajes son editables. Solo los hitos visibles se imprimen en el PDF y deben sumar <strong>exactamente 100%</strong>.
           </p>
-          {planPagos.map(h => (
-            <div key={h.id} className={cn('flex items-center gap-2', !hitoPagoVisible(h) && 'opacity-60')}>
+          {planPagos.map(h => {
+            const visible = hitoPagoVisible(h)
+            return (
+            <div key={h.id} className={cn(
+              'rounded-xl border border-white/5 bg-white/[0.02] p-2.5 sm:grid sm:grid-cols-[2rem_minmax(0,1fr)_4rem_5.5rem_2rem] sm:items-center sm:gap-2',
+              !visible && 'opacity-60'
+            )}>
+              <div className="grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-2 sm:contents">
               <button
                 type="button"
-                onClick={() => patchHito(h.id, 'visible', !hitoPagoVisible(h))}
+                onClick={() => patchHito(h.id, 'visible', !visible)}
                 className={cn(
                   'h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0',
-                  hitoPagoVisible(h) ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25' : 'bg-white/5 text-slate-500 hover:text-slate-300'
+                  visible ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25' : 'bg-white/5 text-slate-500 hover:text-slate-300'
                 )}
-                title={hitoPagoVisible(h) ? 'Visible en PDF' : 'Oculto en PDF'}
+                title={visible ? 'Visible en PDF' : 'Oculto en PDF'}
               >
-                {hitoPagoVisible(h) ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                {visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
               </button>
               <input
                 value={h.label}
                 onChange={e => patchHito(h.id, 'label', e.target.value)}
-                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-blue-500/50"
+                className="min-w-0 w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white outline-none focus:border-blue-500/50"
               />
+              </div>
+              <div className="mt-2 grid grid-cols-[4rem_minmax(0,1fr)_2rem] items-center gap-2 sm:mt-0 sm:contents">
               <div className="relative w-16">
                 <input
                   type="number" min={0} max={100}
                   value={h.pct}
                   onChange={e => patchHito(h.id, 'pct', Number(e.target.value))}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500/50 text-right pr-5"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-blue-500/50 text-right pr-5"
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">%</span>
               </div>
-              <span className="text-xs text-slate-400 w-20 text-right tabular-nums">
-                {hitoPagoVisible(h) ? formatMoney(Math.round(totalConIva * h.pct / 100)) : 'Oculto'}
+              <span className="min-w-0 truncate text-xs text-slate-400 text-right tabular-nums">
+                {visible ? formatMoney(Math.round(totalConIva * h.pct / 100)) : 'Oculto'}
               </span>
-              <button onClick={() => removeHito(h.id)} className="text-slate-600 hover:text-red-400 transition-colors text-xs">✕</button>
+              <button
+                type="button"
+                onClick={() => removeHito(h.id)}
+                className="h-8 w-8 rounded-lg text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-colors text-xs"
+              >
+                x
+              </button>
+              </div>
             </div>
-          ))}
+            )
+          })}
           {error && (
             <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
               {error}
             </div>
           )}
-          <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+          <div className="pt-2 border-t border-white/5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <button onClick={addHito}
               className="text-[10px] border border-blue-500/30 text-blue-400 hover:border-blue-500/50 px-2.5 py-1.5 rounded transition-colors">
               + Agregar hito
             </button>
-            <div className={cn('text-xs font-semibold tabular-nums', ok ? 'text-emerald-400' : 'text-amber-400')}>
+            <div className={cn('text-xs font-semibold tabular-nums sm:text-right', ok ? 'text-emerald-400' : 'text-amber-400')}>
               Total: {sumaTotal}% = {formatMoney(Math.round(totalConIva * sumaTotal / 100))}
             </div>
           </div>

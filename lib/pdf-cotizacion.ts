@@ -753,7 +753,7 @@ export async function generarPDF(
     if (mostrarNotaCheque) {
       const notaIva = aplicarIva ? 'El precio ya incluye IVA' : 'Precios sin IVA'
       doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); setText('#64748b')
-      const nota = `${notaIva}. Cheque No Negociable a nombre de Hidroperforaciones, S.A.`
+      const nota = `${notaIva}. Pago por Cheque No Negociable, deposito o transferencia a nombre de Hidroperforaciones, S.A.`
       doc.text(doc.splitTextToSize(nota, boxW - 8).slice(0, 2), boxX + 4, yPos + 11.1)
     }
 
