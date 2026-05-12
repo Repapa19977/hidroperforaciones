@@ -59,8 +59,8 @@ export interface QuotationData {
   aplicarIsr?: boolean     // aplicar ISR 7% al subtotal (default false)
   aplicarDescuento?: boolean  // aplicar descuento especial (resta al subtotal antes de IVA/ISR)
   descuentoMonto?: number     // Q descontado (sólo si aplicarDescuento)
-  mostrarDesgloseImpuestos?: boolean  // mostrar desglose Subtotal/IVA/ISR/Total en el PDF (default false)
-  mostrarNotaCheque?: boolean  // mostrar nota de pago a nombre de Hidroperforaciones S.A. bajo el valor por pie (default false)
+  mostrarDesgloseImpuestos?: boolean  // mostrar desglose Subtotal/IVA/ISR/Total en el PDF (default true)
+  mostrarNotaCheque?: boolean  // mostrar nota de pago a nombre de Hidroperforaciones S.A. bajo el valor por pie (default true)
   valorPorPieManual?: number          // override manual del "VALOR POR PIE" del pie del PDF (si 0 o undef, usa auto-calc total/profundidad)
   monedaCotizacion?: CurrencyCode     // solo presentacion de cotizacion/PDF; montos internos siguen en GTQ
   tipoCambioUsd?: number              // Q por USD usado como snapshot de esta cotizacion

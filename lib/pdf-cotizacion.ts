@@ -392,6 +392,27 @@ function textoSeguroPdf(texto: string): string {
     .replace(/\u00f7/g, '/')
 }
 
+function normalizarVendedor(vendedor: string): string {
+  return textoSeguroPdf(vendedor)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function resolverEmailVendedor(vendedor: string): string {
+  const emailDirecto = vendedor.trim().match(/[A-Z0-9._%+-]+@hidroperforaciones\.com/i)?.[0]
+  if (emailDirecto) return emailDirecto.toLowerCase()
+  const normalizado = normalizarVendedor(vendedor)
+  const compact = normalizado.replace(/\s+/g, '')
+  if (!compact) return 'ventas@hidroperforaciones.com'
+  if (compact === 'mr' || compact.includes('mramirez') || normalizado.includes('mario') || normalizado.includes('ramirez')) return 'mramirez@hidroperforaciones.com'
+  if (compact === 'gg' || compact.includes('ggarcia') || normalizado.includes('gilda') || normalizado.includes('garcia')) return 'ggarcia@hidroperforaciones.com'
+  if (compact === 'rd' || compact.includes('rdominguez') || normalizado.includes('rene') || normalizado.includes('dominguez')) return 'rdominguez@hidroperforaciones.com'
+  if (normalizado.includes('berner') || normalizado.includes('ventas')) return 'ventas@hidroperforaciones.com'
+  return 'ventas@hidroperforaciones.com'
+}
+
 async function cargarLogoBase64(): Promise<string | null> {
   for (const ruta of ['/pdf-assets/logo.png', '/logo.png']) {
     try {
@@ -526,7 +547,6 @@ export async function generarPDF(
   // Toggles de impuestos — controlados por el usuario en la cotización
   const aplicarIva = data.aplicarIva ?? true   // default: incluye IVA 12%
   const aplicarIsr = data.aplicarIsr ?? false  // default: no suma ISR
-  const mostrarDesgloseImpuestos = data.mostrarDesgloseImpuestos ?? false
   // Descuento especial — resta al subtotal antes de calcular impuestos
   const aplicarDescuento = data.aplicarDescuento ?? false
   const descuentoMonto   = Math.max(0, Number(data.descuentoMonto ?? 0))
@@ -561,11 +581,10 @@ export async function generarPDF(
     ? (data.condicionesLimp ?? data.condiciones ?? '')
     : ''
 
-  const emailVendedor = `ventas@hidroperforaciones.com`
-  const telVendedor   = `55999998`
+  const emailVendedor = resolverEmailVendedor(data.vendedor || '')
   const fechaCotizacion = formatFechaDDMMYYYY(data.fecha)
 
-  const mostrarNotaCheque = data.mostrarNotaCheque ?? false
+  const mostrarNotaCheque = data.mostrarNotaCheque ?? true
   const cuentas = cuentasBancarias ?? []
   const logosBancos = await Promise.all(cuentas.map(c => cargarLogoBanco(c.banco)))
   const hitos: HitoPago[] = (data.planPagos && data.planPagos.length > 0)
@@ -624,7 +643,7 @@ export async function generarPDF(
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText('#1f2937')
     doc.text(data.vendedor || 'Gerencia Hidroperforaciones', mg, yFooter + 7)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#64748b')
-    doc.text(`${emailVendedor} | Tel. ${telVendedor}`, mg, yFooter + 11)
+    doc.text(emailVendedor, mg, yFooter + 11)
     setFill('#173765')
     doc.rect(0, H - 4.5, W, 4.5, 'F')
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.2); setText('#c8d9f3')
@@ -719,10 +738,10 @@ export async function generarPDF(
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); setText('#bfd4ff')
     doc.text(monedaCotizacion === 'USD' ? 'TOTAL A PAGAR (USD)' : 'TOTAL A PAGAR', totalLabelX, yPos + 4.7)
 
-    // Depende del botón visual "mostrar/no mostrar" el desglose en el PDF.
+    // La etiqueta refleja si esta cotizacion realmente suma IVA al total.
     const etiqueta = monedaCotizacion === 'USD'
       ? `TC Q ${tipoCambioCotizacion.toFixed(2)}`
-      : (mostrarDesgloseImpuestos ? 'Precio con IVA' : 'Precio sin IVA')
+      : (aplicarIva ? 'Precio con IVA' : 'Precio sin IVA')
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.2)
     const etiquetaW = doc.getTextWidth(etiqueta) + 5
     const etiquetaX = totalLabelX
@@ -737,24 +756,35 @@ export async function generarPDF(
   }
 
   function drawMiniPago(yPos: number) {
-    if (data.tipo !== 'perforacion' || valorPorPie <= 0) return yPos
-    const boxH = mostrarNotaCheque ? 18 : 9.5
-    const boxW = 78
+    const mostrarValorPorPie = data.tipo === 'perforacion' && valorPorPie > 0
+    if (!mostrarValorPorPie && !mostrarNotaCheque) return yPos
+    const nota = 'Nota: Para cualquier pago emitir Cheque No Negociable a nombre de la empresa, depósito bancario o transferencia a las cuentas identificadas en la cotización.'
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8)
+    const boxW = W - 2 * mg
+    const notaLines = mostrarNotaCheque ? doc.splitTextToSize(limpiar(nota), boxW - 8) : []
+    const boxH = 8 + (mostrarValorPorPie ? 5 : 0) + (mostrarNotaCheque ? Math.max(4, notaLines.length * 3) : 0)
     const boxX = mg
+    if (yPos + boxH > H - footerBottom) {
+      doc.addPage()
+      yPos = pageTop
+    }
     setFill('#eef5ff'); setDraw('#bfd4ff'); doc.setLineWidth(0.2)
     doc.roundedRect(boxX, yPos, boxW, boxH, 1.5, 1.5, 'FD')
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.3); setText('#64748b')
     doc.text('INFORMACION DE PAGO', boxX + 4, yPos + 3.4)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.4); setText('#173765')
-    doc.text('Valor por pie perforado:', boxX + 4, yPos + 7.1)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); setText('#1f2937')
-    doc.text(formatMonto(valorPorPie), boxX + boxW - 4, yPos + 7.1, { align: 'right' })
+    let nextY = yPos + 7.1
+    if (mostrarValorPorPie) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.4); setText('#173765')
+      doc.text('Valor por pie perforado:', boxX + 4, nextY)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); setText('#1f2937')
+      doc.text(formatMonto(valorPorPie), boxX + boxW - 4, nextY, { align: 'right' })
+      nextY += 4.8
+    }
 
     if (mostrarNotaCheque) {
-      const notaIva = aplicarIva ? 'El precio ya incluye IVA' : 'Precios sin IVA'
       doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); setText('#64748b')
-      const nota = `${notaIva}. Pago por Cheque No Negociable, deposito o transferencia a nombre de Hidroperforaciones, S.A.`
-      doc.text(doc.splitTextToSize(nota, boxW - 8).slice(0, 2), boxX + 4, yPos + 11.1)
+      const notaIva = aplicarIva ? 'El precio ya incluye IVA.' : 'Precios sin IVA.'
+      doc.text([notaIva, ...notaLines], boxX + 4, nextY)
     }
 
     return yPos + boxH
@@ -799,7 +829,8 @@ export async function generarPDF(
       yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 3
     }
 
-    if (yPos + 29 > H - footerBottom) {
+    const altoInfoPago = (mostrarNotaCheque || (data.tipo === 'perforacion' && valorPorPie > 0)) ? 24 : 0
+    if (yPos + 18 + altoInfoPago > H - footerBottom) {
       doc.addPage()
       yPos = pageTop
     }
@@ -879,7 +910,7 @@ export async function generarPDF(
 
     if (data.tipo === 'perforacion') {
       const rows = condicionesPerf.map((c, i) => [String(i + 1), limpiar(c.texto)])
-      const tableBottom = 8
+      const tableBottom = footerBottom
       const numberW = 8
       const textW = W - 2 * mg - numberW
       const candidates = [4.65, 4.45, 4.25, 4.05, 3.85, 3.65]
@@ -920,8 +951,13 @@ export async function generarPDF(
     const parrafos = condicionesLimpText.split(/\n\n+/).filter(p => p.trim())
     for (const parrafo of parrafos) {
       const lines = doc.splitTextToSize(limpiar(parrafo.trim()), W - 2 * mg)
+      const blockH = lines.length * 2.8 + 1.4
+      if (yPos + blockH > H - footerBottom) {
+        doc.addPage()
+        yPos = pageTop
+      }
       doc.text(lines, mg, yPos + 2)
-      yPos += lines.length * 2.8 + 1.4
+      yPos += blockH
     }
   }
 
@@ -929,14 +965,13 @@ export async function generarPDF(
   doc.addPage()
   drawPage2()
   doc.addPage()
-  const paginaInicioCondiciones = doc.getNumberOfPages()
   drawConditionsPage()
 
   const totalPages = doc.getNumberOfPages()
   for (let page = 1; page <= totalPages; page++) {
     doc.setPage(page)
     headerV2(page, totalPages)
-    if (page < paginaInicioCondiciones) footerV2()
+    footerV2()
   }
   return new Uint8Array(doc.output('arraybuffer') as ArrayBuffer)
 }

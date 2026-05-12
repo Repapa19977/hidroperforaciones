@@ -433,10 +433,10 @@ export default function NuevaCotizacionPage() {
   // Toggles de impuestos — controlan el total y el desglose en el PDF
   const [aplicarIva, setAplicarIva] = useState(true)   // default: IVA activo (suma al total)
   const [aplicarIsr, setAplicarIsr] = useState(true)   // default: ISR activo (suma al total); apagar si cliente no retiene
-  const [mostrarDesgloseImpuestos, setMostrarDesgloseImpuestos] = useState(false)  // desglose visible en PDF
+  const [mostrarDesgloseImpuestos, setMostrarDesgloseImpuestos] = useState(true)  // desglose visible en PDF
   const [aplicarDescuento, setAplicarDescuento] = useState(false)  // descuento especial al cliente
   const [descuentoMonto, setDescuentoMonto] = useState(0)          // Q descontado sobre subtotal (antes de IVA/ISR)
-  const [mostrarNotaCheque, setMostrarNotaCheque] = useState(false)  // nota de pago bajo valor por pie
+  const [mostrarNotaCheque, setMostrarNotaCheque] = useState(true)  // nota de pago bajo valor por pie
   const [monedaCotizacion, setMonedaCotizacion] = useState<CurrencyCode>('GTQ')
   const [tipoCambioUsd, setTipoCambioUsd] = useState(DEFAULT_TIPO_CAMBIO_USD)
 
