@@ -108,7 +108,7 @@ export default function ConfiguracionPage() {
   const [saved, setSaved] = useState(false)
   const [showPinForm, setShowPinForm] = useState(false)
   const [usuarios, setUsuarios]         = useState<UsuarioItem[]>([])
-  const [nuevoUser, setNuevoUser]       = useState({ username: '', nombre: '', password: '', rol: 'admin' })
+  const [nuevoUser, setNuevoUser]       = useState({ username: '', nombre: '', email: '', password: '', rol: 'admin' })
   const [userError, setUserError]       = useState('')
   const [userLoading, setUserLoading]   = useState(false)
   const [showNewPass, setShowNewPass]   = useState(false)
@@ -127,6 +127,8 @@ export default function ConfiguracionPage() {
   // Edit inline de nombre - track qué usuario está en modo edición
   const [editNombreId, setEditNombreId] = useState<string | null>(null)
   const [editNombreVal, setEditNombreVal] = useState('')
+  const [editEmailId, setEditEmailId] = useState<string | null>(null)
+  const [editEmailVal, setEditEmailVal] = useState('')
 
   useEffect(() => {
     setRolState(getRol())
@@ -272,7 +274,7 @@ export default function ConfiguracionPage() {
       const data = await res.json()
       if (!res.ok) { setUserError(data.error ?? 'Error al crear usuario'); return }
       setUsuarios(prev => [...prev, data])
-      setNuevoUser({ username: '', nombre: '', password: '', rol: 'admin' })
+      setNuevoUser({ username: '', nombre: '', email: '', password: '', rol: 'admin' })
     } finally {
       setUserLoading(false)
     }
@@ -359,6 +361,23 @@ export default function ConfiguracionPage() {
       const updated = await res.json()
       setUsuarios(prev => prev.map(u => u.id === id ? { ...u, nombre: updated.nombre } : u))
       setEditNombreId(null)
+    }
+  }
+
+  async function handleGuardarEmail(id: string) {
+    const email = editEmailVal.trim().toLowerCase()
+    const res = await fetch(`/api/usuarios/${id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setUsuarios(prev => prev.map(u => u.id === id ? { ...u, email: updated.email } : u))
+      setEditEmailId(null)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error ?? 'No se pudo guardar el correo')
     }
   }
 
@@ -1206,6 +1225,37 @@ export default function ConfiguracionPage() {
                         : <>@{u.username}</>
                       }
                     </p>
+                    {!esClienteFinal && (
+                      editEmailId === u.id ? (
+                        <div className="mt-1 flex items-center gap-1">
+                          <input
+                            value={editEmailVal}
+                            onChange={e => setEditEmailVal(e.target.value)}
+                            autoFocus
+                            placeholder="correo@hidroperforaciones.com"
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleGuardarEmail(u.id)
+                              if (e.key === 'Escape') setEditEmailId(null)
+                            }}
+                            className="flex-1 bg-white/10 border border-violet-500/40 rounded px-2 py-1 text-xs text-white outline-none"
+                          />
+                          <button onClick={() => handleGuardarEmail(u.id)} className="text-emerald-400 p-1" title="Guardar correo">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setEditEmailId(null)} className="text-slate-500 p-1" title="Cancelar">
+                            ×
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditEmailId(u.id); setEditEmailVal(u.email ?? '') }}
+                          className="mt-0.5 block text-left text-[11px] text-slate-500 hover:text-violet-300 truncate w-full"
+                          title="Click para editar correo institucional"
+                        >
+                          ✉ {u.email || 'Agregar correo institucional'}
+                        </button>
+                      )
+                    )}
                     {u.ultimoAcceso && (
                       <p className="text-[10px] text-slate-600">Último acceso: {new Date(u.ultimoAcceso).toLocaleString('es-GT')}</p>
                     )}
@@ -1314,6 +1364,16 @@ export default function ConfiguracionPage() {
                   onChange={e => setNuevoUser(p => ({ ...p, username: e.target.value.toLowerCase().replace(/\s/g, '') }))}
                   placeholder="Ej: carlos"
                   required
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Correo institucional</label>
+                <input
+                  type="email"
+                  value={nuevoUser.email}
+                  onChange={e => setNuevoUser(p => ({ ...p, email: e.target.value.toLowerCase().trim() }))}
+                  placeholder="correo@hidroperforaciones.com"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
                 />
               </div>

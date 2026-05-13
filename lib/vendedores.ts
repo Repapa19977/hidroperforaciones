@@ -28,24 +28,43 @@ export function normalizarVendedor(vendedor: string): string {
 export function resolverEmailVendedor(vendedor: string, emailPreferido?: string | null): string {
   const emailDirecto = `${emailPreferido ?? ''} ${vendedor}`
     .match(/[A-Z0-9._%+-]+@hidroperforaciones\.com/i)?.[0]
-  if (emailDirecto) return emailDirecto.toLowerCase()
-
   const normalizado = normalizarVendedor(vendedor)
   const compact = normalizado.replace(/\s+/g, '')
+
+  const emailConocido = (() => {
+    if (!compact) return ''
+    if (compact === 'mr' || compact.includes('mramirez') || normalizado.includes('mario') || normalizado.includes('ramirez')) {
+      return 'mramirez@hidroperforaciones.com'
+    }
+    if (compact === 'gg' || compact.includes('ggarcia') || normalizado.includes('gilda') || normalizado.includes('garcia')) {
+      return 'ggarcia@hidroperforaciones.com'
+    }
+    if (compact === 'rd' || compact.includes('rdominguez') || normalizado.includes('rene') || normalizado.includes('dominguez')) {
+      return 'rdominguez@hidroperforaciones.com'
+    }
+    if (
+      compact === 'bf' ||
+      normalizado.includes('berner') ||
+      normalizado.includes('verner') ||
+      normalizado.includes('flores') ||
+      normalizado.includes('ventas') ||
+      normalizado.includes('bentas') ||
+      compact.includes('asesordeventas') ||
+      compact.includes('asesordebentas')
+    ) {
+      return DEFAULT_EMAIL
+    }
+    return ''
+  })()
+
+  if (emailConocido && (!emailDirecto || emailDirecto.toLowerCase() === DEFAULT_EMAIL)) {
+    return emailConocido
+  }
+
+  if (emailDirecto) return emailDirecto.toLowerCase()
+
   if (!compact) return DEFAULT_EMAIL
-  if (compact === 'mr' || compact.includes('mramirez') || normalizado.includes('mario') || normalizado.includes('ramirez')) {
-    return 'mramirez@hidroperforaciones.com'
-  }
-  if (compact === 'gg' || compact.includes('ggarcia') || normalizado.includes('gilda') || normalizado.includes('garcia')) {
-    return 'ggarcia@hidroperforaciones.com'
-  }
-  if (compact === 'rd' || compact.includes('rdominguez') || normalizado.includes('rene') || normalizado.includes('dominguez')) {
-    return 'rdominguez@hidroperforaciones.com'
-  }
-  if (compact === 'bf' || normalizado.includes('berner') || normalizado.includes('flores') || normalizado.includes('ventas')) {
-    return DEFAULT_EMAIL
-  }
-  return DEFAULT_EMAIL
+  return emailConocido || DEFAULT_EMAIL
 }
 
 export function crearVendedorOption(nombre: string, email?: string | null, rol?: string): VendedorOption {

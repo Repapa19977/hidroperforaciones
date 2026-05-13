@@ -18,6 +18,15 @@ const usuarioSafeSelect = {
   twoFactorConfirmedAt: true,
 } as const
 
+function normalizarEmail(email: unknown): string {
+  if (typeof email !== 'string') return ''
+  return email.trim().toLowerCase()
+}
+
+function emailValido(email: string): boolean {
+  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
 async function contarSuperAdminsActivos(excludeId?: string): Promise<number> {
   return await prisma.usuario.count({
     where: {
@@ -48,6 +57,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (typeof body.nombre === 'string' && body.nombre.trim()) {
     data.nombre = body.nombre.trim()
+  }
+
+  if (typeof body.email === 'string') {
+    const email = normalizarEmail(body.email)
+    if (!emailValido(email)) {
+      return NextResponse.json({ error: 'Correo inválido' }, { status: 400 })
+    }
+    data.email = email
   }
 
   if (body.rol && (body.rol === 'admin' || body.rol === 'superadmin')) {

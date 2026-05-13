@@ -5,6 +5,15 @@ import { getRequestInfo, hashPassword, requireSuperAdmin, validarPassword } from
 
 export const dynamic = 'force-dynamic'
 
+function normalizarEmail(email: unknown): string {
+  if (typeof email !== 'string') return ''
+  return email.trim().toLowerCase()
+}
+
+function emailValido(email: string): boolean {
+  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
 // GET - listar todos los usuarios de la DB
 export async function GET(request: NextRequest) {
   const auth = await requireSuperAdmin(request)
@@ -41,10 +50,14 @@ export async function POST(request: NextRequest) {
   const auth = await requireSuperAdmin(request)
   if (!auth.ok) return auth.response
 
-  const { username, nombre, password, rol } = await request.json()
+  const { username, nombre, password, rol, email } = await request.json()
+  const emailNormalizado = normalizarEmail(email)
 
   if (!username?.trim() || !nombre?.trim() || !password?.trim()) {
     return NextResponse.json({ error: 'Usuario, nombre y contraseña son requeridos' }, { status: 400 })
+  }
+  if (!emailValido(emailNormalizado)) {
+    return NextResponse.json({ error: 'Correo inválido' }, { status: 400 })
   }
 
   const errPw = validarPassword(password)
@@ -61,11 +74,13 @@ export async function POST(request: NextRequest) {
       username: usernameNormalizado,
       nombre: nombre.trim(),
       rol: rol === 'superadmin' ? 'superadmin' : 'admin',
+      email: emailNormalizado,
       passwordHash: hashPassword(password),
     },
     select: {
       id: true, username: true, nombre: true, rol: true, activo: true,
-      createdAt: true, twoFactorEnabled: true, twoFactorConfirmedAt: true,
+      email: true, contactoId: true, ultimoAcceso: true, createdAt: true,
+      twoFactorEnabled: true, twoFactorConfirmedAt: true,
     },
   })
 
