@@ -1190,7 +1190,9 @@ export default function NuevaCotizacionPage() {
             {/* Calculadora */}
             {tipo === 'perforacion'
               ? <CalcPerforacion ip={ip} patchIp={patchIp} showCostos={showCostos} setShowCostos={setShowCostos} res={resPerf} rol={rolUsuario}
-                  preciosVentaOverride={preciosVentaOverride} />
+                  preciosVentaOverride={preciosVentaOverride}
+                  lineasConfig={lineasConfig}
+                  setLineasConfig={setLineasConfig} />
               : <CalcServicios
                   il={il}
                   patchIl={patchIl}
@@ -2036,12 +2038,14 @@ function ContactoSelector({ onSelect }: { onSelect: (c: ContactoMini) => void })
 }
 
 // ── Calculadora Perforación ──────────────────────────────────────────────────
-function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, preciosVentaOverride }: {
+function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, preciosVentaOverride, lineasConfig, setLineasConfig }: {
   ip: InputsPerforacion; patchIp: (k: keyof InputsPerforacion, v: number | boolean | string) => void
   showCostos: boolean; setShowCostos: (v: boolean) => void
   res: ReturnType<typeof calcularPerforacion>
   rol: 'admin' | 'superadmin'
   preciosVentaOverride?: Record<string, number>
+  lineasConfig: Record<string, LineaConfig>
+  setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
   const ovr = preciosVentaOverride ?? {}
   const sacos = sacosDebentonita(ip.diametro, ip.profundidad)
@@ -2073,15 +2077,30 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
     if (!eRan.includes(ip.espesorRanurada))  patchIp('espesorRanurada', eRan[eRan.length - 1] ?? 0.25)
   }
 
-  const SERVICIOS: { key: keyof InputsPerforacion; label: string }[] = [
-    { key: 'incluirRegistroElectrico', label: 'Registro eléctrico' },
-    { key: 'incluirSelloSanitario',    label: 'Sello sanitario (Q75/pie × pies)' },
-    { key: 'incluirExtraccionLodos',   label: 'Extracción de lodos' },
-    { key: 'incluirSeguridad',         label: 'Tubería de seguridad' },
-    { key: 'incluirSanitario',         label: 'Sanitario' },
-    { key: 'incluirLimpieza',          label: 'Limpieza mecánica' },
-    { key: 'comprarBroca',             label: 'Compra de broca' },
+  const sopleteadoCfg = lineasConfig.sopleteado ?? { mostrar: true, cobrar: true }
+  const sopleteadoActivo = sopleteadoCfg.mostrar && sopleteadoCfg.cobrar
+  const setSopleteadoEnabled = (enabled: boolean) => {
+    setLineasConfig(prev => ({
+      ...prev,
+      sopleteado: { mostrar: enabled, cobrar: enabled },
+    }))
+  }
+  const serviciosIncluidos = [
+    { key: 'incluirRegistroElectrico' as const, label: 'Registro electrico', hint: 'Aparece en la cotizacion.' },
+    { key: 'incluirSelloSanitario' as const, label: 'Sello sanitario (Q75/pie x pies)', hint: 'Aparece en la cotizacion y habilita los pies de sello.' },
+    { key: 'incluirExtraccionLodos' as const, label: 'Extraccion de lodos', hint: 'Aparece en la cotizacion.' },
+    { key: 'incluirSeguridad' as const, label: 'Tuberia de seguridad', hint: 'Costo interno; afecta margen.' },
+    { key: 'incluirSanitario' as const, label: 'Sanitario', hint: 'Costo interno; afecta margen.' },
+    { key: 'incluirLimpieza' as const, label: 'Limpieza mecanica', hint: 'Aparece en la cotizacion.' },
+    { key: 'comprarBroca' as const, label: 'Compra de broca', hint: 'Costo interno; afecta margen.' },
   ]
+  const servicioSopleteado = {
+    key: 'sopleteado',
+    label: 'Sopleteado con compresor',
+    hint: 'Linea 14; aparece y se cobra si esta activo.',
+    active: sopleteadoActivo,
+    onToggle: () => setSopleteadoEnabled(!sopleteadoActivo),
+  }
 
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5 space-y-5">
@@ -2375,32 +2394,71 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
       {/* 4. Servicios incluidos */}
       <div>
         <p className="text-xs text-slate-500 mb-3 font-medium">Servicios Incluidos</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {SERVICIOS.map(s => (
+        <div className="space-y-2">
+          {serviciosIncluidos.map(s => {
+            const active = !!ip[s.key]
+            return (
             <button
               key={s.key}
               type="button"
               onClick={() => {
-                const nuevo = !ip[s.key]
+                const nuevo = !active
                 patchIp(s.key, nuevo)
                 // Al activar comprarBroca, auto-fill precio desde catálogo
                 if (s.key === 'comprarBroca' && nuevo && PRECIOS_BROCAS[ip.diametro]) {
                   patchIp('costoBroca', PRECIOS_BROCAS[ip.diametro])
                 }
               }}
-              className="flex items-center gap-2.5 group text-left"
+              className={cn(
+                'w-full rounded-lg border px-3 py-2.5 text-left transition-colors',
+                active
+                  ? 'bg-blue-500/12 border-blue-500/35'
+                  : 'bg-white/4 border-white/10 hover:bg-white/6 hover:border-white/20'
+              )}
             >
-              <div className={cn(
-                'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all',
-                ip[s.key]
-                  ? 'bg-blue-500 border-blue-500'
-                  : 'bg-white/5 border-white/20 group-hover:border-white/40'
-              )}>
-                {ip[s.key] && <div className="w-2 h-2 bg-white rounded-sm" />}
+              <div className="flex items-center gap-3">
+                <span className={cn(
+                  'inline-flex h-7 min-w-[46px] items-center justify-center rounded-md border text-[11px] font-bold uppercase tracking-wide',
+                  active
+                    ? 'border-blue-400/40 bg-blue-500/20 text-blue-200'
+                    : 'border-white/10 bg-white/5 text-slate-500'
+                )}>
+                  {active ? 'Si' : 'No'}
+                </span>
+                <span className="min-w-0">
+                  <span className={cn('block text-sm font-semibold', active ? 'text-white' : 'text-slate-400')}>{s.label}</span>
+                  <span className="block text-[10px] text-slate-600 mt-0.5">{s.hint}</span>
+                </span>
               </div>
-              <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">{s.label}</span>
             </button>
-          ))}
+            )
+          })}
+          <button
+            key={servicioSopleteado.key}
+            type="button"
+            onClick={servicioSopleteado.onToggle}
+            className={cn(
+              'w-full rounded-lg border px-3 py-2.5 text-left transition-colors',
+              servicioSopleteado.active
+                ? 'bg-blue-500/12 border-blue-500/35'
+                : 'bg-white/4 border-white/10 hover:bg-white/6 hover:border-white/20'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <span className={cn(
+                'inline-flex h-7 min-w-[46px] items-center justify-center rounded-md border text-[11px] font-bold uppercase tracking-wide',
+                servicioSopleteado.active
+                  ? 'border-blue-400/40 bg-blue-500/20 text-blue-200'
+                  : 'border-white/10 bg-white/5 text-slate-500'
+              )}>
+                {servicioSopleteado.active ? 'Si' : 'No'}
+              </span>
+              <span className="min-w-0">
+                <span className={cn('block text-sm font-semibold', servicioSopleteado.active ? 'text-white' : 'text-slate-400')}>{servicioSopleteado.label}</span>
+                <span className="block text-[10px] text-slate-600 mt-0.5">{servicioSopleteado.hint}</span>
+              </span>
+            </div>
+          </button>
         </div>
 
         {/* Input pies de sello sanitario — aparece solo si el toggle está activo */}
@@ -2634,6 +2692,13 @@ function CalcServicios({
   const setMarkupTecnico = (pct: number) => {
     patchIl('precioTecnicoChequeoServicio', Math.round(costoTecnico * (1 + pct / 100) * 100) / 100)
   }
+  const roundMoney = (value: number) => Math.round(value * 100) / 100
+  const markupPct = (costo: number, venta: number) => Math.round(calcMarkupPct(costo, venta) * 10) / 10
+  const ventaDesdePct = (costo: number, pct: number) => roundMoney(calcVentaDesdeMarkup(costo, pct))
+  const markupHint = (costo: number, venta: number, extra?: string) => {
+    const pct = costo > 0 ? `${markupPct(costo, venta).toFixed(1)}%` : 'sin costo base'
+    return extra ? `Aumento: ${pct} - ${extra}` : `Aumento: ${pct}`
+  }
   const inputClass = 'w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
   const selectClass = cn(inputClass, 'bg-[#111827] text-white [color-scheme:dark]')
   const toggleClass = (active: boolean) => cn(
@@ -2693,7 +2758,7 @@ function CalcServicios({
             <NumInput label="Horas limpieza mecanica" value={il.horasLimpieza} onChange={v => patchIl('horasLimpieza', v)} />
             {usaLimpieza && (
               <NumInput label="Precio venta/hora (Q)" value={il.precioVentaHora} onChange={v => patchIl('precioVentaHora', v)}
-                accent hint={`Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`} />
+                accent hint={markupHint(res.costoNetoHora, il.precioVentaHora, `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`)} />
             )}
           </>
         )}
@@ -2702,7 +2767,7 @@ function CalcServicios({
           <>
             <NumInput label="Horas aforo" value={il.horasAforo ?? 0} onChange={v => patchIl('horasAforo', v)} />
             <NumInput label="Precio venta aforo total (Q)" value={il.precioVentaAforoTotal ?? 23000} onChange={v => patchIl('precioVentaAforoTotal', v)}
-              accent hint={`Costo diesel aforo: ${formatQ(res.costoDieselAforo)}`} />
+              accent hint={markupHint(res.costoAforo, il.precioVentaAforoTotal ?? 23000, `Costo interno: ${formatQ(res.costoAforo)}`)} />
           </>
         )}
 
@@ -2764,7 +2829,7 @@ function CalcServicios({
               )}
             </div>
             <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
-              hint="Linea global del presupuesto de servicio" />
+              hint={markupHint(res.costoMaterialInstalacionServicio, il.precioMaterialInstalacionServicio ?? 0, 'Linea global del presupuesto de servicio')} />
           </>
         )}
 
@@ -2777,7 +2842,7 @@ function CalcServicios({
             </div>
             <NumInput label="Costo/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
             <NumInput label="Precio venta/caneca (Q)" value={il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca} onChange={v => patchIl('precioVentaQuimicoCaneca', v)}
-              accent hint={`Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`} />
+              accent hint={markupHint(il.precioQuimicoCaneca, il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca, `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`)} />
           </>
         )}
 
@@ -2796,7 +2861,7 @@ function CalcServicios({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
                   <NumInput label="Venta tecnico (Q)" value={ventaTecnico} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
-                    accent hint={`Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`} />
+                    accent hint={`Aumento: ${markupTecnico.toFixed(1)}% - Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`} />
                   <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
                     hint="Al cambiar el %, recalcula la venta al cliente." />
                 </div>
@@ -2815,7 +2880,6 @@ function CalcServicios({
                 saleValue: il.precioInspeccionCamara ?? 8000,
                 costInput: 'costoInspeccionCamara',
                 saleInput: 'precioInspeccionCamara',
-                saleHint: `Aumento: ${res.markupCamaraPct.toFixed(1)}%`,
               },
               {
                 key: 'medicion-nivel-agua',
@@ -2829,7 +2893,6 @@ function CalcServicios({
                 saleValue: il.precioMedicionNivelServicio ?? 0,
                 costInput: 'costoMedicionNivelServicio',
                 saleInput: 'precioMedicionNivelServicio',
-                saleHint: 'Solo sale en PDF si esta incluido y cobrado',
               },
               {
                 key: 'analisis-agua-servicio',
@@ -2843,9 +2906,9 @@ function CalcServicios({
                 saleValue: il.precioAnalisisAguaServicio ?? 0,
                 costInput: 'costoAnalisisAguaServicio',
                 saleInput: 'precioAnalisisAguaServicio',
-                saleHint: 'Solo sale en PDF si esta incluido y cobrado',
               },
             ] as const).map(item => {
+              const aumento = markupPct(item.costValue, item.saleValue)
               return (
                 <div key={item.key} className="sm:col-span-2 md:col-span-3 rounded-lg border border-white/10 bg-white/3 p-3 space-y-3">
                   <button
@@ -2857,9 +2920,11 @@ function CalcServicios({
                     <span className="block text-[10px] text-slate-500 mt-0.5">{item.hint}</span>
                   </button>
                   {item.enabled && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <NumInput label={item.costLabel} value={item.costValue} onChange={v => patchIl(item.costInput, v)} hint="Costo interno" />
-                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={item.saleHint} />
+                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={markupHint(item.costValue, item.saleValue)} />
+                      <NumInput label="Aumento (%)" value={aumento} onChange={pct => patchIl(item.saleInput, ventaDesdePct(item.costValue, pct))}
+                        hint="Al cambiar el %, recalcula la venta al cliente." />
                     </div>
                   )}
                 </div>
