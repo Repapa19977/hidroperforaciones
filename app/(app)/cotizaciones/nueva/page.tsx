@@ -1394,7 +1394,7 @@ export default function NuevaCotizacionPage() {
                 <span className="w-7 text-center">Ver</span>
                 <span className="w-7 text-center">Cobrar</span>
                 <span>Descripción</span>
-                <span className="text-right">Total</span>
+                <span className="text-right">{tipo === 'limpieza' ? 'Precio / Total' : 'Total'}</span>
               </div>
 
               {/* Filas de líneas */}
@@ -1426,6 +1426,7 @@ export default function NuevaCotizacionPage() {
                     !cfg.mostrar && !cfg.cobrar ? 'DESACTIVADA' :
                     !cfg.mostrar && cfg.cobrar ? 'Oculta del PDF' :
                     cfg.mostrar && !cfg.cobrar ? 'Cortesía' : null
+                  const cantidadTexto = Number.isInteger(l.cant) ? String(l.cant) : l.cant.toFixed(2)
                   return (
                     <div key={l.key} className={cn('grid grid-cols-[auto_auto_1fr_auto] gap-2 sm:gap-3 items-center text-xs py-1.5 px-2 rounded hover:bg-white/3 transition-colors',
                       !activaVisual && 'opacity-70')}>
@@ -1502,11 +1503,13 @@ export default function NuevaCotizacionPage() {
                             onChange={e => setPrecioLinea(parseFloat(e.target.value) || 0)}
                             className={cn('w-full rounded border bg-white/5 px-1.5 py-1 text-right text-[11px] tabular-nums outline-none focus:border-emerald-500/50',
                               !cfg.cobrar ? 'border-amber-500/30 text-amber-300 line-through' : 'border-white/10 text-white')}
-                            title="Precio de venta al cliente"
+                            title="Precio unitario de venta al cliente"
                           />
                           <span className={cn('mt-0.5 block text-[9px] tabular-nums',
                             !cfg.cobrar ? 'text-amber-400/70 line-through' : 'text-slate-500')}>
-                            {formatCotizacionMoney(l.total)}
+                            {l.cant !== 1
+                              ? `${cantidadTexto} x ${formatCotizacionMoney(l.precio)} = ${formatCotizacionMoney(l.total)}`
+                              : formatCotizacionMoney(l.total)}
                           </span>
                         </div>
                       ) : (

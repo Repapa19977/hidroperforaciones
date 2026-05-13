@@ -1078,13 +1078,28 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const costoTuboServicioUnitario = cantidadTubosServicio > 0
     ? (costoExtraccionTuberiaServicio + costoInstalacionTuberiaServicio) / cantidadTubosServicio
     : 0
+  const precioPositivo = (...values: Array<number | undefined>) => {
+    for (const value of values) {
+      const n = Number(value)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 0
+  }
   const precioVentaTuboExtraccionUnitario = Math.max(
     0,
-    inp.precioVentaTuboExtraccionUnitario ?? inp.precioVentaTuboServicioUnitario ?? reglaTuberia?.precioExtraccion ?? 0
+    precioPositivo(
+      inp.precioVentaTuboExtraccionUnitario,
+      inp.precioVentaTuboServicioUnitario,
+      reglaTuberia?.precioExtraccion,
+    )
   )
   const precioVentaTuboInstalacionUnitario = Math.max(
     0,
-    inp.precioVentaTuboInstalacionUnitario ?? inp.precioVentaTuboServicioUnitario ?? reglaTuberia?.precioInstalacion ?? 0
+    precioPositivo(
+      inp.precioVentaTuboInstalacionUnitario,
+      inp.precioVentaTuboServicioUnitario,
+      reglaTuberia?.precioInstalacion,
+    )
   )
   const precioVentaTuboServicioUnitario = Math.max(precioVentaTuboExtraccionUnitario, precioVentaTuboInstalacionUnitario)
   const costoTuberiaServicio = costoExtraccionTuberiaServicio + costoInstalacionTuberiaServicio
