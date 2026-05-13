@@ -775,17 +775,14 @@ export async function generarPDF(
     return yPos + cardH
   }
 
-  function drawMiniPago(yPos: number, targetBottomY?: number) {
+  function drawMiniPago(yPos: number) {
     const mostrarValorPorPie = data.tipo === 'perforacion' && valorPorPie > 0
     if (!mostrarValorPorPie && !mostrarNotaCheque) return yPos
     const nota = 'Nota: Para cualquier pago emitir Cheque No Negociable a nombre de la empresa, depósito bancario o transferencia a las cuentas identificadas en la cotización.'
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8)
     const boxW = W - 2 * mg
     const notaLines = mostrarNotaCheque ? doc.splitTextToSize(limpiar(nota), boxW - 8) : []
-    const baseBoxH = 8 + (mostrarValorPorPie ? 5 : 0) + (mostrarNotaCheque ? Math.max(4, notaLines.length * 3) : 0)
-    const boxH = targetBottomY && targetBottomY > yPos
-      ? Math.max(baseBoxH, targetBottomY - yPos)
-      : baseBoxH
+    const boxH = 8 + (mostrarValorPorPie ? 5 : 0) + (mostrarNotaCheque ? Math.max(4, notaLines.length * 3) : 0)
     const boxX = mg
     if (yPos + boxH > H - footerBottom) {
       doc.addPage()
@@ -834,12 +831,12 @@ export async function generarPDF(
         ]),
         theme: 'plain',
         styles: { overflow: 'linebreak', lineColor: rgb('#d9e2ef'), lineWidth: 0.08 },
-        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: presupuestoCompacto ? 8.45 : 7.5, fontStyle: 'bold', cellPadding: presupuestoCompacto ? 0.75 : 1.75 },
+        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: presupuestoCompacto ? 8.75 : 7.5, fontStyle: 'bold', cellPadding: presupuestoCompacto ? 1.15 : 1.75 },
         bodyStyles: {
-          fontSize: presupuestoCompacto ? 7.75 : 7.1,
+          fontSize: presupuestoCompacto ? 8.05 : 7.1,
           textColor: rgb('#1f2937'),
           cellPadding: presupuestoCompacto
-            ? { top: 0.25, right: 0.6, bottom: 0.25, left: 0.6 }
+            ? { top: 0.85, right: 0.6, bottom: 0.85, left: 0.6 }
             : { top: 1.35, right: 1, bottom: 1.35, left: 1 },
         },
         alternateRowStyles: { fillColor: rgb('#fbfcfe') },
@@ -852,7 +849,7 @@ export async function generarPDF(
           5: { cellWidth: presupuestoCompacto ? 23 : 25, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765') },
         },
         didParseCell: d => {
-          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = presupuestoCompacto ? 7.1 : 6.65
+          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = presupuestoCompacto ? 7.4 : 6.65
         },
       })
       yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 3
@@ -865,7 +862,7 @@ export async function generarPDF(
       yPos = pageTop
     }
     const totalFin = drawTotalCard(yPos)
-    drawMiniPago(totalFin + 2.2, presupuestoCompacto ? H - footerBottom - 4 : undefined)
+    drawMiniPago(totalFin + 2.2)
   }
 
   function drawPage2() {
