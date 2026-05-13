@@ -68,8 +68,8 @@ export function buildLineasPerf(
       nombre: 'Montaje, desmontaje y nivelación del equipo de perforación en el punto seleccionado, excavación de pila para fluidos Bentoníticos, y excavación de corrida de lodos, descarga de herramienta para perforación.',
       unidad: 'Global', cant: 1, precio: pl.instalacionEquipo },
 
-    // Rubro 3: se ajusta al final como RESIDUAL para que
-    // subtotal + IVA + ISR = profundidad × ip.precioPorPieVenta
+    // Rubro 3: se ajusta al final como residual para que, con IVA e ISR activos,
+    // total = profundidad x ip.precioPorPieVenta.
     { key: 'perforacion',
       nombre: `Perforación de pozo mecánico en ${formatBroca(ip.diametro)} de diámetro.`,
       unidad: 'Pie', cant: ip.profundidad, precio: 0 },
@@ -164,11 +164,10 @@ export function buildLineasPerf(
   // Construir totales iniciales
   const built = rowsConOverride.map(r => ({ ...r, total: r.cant * r.precio }))
 
-  // Rubro 3 residual: precio/pie = "con IVA e ISR incluidos". Divisor fijo 1.17.
-  // Subtotal queda estable y los toggles IVA/ISR suman/restan al total final.
+  // Rubro 3 residual: precio/pie = precio final con IVA + ISR por defecto.
+  // La base fija es (profundidad x precio/pie) / 1.17; apagar IVA o ISR resta ese impuesto.
   const totalClienteObjetivo = ip.profundidad * ip.precioPorPieVenta
-  const FACTOR_IMPUESTOS_COMPLETO = 1 + IVA + ISR  // 1.17 — fijo, no depende de toggles
-  const subtotalObjetivo = totalClienteObjetivo / FACTOR_IMPUESTOS_COMPLETO
+  const subtotalObjetivo = totalClienteObjetivo / (1 + IVA + ISR)
   const perfIdx = built.findIndex(l => l.key === 'perforacion')
   if (perfIdx >= 0 && ip.profundidad > 0) {
     const sumaOtros = built.reduce((acc, l, i) => i === perfIdx ? acc : acc + l.total, 0)
@@ -524,7 +523,6 @@ export async function generarPDF(
       }
     })
 
-  const todasLineas: LineaFinal[] = [...lineasBase, ...extras]
   const servicioOptionalLineKeys = new Set(['tecnico-chequeo-servicio', 'inspeccion-camara', 'medicion-nivel-agua', 'analisis-agua-servicio'])
   const servicioOpcionalSeleccionado = (key: string) => {
     if (!il) return false
@@ -544,20 +542,46 @@ export async function generarPDF(
     servicioOptionalLineKeys.has(l.key) &&
     (!servicioOpcionalSeleccionado(l.key) || !esCobrada(l) || l.total <= 0)
 
+  const ajustarResidualPerforacion = (base: LineaFinal[]): LineaFinal[] => {
+    const perfIdx = base.findIndex(l => l.key === 'perforacion')
+    if (!ip || perfIdx < 0 || ip.profundidad <= 0 || !esCobrada(base[perfIdx])) return base
+
+    const subtotalObjetivo = (ip.profundidad * ip.precioPorPieVenta) / (1 + IVA + ISR)
+    const sumaOtrosCobrados = base.reduce((acc, l, i) => (
+      i === perfIdx || !esCobrada(l) ? acc : acc + l.total
+    ), 0)
+    const totalPerforacion = Math.max(0, subtotalObjetivo - sumaOtrosCobrados)
+
+    return base.map((l, i) => i === perfIdx
+      ? {
+          ...l,
+          precio: Math.round((totalPerforacion / ip.profundidad) * 100) / 100,
+          total: totalPerforacion,
+        }
+      : l
+    )
+  }
+
+  const lineasBaseAjustadas = data.tipo === 'perforacion'
+    ? ajustarResidualPerforacion(lineasBase)
+    : lineasBase
+  const todasLineas: LineaFinal[] = [...lineasBaseAjustadas, ...extras]
+
   const lineas = todasLineas.filter(l => esVisible(l) && !ocultarServicioOpcional(l))
   const subtotal = todasLineas.filter(esCobrada).reduce((a, b) => a + b.total, 0)
 
   // Toggles de impuestos — controlados por el usuario en la cotización
   const aplicarIva = data.aplicarIva ?? true   // default: incluye IVA 12%
-  const aplicarIsr = data.aplicarIsr ?? false  // default: no suma ISR
-  // Descuento especial — resta al subtotal antes de calcular impuestos
+  const aplicarIsr = data.aplicarIsr ?? true   // default: suma ISR
+  // Descuento especial: se resta al precio final, despues de impuestos.
   const aplicarDescuento = data.aplicarDescuento ?? false
   const descuentoMonto   = Math.max(0, Number(data.descuentoMonto ?? 0))
-  const descuentoQ       = aplicarDescuento ? Math.min(subtotal, descuentoMonto) : 0
-  const baseGravable     = subtotal - descuentoQ
+  const baseGravable     = subtotal
   const iva = aplicarIva ? Math.round(baseGravable * IVA) : 0
   const isr = aplicarIsr ? Math.round(baseGravable * ISR) : 0
-  const totalCalculado = baseGravable + iva + isr
+  const totalAntesDescuento = baseGravable + iva + isr
+  const descuentoQ = aplicarDescuento ? Math.min(totalAntesDescuento, descuentoMonto) : 0
+  const totalCalculado = totalAntesDescuento - descuentoQ
   const totalGuardado = typeof data.montoGuardado === 'number' && Number.isFinite(data.montoGuardado) && data.montoGuardado > 0
     ? data.montoGuardado
     : null
@@ -588,6 +612,7 @@ export async function generarPDF(
   const fechaCotizacion = formatFechaDDMMYYYY(data.fecha)
 
   const mostrarNotaCheque = data.mostrarNotaCheque ?? true
+  const textoPdfConIva = (data.mostrarDesgloseImpuestos ?? true) && mostrarNotaCheque
   const cuentas = cuentasBancarias ?? []
   const logosBancos = await Promise.all(cuentas.map(c => cargarLogoBanco(c.banco)))
   const hitos: HitoPago[] = (data.planPagos && data.planPagos.length > 0)
@@ -758,10 +783,11 @@ export async function generarPDF(
     doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6.65 : 5.5); setText('#bfd4ff')
     doc.text(monedaCotizacion === 'USD' ? 'TOTAL A PAGAR (USD)' : 'TOTAL A PAGAR', totalLabelX, yPos + 4.3)
 
-    // La etiqueta refleja si esta cotizacion realmente suma IVA al total.
+    // Esta etiqueta es presentacion comercial del PDF; no recalcula el monto.
+    const estadoIva = textoPdfConIva ? 'CON IVA' : 'SIN IVA'
     const etiqueta = monedaCotizacion === 'USD'
-      ? `TC Q ${tipoCambioCotizacion.toFixed(2)}`
-      : (aplicarIva ? 'Precio con IVA' : 'Precio sin IVA')
+      ? `${estadoIva} - TC Q ${tipoCambioCotizacion.toFixed(2)}`
+      : estadoIva
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.2)
     const etiquetaW = doc.getTextWidth(etiqueta) + 5
     const etiquetaX = totalLabelX
@@ -803,7 +829,7 @@ export async function generarPDF(
 
     if (mostrarNotaCheque) {
       doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); setText('#64748b')
-      const notaIva = aplicarIva ? 'El precio ya incluye IVA.' : 'Precios sin IVA.'
+      const notaIva = textoPdfConIva ? 'El precio ya incluye IVA.' : 'Precios sin IVA.'
       doc.text([notaIva, ...notaLines], boxX + 4, nextY)
     }
 

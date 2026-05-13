@@ -490,12 +490,12 @@ export default function NuevaCotizacionPage() {
   const [condicionesPerfExtras, setCondicionesPerfExtras] = useState<CondicionExtraPerf[]>([])
   // Ítems libres (Fase 2) — líneas custom que se suman a la cotización
   const [lineasExtras, setLineasExtras] = useState<LineaExtra[]>([])
-  // Toggles de impuestos — controlan el total y el desglose en el PDF
+  // Toggles de impuestos: controlan el total numerico; el texto del PDF va aparte.
   const [aplicarIva, setAplicarIva] = useState(true)   // default: IVA activo (suma al total)
-  const [aplicarIsr, setAplicarIsr] = useState(true)   // default: ISR activo (suma al total); apagar si cliente no retiene
+  const [aplicarIsr, setAplicarIsr] = useState(true)   // default: ISR activo; apagarlo resta su 5% del total final
   const [mostrarDesgloseImpuestos, setMostrarDesgloseImpuestos] = useState(true)  // desglose visible en PDF
-  const [aplicarDescuento, setAplicarDescuento] = useState(false)  // descuento especial al cliente
-  const [descuentoMonto, setDescuentoMonto] = useState(0)          // Q descontado sobre subtotal (antes de IVA/ISR)
+  const [aplicarDescuento, setAplicarDescuento] = useState(false)  // descuento especial al precio final
+  const [descuentoMonto, setDescuentoMonto] = useState(0)          // Q descontado sobre el precio final
   const [mostrarNotaCheque, setMostrarNotaCheque] = useState(true)  // nota de pago bajo valor por pie
   const [monedaCotizacion, setMonedaCotizacion] = useState<CurrencyCode>('GTQ')
   const [tipoCambioUsd, setTipoCambioUsd] = useState(DEFAULT_TIPO_CAMBIO_USD)
@@ -615,8 +615,6 @@ export default function NuevaCotizacionPage() {
       }
     })
 
-  const todasLineas = [...lineasBase, ...lineasExtrasFormateadas]
-
   // Helper para resolver config (línea base usa lineasConfig/lineasActivas; extras usan su propio flag)
   const cfgDe = (key: string): LineaConfig => {
     const extra = lineasExtrasCotizacion.find(e => e.id === key)
@@ -634,22 +632,36 @@ export default function NuevaCotizacionPage() {
     if (lineasActivas[key] === false) return { mostrar: false, cobrar: true }  // backward compat
     return { mostrar: true, cobrar: true }
   }
+  const lineasBaseAjustadas = tipo === 'perforacion'
+    ? ajustarResidualPerforacionPorPrecioPie(lineasBase, ip.profundidad, ip.precioPorPieVenta, cfgDe)
+    : lineasBase
+  const todasLineas = [...lineasBaseAjustadas, ...lineasExtrasFormateadas]
   const lineasCobradas = todasLineas.filter(l => cfgDe(l.key).cobrar)
   const comparativaLimpieza = tipo === 'limpieza'
     ? buildComparativaLimpieza(il, resLimp, lineasCobradas, lineasExtrasCotizacion)
     : []
   // subtotal = suma de las que SÍ se cobran (independiente de su visibilidad)
   const subtotal    = lineasCobradas.reduce((a, b) => a + b.total, 0)
-  // Descuento especial — se resta antes de IVA/ISR. No puede exceder el subtotal.
-  const descuentoQ  = aplicarDescuento ? Math.min(subtotal, Math.max(0, descuentoMonto)) : 0
-  const baseGravable = subtotal - descuentoQ
-  // IVA e ISR — cada uno suma al total solo si su toggle está activo, calculados sobre la base ya descontada
+  // Base fiscal: IVA/ISR se calculan sobre el subtotal cobrado.
+  const baseGravable = subtotal
+  // IVA e ISR: cada uno suma al total solo si su toggle esta activo.
   const ivaTotal    = aplicarIva ? Math.round(baseGravable * IVA) : 0
   const isrAplicado = aplicarIsr ? Math.round(baseGravable * ISR) : 0
-  const totalConIva = baseGravable + ivaTotal + isrAplicado
+  const totalAntesDescuento = baseGravable + ivaTotal + isrAplicado
+  // Descuento especial: se resta al precio final, despues de impuestos.
+  const descuentoQ  = aplicarDescuento ? Math.min(totalAntesDescuento, Math.max(0, descuentoMonto)) : 0
+  const totalConIva = totalAntesDescuento - descuentoQ
   const tipoCambioCotizacion = normalizeExchangeRate(tipoCambioUsd)
   const formatCotizacionMoney = (montoQ: number) => formatCurrency(montoQ, monedaCotizacion, tipoCambioCotizacion)
   const simboloCotizacion = monedaCotizacion === 'USD' ? '$' : 'Q'
+  const textoPdfConIva = mostrarDesgloseImpuestos && mostrarNotaCheque
+  const impuestosResumen = [
+    aplicarIva ? 'IVA' : null,
+    aplicarIsr ? 'ISR' : null,
+  ].filter(Boolean).join(' + ')
+  const totalResumenLabel = impuestosResumen
+    ? `${formatCotizacionMoney(baseGravable)} base + ${impuestosResumen}${descuentoQ > 0 ? ' - descuento' : ''}`
+    : `${formatCotizacionMoney(baseGravable)} base sin impuestos${descuentoQ > 0 ? ' - descuento' : ''}`
 
   // Análisis financiero basado en el TOTAL de las líneas (no solo perforación)
   // ISR: 5% para ambos (retención Guatemala)
@@ -735,6 +747,7 @@ export default function NuevaCotizacionPage() {
       descuentoMonto,
       mostrarDesgloseImpuestos,
       mostrarNotaCheque,
+      montoGuardado: totalConIva,
       // Snapshot de precios venta pipas/grava/capacidad para que al re-abrir/imprimir se mantengan
       pipaPrecioVentaUnitario,
       camionadaGravaPrecioVentaUnitario,
@@ -1530,46 +1543,52 @@ export default function NuevaCotizacionPage() {
                   )
                 })}
               </div>
-              {/* Toggles de impuestos — aplicar IVA/ISR al total + mostrar desglose en PDF */}
+              {/* IVA/ISR cambian monto; PDF texto cambia solo la presentacion. */}
               <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-1.5 flex-wrap">
                 <button
+                  type="button"
                   onClick={() => setAplicarIva(v => !v)}
+                  aria-pressed={aplicarIva}
                   className={cn('text-[11px] px-3 py-2 rounded-lg border font-semibold transition-colors shadow-sm',
                     aplicarIva
                       ? 'border-amber-500/50 bg-amber-500/20 text-amber-200 shadow-amber-500/10'
                       : 'border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60')}
-                  title={aplicarIva ? 'IVA 12% se suma al total' : 'Total SIN IVA'}
+                  title={aplicarIva ? 'IVA 12% se suma al total' : 'IVA 12% no se suma al total'}
                 >
-                  {aplicarIva ? 'Con IVA 12%' : 'Sin IVA'}
+                  {aplicarIva ? 'IVA 12%: SUMA' : 'IVA 12%: NO SUMA'}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setAplicarIsr(v => !v)}
+                  aria-pressed={aplicarIsr}
                   className={cn('text-[10px] px-2 py-1 rounded border transition-colors',
                     aplicarIsr
                       ? 'border-violet-500/40 bg-violet-500/15 text-violet-300'
                       : 'border-white/10 text-slate-500 hover:border-white/20')}
-                  title={aplicarIsr ? 'ISR 5% se suma al total' : 'ISR no se suma'}
+                  title={aplicarIsr ? 'ISR 5% se suma al total' : 'ISR 5% no se suma al total'}
                 >
-                  ISR 5% {aplicarIsr ? '✓' : '—'}
+                  {aplicarIsr ? 'ISR 5%: SUMA' : 'ISR 5%: NO SUMA'}
                 </button>
-                {/* Descuento especial — se resta del subtotal antes de impuestos */}
+                {/* Descuento especial: se resta del precio final. */}
                 <button
+                  type="button"
                   onClick={() => setAplicarDescuento(v => !v)}
+                  aria-pressed={aplicarDescuento}
                   className={cn('text-[10px] px-2 py-1 rounded border transition-colors',
                     aplicarDescuento
                       ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
                       : 'border-white/10 text-slate-500 hover:border-white/20')}
                   title={aplicarDescuento
-                    ? 'Descuento especial activo — se resta al subtotal antes de IVA/ISR'
-                    : 'Agregar descuento especial al cliente'}
+                    ? 'Descuento especial activo - se resta al precio final'
+                    : 'Agregar descuento especial al precio final'}
                 >
-                  Descuento {aplicarDescuento ? '✓' : '—'}
+                  Descuento final {aplicarDescuento ? 'ON' : 'OFF'}
                 </button>
                 {aplicarDescuento && (
                   <div className="flex items-center gap-1 border border-emerald-500/40 bg-emerald-500/5 rounded px-1.5 py-0.5">
                     <span className="text-[10px] text-emerald-400/70">Q</span>
                     <input
-                      type="number" step="1" min={0} max={subtotal}
+                      type="number" step="1" min={0} max={totalAntesDescuento}
                       value={descuentoMonto || ''}
                       onChange={e => setDescuentoMonto(parseFloat(e.target.value) || 0)}
                       placeholder="0"
@@ -1578,6 +1597,7 @@ export default function NuevaCotizacionPage() {
                   </div>
                 )}
                 <button
+                  type="button"
                   onClick={() => {
                     // Toggle unificado: ambos flags se sincronizan (ON → ambos ON, OFF → ambos OFF).
                     // Mantenemos ambos state fields en backend por compat con cotizaciones guardadas.
@@ -1590,10 +1610,10 @@ export default function NuevaCotizacionPage() {
                       ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
                       : 'border-white/10 text-slate-500 hover:border-white/20')}
                   title={(mostrarDesgloseImpuestos && mostrarNotaCheque)
-                    ? 'PDF muestra: desglose de impuestos + nota de pago'
-                    : 'PDF muestra solo el total (sin desglose ni nota de pago)'}
+                    ? 'PDF mostrara CON IVA, desglose y nota de pago. No cambia el monto.'
+                    : 'PDF mostrara SIN IVA y sin nota/desglose. No cambia el monto.'}
                 >
-                  Desglose + nota pago {(mostrarDesgloseImpuestos && mostrarNotaCheque) ? '✓' : '—'}
+                  PDF texto: {(mostrarDesgloseImpuestos && mostrarNotaCheque) ? 'CON IVA + nota' : 'SIN IVA'}
                 </button>
               </div>
 
@@ -1645,12 +1665,6 @@ export default function NuevaCotizacionPage() {
                     <span className="text-slate-500">Subtotal</span>
                     <span className="text-slate-300 tabular-nums">{formatCotizacionMoney(subtotal)}</span>
                   </div>
-                {aplicarDescuento && descuentoQ > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-emerald-400 font-medium">Descuento especial</span>
-                      <span className="text-emerald-400 tabular-nums font-medium">− {formatCotizacionMoney(descuentoQ)}</span>
-                    </div>
-                )}
                 {aplicarIva && (
                     <div className="flex justify-between text-xs">
                       <span className="text-amber-400 font-medium">IVA (12%)</span>
@@ -1663,9 +1677,21 @@ export default function NuevaCotizacionPage() {
                       <span className="text-violet-400 tabular-nums font-medium">{formatCotizacionMoney(isrAplicado)}</span>
                     </div>
                 )}
+                {aplicarDescuento && descuentoQ > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-emerald-400 font-medium">Descuento especial al total</span>
+                      <span className="text-emerald-400 tabular-nums font-medium">- {formatCotizacionMoney(descuentoQ)}</span>
+                    </div>
+                )}
                   <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-white/10">
                     <span className="text-white">TOTAL</span>
                     <span className="text-blue-400 tabular-nums">{formatCotizacionMoney(totalConIva)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] pt-1">
+                    <span className="text-slate-500">Estado en PDF</span>
+                    <span className={cn('font-bold tracking-wide', textoPdfConIva ? 'text-amber-300' : 'text-red-300')}>
+                      {textoPdfConIva ? 'CON IVA' : 'SIN IVA'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1673,10 +1699,10 @@ export default function NuevaCotizacionPage() {
               {/* Recordatorio: el valor por pie se edita en la "Calculadora — Perforación" arriba */}
               {tipo === 'perforacion' && ip.profundidad > 0 && (
                 <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-slate-500 leading-relaxed">
-                  Valor/pie: <span className="text-blue-400 font-semibold tabular-nums">{formatCotizacionMoney(ip.precioPorPieVenta)}</span> × {ip.profundidad} pies
-                  {(!aplicarIva || !aplicarIsr) && (
-                    <span className="text-slate-600"> · base con ambos impuestos: {formatCotizacionMoney(ip.profundidad * ip.precioPorPieVenta)}</span>
-                  )}
+                  Valor/pie: <span className="text-blue-400 font-semibold tabular-nums">{formatCotizacionMoney(ip.precioPorPieVenta)}</span> x {ip.profundidad} pies
+                  <span className={cn('ml-1 font-semibold', textoPdfConIva ? 'text-amber-300' : 'text-red-300')}>
+                    PDF {textoPdfConIva ? 'CON IVA' : 'SIN IVA'}
+                  </span>
                   <br/>
                   <span className="text-slate-600">Edita el precio/pie arriba en la Calculadora.</span>
                 </div>
@@ -1738,7 +1764,7 @@ export default function NuevaCotizacionPage() {
                     </div>
                     <p className="text-xl font-black text-white tabular-nums leading-none">{formatCotizacionMoney(totalConIva)}</p>
                     <p className="text-[10px] text-slate-500 mt-1 leading-tight">
-                      {formatCotizacionMoney(subtotal)} subtotal + IVA
+                      {totalResumenLabel}
                     </p>
                   </div>
                   {/* Tu costo — solo superadmin */}
@@ -2060,7 +2086,7 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         <div className="flex items-center justify-between gap-2 mb-2">
           <div>
             <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Valor por pie (al cliente)</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Precio de venta unitario — con IVA e ISR incluidos</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Precio de venta unitario - con IVA + ISR por defecto</p>
           </div>
           {ip.profundidad > 0 && (
             <span className="text-[10px] text-slate-500 hidden sm:inline">× {ip.profundidad} pies</span>
@@ -2131,7 +2157,7 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
               />
             </div>
             <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-              Precio al cliente con IVA+ISR · auto-sugerido {formatQ(res.precioPorPieCalculado)}
+              Precio al cliente con IVA + ISR por defecto - auto-sugerido {formatQ(res.precioPorPieCalculado)}
             </p>
           </div>
         </div>
@@ -3358,6 +3384,31 @@ function PlanPagosSection({ planPagos, setPlanPagos, totalConIva, formatMoney = 
 type LineaCot = { key: string; nombre: string; unidad: string; cant: number; precio: number; total: number }
 type FilaComparativaLimpieza = { key: string; label: string; costo: number; venta: number; detalle?: string }
 
+function ajustarResidualPerforacionPorPrecioPie(
+  lineasBase: LineaCot[],
+  profundidad: number,
+  precioPorPie: number,
+  cfgDe: (key: string) => LineaConfig,
+): LineaCot[] {
+  const perfIdx = lineasBase.findIndex(l => l.key === 'perforacion')
+  if (perfIdx < 0 || profundidad <= 0 || !cfgDe('perforacion').cobrar) return lineasBase
+
+  const subtotalObjetivo = (profundidad * precioPorPie) / (1 + IVA + ISR)
+  const sumaOtrosCobrados = lineasBase.reduce((acc, l, i) => (
+    i === perfIdx || !cfgDe(l.key).cobrar ? acc : acc + l.total
+  ), 0)
+  const totalPerforacion = Math.max(0, subtotalObjetivo - sumaOtrosCobrados)
+
+  return lineasBase.map((l, i) => i === perfIdx
+    ? {
+        ...l,
+        precio: Math.round((totalPerforacion / profundidad) * 100) / 100,
+        total: totalPerforacion,
+      }
+    : l
+  )
+}
+
 function buildComparativaLimpieza(
   il: InputsLimpieza,
   res: ReturnType<typeof calcularLimpieza>,
@@ -3548,17 +3599,10 @@ function buildLineasPerf(
   // Construir totales iniciales
   const built = linesConOverride.map(l => ({ ...l, total: l.cant * l.precio }))
 
-  // Rubro 3 residual: el precio/pie representa "precio con IVA + ISR incluidos".
-  // Subtotal base FIJO = (profundidad × precio/pie) / 1.17, independiente de los toggles.
-  // Así los toggles IVA/ISR suman/restan del total final sin alterar el subtotal.
-  // Ej: 1100 × Q 890 = Q 979,000 → subtotal siempre 979,000 / 1.17 = Q 836,752.
-  //   - Ambos ON → total = 836,752 × 1.17 = Q 979,000
-  //   - IVA OFF  → total = 836,752 × 1.05 = Q 878,590
-  //   - ISR OFF  → total = 836,752 × 1.12 = Q 937,162
-  //   - Ambos OFF → total = Q 836,752
+  // Rubro 3 residual: el precio/pie representa el precio final con IVA + ISR por defecto.
+  // La base fija es (profundidad x precio/pie) / 1.17; apagar IVA o ISR resta ese impuesto.
   const totalClienteObjetivo = ip.profundidad * ip.precioPorPieVenta
-  const FACTOR_IMPUESTOS_COMPLETO = 1 + IVA + ISR  // 1.17 — divisor fijo
-  const subtotalObjetivo = totalClienteObjetivo / FACTOR_IMPUESTOS_COMPLETO
+  const subtotalObjetivo = totalClienteObjetivo / (1 + IVA + ISR)
   const perfIdx = built.findIndex(l => l.key === 'perforacion')
   if (perfIdx >= 0 && ip.profundidad > 0) {
     const sumaOtros = built.reduce((acc, l, i) => i === perfIdx ? acc : acc + l.total, 0)

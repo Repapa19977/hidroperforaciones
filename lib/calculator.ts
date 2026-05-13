@@ -16,7 +16,7 @@ import { DEFAULT_SERVICIO_COTIZACION, DEFAULT_SERVICIO_TUBERIA, type ServicioTub
 // ── IMPUESTOS ────────────────────────────────────────────────
 export const IVA = 0.12     // 12% — IVA Guatemala
 export const ISR = 0.05     // 5%  — ISR / retención
-export const TOTAL_IMPUESTOS = IVA + ISR  // 19%
+export const TOTAL_IMPUESTOS = IVA + ISR  // 17%
 
 // ── TABLA DE BENTONITA (sacos/pie por diámetro de perforación) ───────────────
 // Fuente: CONSUMO DE BENTONITA.xlsx — Hoja 3 verificada
@@ -533,7 +533,7 @@ export interface InputsPerforacion {
   costoSanitario: number       // Q baños portátiles (default 800)
 
   // ── Comisión ──
-  comisionVendedorPct: number  // % comisión (default 1%) — se calcula sobre ingresos NETOS (bruto × 0.81)
+  comisionVendedorPct: number  // % comisión (default 1%) — se calcula sobre ingresos NETOS (bruto × 0.83)
 
   // ── Imprevisto global del proyecto (rubro del Excel reunión) ──
   imprevistoGlobal: number     // Q fijo editable (default 20,000)
@@ -751,7 +751,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
       })()
     : 0
 
-  // Comisión: 1% sobre ingresos NETOS (bruto − IVA 12% − ISR 7% = bruto × 0.81)
+  // Comisión: 1% sobre ingresos NETOS (bruto - IVA 12% - ISR 5% = bruto x 0.83)
   const costoComision = ingresosNetos * (inp.comisionVendedorPct / 100)
 
   // Costos adicionales de campo
