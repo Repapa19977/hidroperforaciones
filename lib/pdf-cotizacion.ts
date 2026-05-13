@@ -775,14 +775,17 @@ export async function generarPDF(
     return yPos + cardH
   }
 
-  function drawMiniPago(yPos: number) {
+  function drawMiniPago(yPos: number, targetBottomY?: number) {
     const mostrarValorPorPie = data.tipo === 'perforacion' && valorPorPie > 0
     if (!mostrarValorPorPie && !mostrarNotaCheque) return yPos
     const nota = 'Nota: Para cualquier pago emitir Cheque No Negociable a nombre de la empresa, depósito bancario o transferencia a las cuentas identificadas en la cotización.'
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8)
     const boxW = W - 2 * mg
     const notaLines = mostrarNotaCheque ? doc.splitTextToSize(limpiar(nota), boxW - 8) : []
-    const boxH = 8 + (mostrarValorPorPie ? 5 : 0) + (mostrarNotaCheque ? Math.max(4, notaLines.length * 3) : 0)
+    const baseBoxH = 8 + (mostrarValorPorPie ? 5 : 0) + (mostrarNotaCheque ? Math.max(4, notaLines.length * 3) : 0)
+    const boxH = targetBottomY && targetBottomY > yPos
+      ? Math.max(baseBoxH, targetBottomY - yPos)
+      : baseBoxH
     const boxX = mg
     if (yPos + boxH > H - footerBottom) {
       doc.addPage()
@@ -862,7 +865,7 @@ export async function generarPDF(
       yPos = pageTop
     }
     const totalFin = drawTotalCard(yPos)
-    drawMiniPago(totalFin + 2.2)
+    drawMiniPago(totalFin + 2.2, presupuestoCompacto ? H - footerBottom - 4 : undefined)
   }
 
   function drawPage2() {
