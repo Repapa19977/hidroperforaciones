@@ -181,7 +181,9 @@ function buildMimeMessage(mail: SmtpRelayMail): string {
 
 function connect(host: string, port: number): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host, port }, () => resolve(socket))
+    // Google Workspace SMTP Relay was authorized with the VPS IPv4 address.
+    // Force IPv4 so Node does not pick the server IPv6 address and get rejected.
+    const socket = net.createConnection({ host, port, family: 4 }, () => resolve(socket))
     socket.once('error', reject)
   })
 }
