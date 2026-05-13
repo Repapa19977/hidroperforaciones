@@ -600,8 +600,9 @@ export async function generarPDF(
   const setDraw = (hex: string) => doc.setDrawColor(...rgb(hex))
   const setText = (hex: string) => doc.setTextColor(hex)
   const limpiar = (value: unknown) => textoSeguroPdf(String(value ?? ''))
-  const pageTop = 34
-  const footerBottom = 27
+  const pageTop = data.tipo === 'perforacion' ? 31 : 34
+  const footerBottom = data.tipo === 'perforacion' ? 24 : 27
+  const presupuestoCompacto = data.tipo === 'perforacion' && lineas.length >= 16
 
   function headerV2(page: number, totalPages: number) {
     setFill('#173765')
@@ -638,20 +639,20 @@ export async function generarPDF(
   }
 
   function footerV2() {
-    const yFooter = H - 24
+    const yFooter = data.tipo === 'perforacion' ? H - 22 : H - 24
     setDraw('#d9e2ef')
     doc.line(mg, yFooter, W - mg, yFooter)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); setText('#173765')
-    doc.text('ASESOR DE VENTA', mg, yFooter + 3.8)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText('#1f2937')
-    doc.text(data.vendedor || 'Gerencia Hidroperforaciones', mg, yFooter + 7)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#64748b')
-    doc.text(emailVendedor, mg, yFooter + 11)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.4); setText('#173765')
-    doc.text('DIRECCIONES', W - mg, yFooter + 3.8, { align: 'right' })
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); setText('#64748b')
-    doc.text(doc.splitTextToSize(HIDRO_DIRECCION_CORPORATIVA, 78), W - mg, yFooter + 7, { align: 'right' })
-    doc.text(doc.splitTextToSize(HIDRO_DIRECCION_OPERATIVA, 78), W - mg, yFooter + 13, { align: 'right' })
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.6); setText('#173765')
+    doc.text('ASESOR DE VENTA', mg, yFooter + 3.5)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.7); setText('#1f2937')
+    doc.text(data.vendedor || 'Gerencia Hidroperforaciones', mg, yFooter + 6.5)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.4); setText('#64748b')
+    doc.text(emailVendedor, mg, yFooter + 10.1)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.2); setText('#173765')
+    doc.text('DIRECCIONES', W - mg, yFooter + 3.5, { align: 'right' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(4.75); setText('#64748b')
+    doc.text(doc.splitTextToSize(HIDRO_DIRECCION_CORPORATIVA, 82), W - mg, yFooter + 6.6, { align: 'right' })
+    doc.text(doc.splitTextToSize(HIDRO_DIRECCION_OPERATIVA, 82), W - mg, yFooter + 11.7, { align: 'right' })
     setFill('#173765')
     doc.rect(0, H - 4.5, W, 4.5, 'F')
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.2); setText('#c8d9f3')
@@ -681,7 +682,7 @@ export async function generarPDF(
   function drawQuoteInfo(yPos: number) {
     sectionTitle('DATOS DE LA COTIZACION', yPos)
     yPos += 3.5
-    const boxH = 42
+    const boxH = presupuestoCompacto ? 36 : 42
     setFill('#f7f9fc'); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
     doc.roundedRect(mg, yPos, W - 2 * mg, boxH, 2, 2, 'FD')
 
@@ -717,27 +718,27 @@ export async function generarPDF(
     for (const [label, value] of left) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
       doc.text(label, x1, rowY)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); setText('#1f2937')
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.65 : 6); setText('#1f2937')
       doc.text(value.slice(0, 42), x1 + 23, rowY)
-      rowY += 5.6
+      rowY += presupuestoCompacto ? 5.05 : 5.6
     }
 
     rowY = yPos + 5
     for (const [label, value] of right) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
       doc.text(label, x2, rowY)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#1f2937')
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.35 : 5.7); setText('#1f2937')
       const lines = doc.splitTextToSize(value, colW - 27)
       const maxLines = label === 'PROYECTO' || label === 'DIRECCION DEL PROYECTO' ? 2 : 1
       doc.text(lines.slice(0, maxLines), x2 + 27, rowY)
-      rowY += maxLines === 2 ? 9.5 : 5.2
+      rowY += maxLines === 2 ? (presupuestoCompacto ? 8.4 : 9.5) : (presupuestoCompacto ? 4.8 : 5.2)
     }
 
     return yPos + boxH + 5
   }
 
   function drawTotalCard(yPos: number) {
-    const cardH = 15
+    const cardH = presupuestoCompacto ? 12.5 : 15
     const cardW = W - 2 * mg
     const textColW = cardW * 0.63
     setFill('#173765')
@@ -748,14 +749,14 @@ export async function generarPDF(
     doc.setLineWidth(0.3)
     doc.line(mg + textColW, yPos + 2, mg + textColW, yPos + cardH - 2)
 
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); setText('#bfd4ff')
-    doc.text('MONTO EN LETRAS', mg + 4, yPos + 4.7)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setText(WHITE)
-    doc.text(doc.splitTextToSize(limpiar(totalEnLetras), textColW - 8).slice(0, 2), mg + 4, yPos + 8.2)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.1 : 5.5); setText('#bfd4ff')
+    doc.text('MONTO EN LETRAS', mg + 4, yPos + 4.3)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6 : 6.5); setText(WHITE)
+    doc.text(doc.splitTextToSize(limpiar(totalEnLetras), textColW - 8).slice(0, 2), mg + 4, yPos + 7.5)
 
     const totalLabelX = mg + textColW + 4
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); setText('#bfd4ff')
-    doc.text(monedaCotizacion === 'USD' ? 'TOTAL A PAGAR (USD)' : 'TOTAL A PAGAR', totalLabelX, yPos + 4.7)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.1 : 5.5); setText('#bfd4ff')
+    doc.text(monedaCotizacion === 'USD' ? 'TOTAL A PAGAR (USD)' : 'TOTAL A PAGAR', totalLabelX, yPos + 4.3)
 
     // La etiqueta refleja si esta cotizacion realmente suma IVA al total.
     const etiqueta = monedaCotizacion === 'USD'
@@ -765,12 +766,12 @@ export async function generarPDF(
     const etiquetaW = doc.getTextWidth(etiqueta) + 5
     const etiquetaX = totalLabelX
     doc.setFillColor(255, 251, 235)
-    doc.roundedRect(etiquetaX, yPos + 6.2, etiquetaW, 4.6, 1, 1, 'F')
+    doc.roundedRect(etiquetaX, yPos + 5.6, etiquetaW, 4.3, 1, 1, 'F')
     doc.setTextColor(180, 83, 9)
-    doc.text(etiqueta, etiquetaX + 2.5, yPos + 9.5)
+    doc.text(etiqueta, etiquetaX + 2.5, yPos + 8.8)
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); setText(WHITE)
-    doc.text(formatMonto(total), W - mg - 4, yPos + 10.8, { align: 'right' })
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 12 : 13); setText(WHITE)
+    doc.text(formatMonto(total), W - mg - 4, yPos + (presupuestoCompacto ? 10 : 10.8), { align: 'right' })
     return yPos + cardH
   }
 
@@ -818,7 +819,7 @@ export async function generarPDF(
     if (lineas.length > 0) {
       autoTable(doc, {
         startY: yPos,
-        margin: { left: mg, right: mg, top: 32, bottom: footerBottom },
+        margin: { left: mg, right: mg, top: 32, bottom: presupuestoCompacto ? footerBottom + 15 : footerBottom },
         head: [['#', 'DESCRIPCION', 'UND', 'CANT.', 'P. UNITARIO', 'SUBTOTAL']],
         body: lineas.map((l, i) => [
           String(i + 1),
@@ -830,26 +831,33 @@ export async function generarPDF(
         ]),
         theme: 'plain',
         styles: { overflow: 'linebreak', lineColor: rgb('#d9e2ef'), lineWidth: 0.08 },
-        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: 7.5, fontStyle: 'bold', cellPadding: 1.75 },
-        bodyStyles: { fontSize: 7.1, textColor: rgb('#1f2937'), cellPadding: { top: 1.35, right: 1, bottom: 1.35, left: 1 } },
+        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: presupuestoCompacto ? 6.5 : 7.5, fontStyle: 'bold', cellPadding: presupuestoCompacto ? 1.2 : 1.75 },
+        bodyStyles: {
+          fontSize: presupuestoCompacto ? 5.95 : 7.1,
+          textColor: rgb('#1f2937'),
+          cellPadding: presupuestoCompacto
+            ? { top: 0.62, right: 0.8, bottom: 0.62, left: 0.8 }
+            : { top: 1.35, right: 1, bottom: 1.35, left: 1 },
+        },
         alternateRowStyles: { fillColor: rgb('#fbfcfe') },
         columnStyles: {
-          0: { cellWidth: 7, halign: 'center', textColor: rgb('#173765'), fontStyle: 'bold' },
-          1: { cellWidth: 97 },
-          2: { cellWidth: 13, halign: 'center', textColor: rgb('#64748b'), fontSize: 6.2 },
-          3: { cellWidth: 13, halign: 'right' },
-          4: { cellWidth: 23, halign: 'right' },
-          5: { cellWidth: 25, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765') },
+          0: { cellWidth: presupuestoCompacto ? 6 : 7, halign: 'center', textColor: rgb('#173765'), fontStyle: 'bold' },
+          1: { cellWidth: presupuestoCompacto ? 103 : 97 },
+          2: { cellWidth: presupuestoCompacto ? 12 : 13, halign: 'center', textColor: rgb('#64748b'), fontSize: presupuestoCompacto ? 5.2 : 6.2 },
+          3: { cellWidth: presupuestoCompacto ? 12 : 13, halign: 'right' },
+          4: { cellWidth: presupuestoCompacto ? 21 : 23, halign: 'right' },
+          5: { cellWidth: presupuestoCompacto ? 24 : 25, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765') },
         },
         didParseCell: d => {
-          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = 6.65
+          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = presupuestoCompacto ? 5.45 : 6.65
         },
       })
       yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 3
     }
 
-    const altoInfoPago = (mostrarNotaCheque || (data.tipo === 'perforacion' && valorPorPie > 0)) ? 24 : 0
-    if (yPos + 18 + altoInfoPago > H - footerBottom) {
+    const altoInfoPago = (!presupuestoCompacto && (mostrarNotaCheque || (data.tipo === 'perforacion' && valorPorPie > 0))) ? 24 : 0
+    const altoTotal = presupuestoCompacto ? 13.5 : 18
+    if (yPos + altoTotal + altoInfoPago > H - footerBottom) {
       doc.addPage()
       yPos = pageTop
     }
