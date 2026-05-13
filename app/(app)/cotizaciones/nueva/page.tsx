@@ -36,6 +36,9 @@ import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
 import { crearVendedorOption, resolverEmailVendedor, type VendedorOption } from '@/lib/vendedores'
 
 type TipoCot = 'perforacion' | 'limpieza'
+const SERVICIO_MANTENIMIENTO_LABEL = 'Servicios de Mantenimiento'
+const PROYECTO_PERFORACION_DEFAULT = 'Perforación de pozo mecánico'
+const PROYECTO_SERVICIO_DEFAULT = 'Servicios de mantenimiento'
 const vendedoresDefaultOptions: VendedorOption[] = VENDEDORES.map(nombre => crearVendedorOption(nombre))
 
 const hitoPagoVisible = (hito: HitoPago) => hito.visible !== false
@@ -153,6 +156,11 @@ export default function NuevaCotizacionPage() {
 
   const cambiarTipoCotizacion = (nuevoTipo: TipoCot) => {
     setTipo(nuevoTipo)
+    setProyecto(prev => {
+      const defaultAnterior = tipo === 'limpieza' ? PROYECTO_SERVICIO_DEFAULT : PROYECTO_PERFORACION_DEFAULT
+      const defaultNuevo = nuevoTipo === 'limpieza' ? PROYECTO_SERVICIO_DEFAULT : PROYECTO_PERFORACION_DEFAULT
+      return !prev.trim() || prev === defaultAnterior ? defaultNuevo : prev
+    })
     if (!editMode) fetchSiguienteCorrelativo(nuevoTipo)
   }
 
@@ -194,7 +202,10 @@ export default function NuevaCotizacionPage() {
     if (clienteParam) setCliente(decodeURIComponent(clienteParam))
     if (empresaParam) setEmpresa(decodeURIComponent(empresaParam))
     const tipoInicial: TipoCot = tipoParam === 'limpieza' ? 'limpieza' : 'perforacion'
-    if (tipoInicial === 'limpieza') setTipo('limpieza')
+    if (tipoInicial === 'limpieza') {
+      setTipo('limpieza')
+      setProyecto(prev => !prev.trim() || prev === PROYECTO_PERFORACION_DEFAULT ? PROYECTO_SERVICIO_DEFAULT : prev)
+    }
 
     // Pre-fill desde link del perfil de contacto (carga el contacto completo)
     if (contactoIdParam && !editParam) {
@@ -413,7 +424,7 @@ export default function NuevaCotizacionPage() {
   const [nit, setNit] = useState('')
   const [telefono, setTelefono] = useState('')
   const [email, setEmail]         = useState('')
-  const [proyecto, setProyecto] = useState('Perforación de pozo mecánico')
+  const [proyecto, setProyecto] = useState(PROYECTO_PERFORACION_DEFAULT)
   const [direccion, setDireccion] = useState('')
   // Ubicación — usada para auto-crear el contacto con depto+municipio ya poblados.
   const [departamento, setDepartamento] = useState('')
@@ -866,7 +877,7 @@ export default function NuevaCotizacionPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {([
                   { id: 'perforacion' as const, icon: <Drill className="w-5 h-5" />, label: 'Perforación de Pozo', sub: '19 líneas · precio por pie', color: 'blue' },
-                  { id: 'limpieza' as const, icon: <Wrench className="w-5 h-5" />, label: 'Limpieza Mecánica', sub: '7 líneas · precio por hora', color: 'cyan' },
+                  { id: 'limpieza' as const, icon: <Wrench className="w-5 h-5" />, label: SERVICIO_MANTENIMIENTO_LABEL, sub: '7 líneas · precio por hora', color: 'cyan' },
                 ]).map(t => (
                   <button key={t.id} onClick={() => cambiarTipoCotizacion(t.id)}
                     className={cn('flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left',
@@ -2505,7 +2516,7 @@ function CalcServicios({ il, patchIl, setServicioSubtipo, res, lineasConfig, set
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
         {([
-          ['basico', 'Servicio Basico', 'Limpieza mecanica'],
+          ['basico', 'Servicio Basico', 'Servicios de mantenimiento'],
           ['equipamiento', 'Equipamiento', 'Rubros del Excel'],
           ['aforo', 'Aforo', 'Rubros de aforo'],
           ['completo', 'Servicio Completo', 'Limpieza + aforo'],

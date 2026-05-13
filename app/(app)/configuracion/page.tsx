@@ -632,7 +632,7 @@ export default function ConfiguracionPage() {
       </Section>
 
       {/* COTIZACION DE SERVICIO */}
-      <Section title="Cotización de Servicio - Limpieza Mecánica" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
+      <Section title="Cotización de Servicio - Servicios de Mantenimiento" icon={<Wrench className="w-4 h-4" />} locked={!isSuperAdmin}>
         <p className="text-xs text-slate-500 mb-4">
           Precios y consumos usados solo por el cotizador de servicios. No afectan perforación de pozo.
         </p>

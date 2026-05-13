@@ -29,7 +29,7 @@ function getCookie(name: string) {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
-const tipoLabel = (t: string) => t === 'perforacion' ? 'Perforación' : 'Limpieza Mecánica'
+const tipoLabel = (t: string) => t === 'perforacion' ? 'Perforación' : 'Servicios de Mantenimiento'
 
 // ── Status map ─────────────────────────────────────────────────────────────────
 const statusMap: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
