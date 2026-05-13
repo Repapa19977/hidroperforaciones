@@ -13,8 +13,15 @@ $Archive = Join-Path $TempDir "hidrocrm-local-$Ts.tgz"
 $RemoteArchive = "/tmp/hidrocrm-local-$Ts.tgz"
 $RemoteScript = "/tmp/hidrocrm-local-activate-$Ts.sh"
 $ActivateScript = Join-Path $PSScriptRoot "local-release-activate.sh"
+$ActivateScriptUnix = Join-Path $TempDir "local-release-activate.sh"
 
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+$ActivateContent = [System.IO.File]::ReadAllText($ActivateScript) -replace "`r`n", "`n"
+[System.IO.File]::WriteAllText(
+  $ActivateScriptUnix,
+  $ActivateContent,
+  [System.Text.UTF8Encoding]::new($false)
+)
 
 Push-Location $Repo
 try {
@@ -57,7 +64,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "==> Subiendo script de activacion"
-& scp.exe -P $Port $ActivateScript "$($User)@$($HostName):$RemoteScript"
+& scp.exe -P $Port $ActivateScriptUnix "$($User)@$($HostName):$RemoteScript"
 if ($LASTEXITCODE -ne 0) {
   throw "Fallo scp del script"
 }
