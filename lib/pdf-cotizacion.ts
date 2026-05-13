@@ -18,6 +18,8 @@ import { resolverEmailVendedor } from './vendedores'
 
 // ── Colores ──────────────────────────────────────────────────────────────────
 const WHITE  = '#ffffff'
+const HIDRO_DIRECCION_CORPORATIVA = 'Corporativo: 5 avenida 15-45 zona 10, edificio Centro Empresarial torre 2, oficina 708/709'
+const HIDRO_DIRECCION_OPERATIVA = 'Operativo: Km 22.5 carretera a El Salvador, Fraijanes'
 
 // ── Constructores de líneas — formato idéntico a Odoo ────────────────────────
 export function buildLineasPerf(
@@ -270,7 +272,7 @@ function buildLineasLimp(
       nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
       unidad: 'Global',
       cant: 1,
-      precio: precioDe('tecnico-chequeo-servicio', il.precioTecnicoChequeoServicio ?? 0),
+      precio: precioDe('tecnico-chequeo-servicio', res.precioTecnicoChequeoServicio),
       total: 0,
     })
   }
@@ -523,9 +525,10 @@ export async function generarPDF(
     })
 
   const todasLineas: LineaFinal[] = [...lineasBase, ...extras]
-  const servicioOptionalLineKeys = new Set(['inspeccion-camara', 'medicion-nivel-agua', 'analisis-agua-servicio'])
+  const servicioOptionalLineKeys = new Set(['tecnico-chequeo-servicio', 'inspeccion-camara', 'medicion-nivel-agua', 'analisis-agua-servicio'])
   const servicioOpcionalSeleccionado = (key: string) => {
     if (!il) return false
+    if (key === 'tecnico-chequeo-servicio') return il.incluirTecnicoChequeoServicio ?? true
     if (key === 'inspeccion-camara') return !!il.inspeccionCamara
     if (key === 'medicion-nivel-agua') return !!il.incluirMedicionNivelServicio
     if (key === 'analisis-agua-servicio') return !!il.incluirAnalisisAguaServicio
@@ -598,7 +601,7 @@ export async function generarPDF(
   const setText = (hex: string) => doc.setTextColor(hex)
   const limpiar = (value: unknown) => textoSeguroPdf(String(value ?? ''))
   const pageTop = 34
-  const footerBottom = 22
+  const footerBottom = 27
 
   function headerV2(page: number, totalPages: number) {
     setFill('#173765')
@@ -635,7 +638,7 @@ export async function generarPDF(
   }
 
   function footerV2() {
-    const yFooter = H - 20
+    const yFooter = H - 24
     setDraw('#d9e2ef')
     doc.line(mg, yFooter, W - mg, yFooter)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); setText('#173765')
@@ -644,6 +647,11 @@ export async function generarPDF(
     doc.text(data.vendedor || 'Gerencia Hidroperforaciones', mg, yFooter + 7)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#64748b')
     doc.text(emailVendedor, mg, yFooter + 11)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.4); setText('#173765')
+    doc.text('DIRECCIONES', W - mg, yFooter + 3.8, { align: 'right' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); setText('#64748b')
+    doc.text(doc.splitTextToSize(HIDRO_DIRECCION_CORPORATIVA, 78), W - mg, yFooter + 7, { align: 'right' })
+    doc.text(doc.splitTextToSize(HIDRO_DIRECCION_OPERATIVA, 78), W - mg, yFooter + 13, { align: 'right' })
     setFill('#173765')
     doc.rect(0, H - 4.5, W, 4.5, 'F')
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.2); setText('#c8d9f3')
@@ -673,7 +681,7 @@ export async function generarPDF(
   function drawQuoteInfo(yPos: number) {
     sectionTitle('DATOS DE LA COTIZACION', yPos)
     yPos += 3.5
-    const boxH = 36
+    const boxH = 42
     setFill('#f7f9fc'); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
     doc.roundedRect(mg, yPos, W - 2 * mg, boxH, 2, 2, 'FD')
 
@@ -699,7 +707,7 @@ export async function generarPDF(
     ]
     const right: Array<[string, string]> = [
       ['PROYECTO', limpiar(data.proyecto || '')],
-      ['DIRECCION', limpiar(ubicacion || '')],
+      ['DIRECCION DEL PROYECTO', limpiar(ubicacion || '')],
       ['VALIDEZ', `${data.validezDias || 15} dias`],
       ['TIEMPO', limpiar(data.duracion || '')],
       ['PROFUNDIDAD', ip?.profundidad ? `${ip.profundidad} pies` : ''],
@@ -720,8 +728,9 @@ export async function generarPDF(
       doc.text(label, x2, rowY)
       doc.setFont('helvetica', 'normal'); doc.setFontSize(5.7); setText('#1f2937')
       const lines = doc.splitTextToSize(value, colW - 27)
-      doc.text(lines.slice(0, label === 'PROYECTO' ? 2 : 1), x2 + 27, rowY)
-      rowY += label === 'PROYECTO' ? 9.5 : 5.2
+      const maxLines = label === 'PROYECTO' || label === 'DIRECCION DEL PROYECTO' ? 2 : 1
+      doc.text(lines.slice(0, maxLines), x2 + 27, rowY)
+      rowY += maxLines === 2 ? 9.5 : 5.2
     }
 
     return yPos + boxH + 5

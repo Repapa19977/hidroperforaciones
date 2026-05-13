@@ -860,6 +860,7 @@ export interface InputsLimpieza {
   margenTuboServicioPct?: number
   precioMaterialInstalacionServicio?: number
   costoMaterialInstalacionServicio?: number
+  incluirTecnicoChequeoServicio?: boolean
   precioTecnicoChequeoServicio?: number
   costoTecnicoChequeoServicio?: number
   precioMedicionNivelServicio?: number
@@ -1091,8 +1092,9 @@ export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
   const usarLineasServicioBase = usaServicioBasico
   const precioMaterialInstalacionServicio = usarLineasServicioBase ? Math.max(0, inp.precioMaterialInstalacionServicio ?? 0) : 0
   const costoMaterialInstalacionServicio = usarLineasServicioBase ? Math.max(0, inp.costoMaterialInstalacionServicio ?? precioMaterialInstalacionServicio) : 0
-  const precioTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.precioTecnicoChequeoServicio ?? 0) : 0
-  const costoTecnicoChequeoServicio = usarLineasServicioBase ? Math.max(0, inp.costoTecnicoChequeoServicio ?? precioTecnicoChequeoServicio) : 0
+  const usarTecnicoChequeoServicio = usarLineasServicioBase && (inp.incluirTecnicoChequeoServicio ?? true)
+  const precioTecnicoChequeoServicio = usarTecnicoChequeoServicio ? Math.max(0, inp.precioTecnicoChequeoServicio ?? 0) : 0
+  const costoTecnicoChequeoServicio = usarTecnicoChequeoServicio ? Math.max(0, inp.costoTecnicoChequeoServicio ?? precioTecnicoChequeoServicio) : 0
   const usarMedicionNivelServicio = usarLineasServicioBase && !!inp.incluirMedicionNivelServicio
   const usarAnalisisAguaServicio = usarLineasServicioBase && !!inp.incluirAnalisisAguaServicio
   const precioMedicionNivelServicio = usarMedicionNivelServicio ? Math.max(0, inp.precioMedicionNivelServicio ?? DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio) : 0
@@ -1292,6 +1294,7 @@ export const defaultInputsLimpieza: InputsLimpieza = {
   margenTuboServicioPct: 0,
   precioMaterialInstalacionServicio: DEFAULT_SERVICIO_COTIZACION.materialInstalacionPrecio,
   costoMaterialInstalacionServicio: DEFAULT_SERVICIO_COTIZACION.materialInstalacionCosto,
+  incluirTecnicoChequeoServicio: true,
   precioTecnicoChequeoServicio: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoPrecio,
   costoTecnicoChequeoServicio: DEFAULT_SERVICIO_COTIZACION.tecnicoChequeoCosto,
   precioMedicionNivelServicio: DEFAULT_SERVICIO_COTIZACION.medicionNivelPrecio,
