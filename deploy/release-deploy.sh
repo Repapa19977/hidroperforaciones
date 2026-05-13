@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TS="$(date +%Y%m%d-%H%M%S)"
+BASE="/opt/hidrocrm-releases"
+REL="$BASE/$TS"
+REPO="https://github.com/Repapa19977/hidroperforaciones.git"
+LEGACY_ENV="/opt/hidrocrm/.env"
+
+cleanup_canary() {
+  pm2 delete hidrocrm-canary >/dev/null 2>&1 || true
+}
+trap cleanup_canary EXIT
+
+echo "==> Detectando release activa"
+PID="$(pm2 pid hidrocrm 2>/dev/null || true)"
+ACTIVE=""
+if [ -n "${PID:-}" ] && [ "$PID" != "0" ]; then
+  ACTIVE="$(readlink -f "/proc/$PID/cwd" 2>/dev/null || true)"
+fi
+
+ENV_SOURCE="$LEGACY_ENV"
+if [ -n "${ACTIVE:-}" ] && [ -f "$ACTIVE/.env" ]; then
+  ENV_SOURCE="$ACTIVE/.env"
+fi
+
+if [ ! -f "$ENV_SOURCE" ]; then
+  echo "ERROR: no encontre .env en release activa ni en /opt/hidrocrm"
+  exit 1
+fi
+
+echo "==> Release nueva: $REL"
+mkdir -p "$BASE"
+cleanup_canary
+
+echo "==> Clonando GitHub main"
+git clone --branch main --depth 1 "$REPO" "$REL"
+
+echo "==> Preservando .env desde $ENV_SOURCE"
+cp -p "$ENV_SOURCE" "$REL/.env"
+
+cd "$REL"
+
+grep -q '^SMTP_RELAY_HOST=' .env || printf '%s\n' 'SMTP_RELAY_HOST=smtp-relay.gmail.com' >> .env
+grep -q '^SMTP_RELAY_PORT=' .env || printf '%s\n' 'SMTP_RELAY_PORT=587' >> .env
+grep -q '^COTIZACION_NOTIFY_EMAIL=' .env || printf '%s\n' 'COTIZACION_NOTIFY_EMAIL=rdominguez@hidroperforaciones.com' >> .env
+
+echo "==> Commit a desplegar"
+git log -1 --oneline
+
+echo "==> Instalando dependencias"
+npm ci
+
+echo "==> Audit produccion"
+npm audit --omit=dev
+
+echo "==> Prisma"
+npx prisma generate
+npx prisma migrate deploy
+
+echo "==> Build"
+npm run build
+
+echo "==> Canary en puerto 3010"
+PORT=3010 NODE_ENV=production pm2 start npm --name hidrocrm-canary -- start
+sleep 5
+curl -fsSI http://127.0.0.1:3010/login
+cleanup_canary
+
+echo "==> Activando release"
+pm2 delete hidrocrm || true
+NODE_ENV=production pm2 start npm --name hidrocrm -- start
+pm2 save
+
+echo "==> Verificacion final"
+sleep 5
+pm2 status --no-color
+curl -fsSI http://127.0.0.1:3000/login
+df -h /
+
+echo "DEPLOY_OK release=$REL"
