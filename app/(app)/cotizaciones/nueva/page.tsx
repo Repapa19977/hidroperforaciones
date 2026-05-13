@@ -956,7 +956,7 @@ export default function NuevaCotizacionPage() {
               )}
               <div className="mb-4 rounded-lg border border-white/10 bg-white/3 p-2">
                 <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-2">Tipo de cliente</p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {([
                     ['individual', 'Persona individual'],
                     ['empresa', 'Empresa'],
@@ -977,7 +977,7 @@ export default function NuevaCotizacionPage() {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block">
                     {tipoCliente === 'empresa' ? 'Contacto / Atencion a *' : 'Cliente *'} {errors.cliente && <span className="text-red-400 ml-1">{errors.cliente}</span>}
@@ -995,7 +995,7 @@ export default function NuevaCotizacionPage() {
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
                 </div>
                 {tipoCliente === 'empresa' && (
-                  <div className="sm:col-span-2">
+                  <div className="md:col-span-2">
                     <label className="text-xs text-slate-500 mb-1.5 block">Razon social</label>
                     <input value={razonSocial} onChange={e => setRazonSocial(e.target.value)} placeholder="Ej: Papelera Internacional Sociedad Anonima"
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
@@ -1011,7 +1011,7 @@ export default function NuevaCotizacionPage() {
                   <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="Ej: +502 5555-0000" type="tel"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
                 </div>
-                <div className="col-span-2 sm:col-span-2">
+                <div className="md:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <span>✉️</span> Email del Cliente *
                     {errors.email && <span className="text-red-400 ml-1">{errors.email}</span>}
@@ -1071,7 +1071,7 @@ export default function NuevaCotizacionPage() {
                     </div>
                   )}
                 </div>
-                <div className="col-span-2">
+                <div className="md:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block">
                     Nombre del Proyecto * {errors.proyecto && <span className="text-red-400 ml-1">{errors.proyecto}</span>}
                   </label>
@@ -1079,7 +1079,7 @@ export default function NuevaCotizacionPage() {
                     className={cn('w-full bg-white/5 border rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors',
                       errors.proyecto ? 'border-red-500/50' : 'border-white/10')} />
                 </div>
-                <div className="sm:col-span-2">
+                <div className="md:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <MapPin className="w-3 h-3" /> Direccion exacta del proyecto
                   </label>
@@ -1136,7 +1136,7 @@ export default function NuevaCotizacionPage() {
                     ))}
                   </select>
                 </div>
-                <div className="sm:col-span-2">
+                <div className="md:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <MapPin className="w-3 h-3" /> Aldea
                   </label>
