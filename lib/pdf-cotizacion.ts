@@ -682,7 +682,7 @@ export async function generarPDF(
   function drawQuoteInfo(yPos: number) {
     sectionTitle('DATOS DE LA COTIZACION', yPos)
     yPos += 3.5
-    const boxH = presupuestoCompacto ? 38 : 42
+    const boxH = presupuestoCompacto ? 44 : 42
     setFill('#f7f9fc'); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
     doc.roundedRect(mg, yPos, W - 2 * mg, boxH, 2, 2, 'FD')
 
@@ -716,22 +716,22 @@ export async function generarPDF(
 
     let rowY = yPos + 5
     for (const [label, value] of left) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 6.5 : 5); setText('#64748b')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 7.5 : 5); setText('#64748b')
       doc.text(label, x1, rowY)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 7.35 : 6); setText('#1f2937')
-      doc.text(value.slice(0, presupuestoCompacto ? 34 : 42), x1 + (presupuestoCompacto ? 29 : 23), rowY)
-      rowY += presupuestoCompacto ? 5.65 : 5.6
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 8.45 : 6); setText('#1f2937')
+      doc.text(value.slice(0, presupuestoCompacto ? 30 : 42), x1 + (presupuestoCompacto ? 33 : 23), rowY)
+      rowY += presupuestoCompacto ? 6.35 : 5.6
     }
 
     rowY = yPos + 5
     for (const [label, value] of right) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 6.5 : 5); setText('#64748b')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 7.5 : 5); setText('#64748b')
       doc.text(label, x2, rowY)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6.95 : 5.7); setText('#1f2937')
-      const lines = doc.splitTextToSize(value, colW - (presupuestoCompacto ? 38 : 27))
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 8 : 5.7); setText('#1f2937')
+      const lines = doc.splitTextToSize(value, colW - (presupuestoCompacto ? 43 : 27))
       const maxLines = label === 'PROYECTO' || label === 'DIRECCION DEL PROYECTO' ? 2 : 1
-      doc.text(lines.slice(0, maxLines), x2 + (presupuestoCompacto ? 38 : 27), rowY)
-      rowY += maxLines === 2 ? (presupuestoCompacto ? 9.4 : 9.5) : (presupuestoCompacto ? 5.35 : 5.2)
+      doc.text(lines.slice(0, maxLines), x2 + (presupuestoCompacto ? 43 : 27), rowY)
+      rowY += maxLines === 2 ? (presupuestoCompacto ? 10.8 : 9.5) : (presupuestoCompacto ? 6.1 : 5.2)
     }
 
     return yPos + boxH + 5
