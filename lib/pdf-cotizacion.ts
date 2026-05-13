@@ -5,7 +5,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { QuotationData, HitoPago } from './quotation-store'
-import { DEFAULT_PLAN_PAGOS, getLineaConfig } from './quotation-store'
+import { DEFAULT_PLAN_PAGOS, DEFAULT_PLAN_PAGOS_SERVICIO, getLineaConfig } from './quotation-store'
 import { calcularPerforacion, calcularLimpieza, defaultInputsPerforacion, defaultInputsLimpieza, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type CuentaBancaria } from './config-store'
@@ -592,7 +592,7 @@ export async function generarPDF(
   const logosBancos = await Promise.all(cuentas.map(c => cargarLogoBanco(c.banco)))
   const hitos: HitoPago[] = (data.planPagos && data.planPagos.length > 0)
     ? data.planPagos
-    : DEFAULT_PLAN_PAGOS
+    : data.tipo === 'limpieza' ? DEFAULT_PLAN_PAGOS_SERVICIO : DEFAULT_PLAN_PAGOS
   const hitosActivos = hitos.filter(h => h.visible !== false && h.pct > 0)
 
   const rgb = (hex: string) => hexToRgb(hex)

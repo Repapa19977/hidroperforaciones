@@ -14,7 +14,7 @@ import {
 } from '@/lib/calculator'
 import {
   saveQuotation, addCotizacion, getNextCorrelativo, VENDEDORES,
-  defaultCondicionesPerf, defaultCondicionesLimp, DEFAULT_PLAN_PAGOS,
+  defaultCondicionesPerf, defaultCondicionesLimp, DEFAULT_PLAN_PAGOS, DEFAULT_PLAN_PAGOS_SERVICIO,
   type HitoPago, type LineaConfig,
   type CondicionOverridePerf, type CondicionExtraPerf, type LineaExtra,
 } from '@/lib/quotation-store'
@@ -53,6 +53,8 @@ const SERVICIO_OPTIONAL_LINE_KEYS = new Set([
 const hitoPagoVisible = (hito: HitoPago) => hito.visible !== false
 const sumaPlanPagosVisible = (plan: HitoPago[]) =>
   Math.round(plan.filter(hitoPagoVisible).reduce((acc, hito) => acc + Number(hito.pct || 0), 0) * 100) / 100
+const planPagosDefaultParaTipo = (tipo: TipoCot) =>
+  (tipo === 'limpieza' ? DEFAULT_PLAN_PAGOS_SERVICIO : DEFAULT_PLAN_PAGOS).map(hito => ({ ...hito }))
 
 function inputsServicioDesdeConfig(servicio?: Partial<ServicioCotizacionConfig>): Partial<InputsLimpieza> {
   const s = { ...DEFAULT_SERVICIO_COTIZACION, ...(servicio ?? {}) }
@@ -171,7 +173,10 @@ export default function NuevaCotizacionPage() {
       const defaultNuevo = nuevoTipo === 'limpieza' ? PROYECTO_SERVICIO_DEFAULT : PROYECTO_PERFORACION_DEFAULT
       return !prev.trim() || prev === defaultAnterior ? defaultNuevo : prev
     })
-    if (!editMode) fetchSiguienteCorrelativo(nuevoTipo)
+    if (!editMode) {
+      setPlanPagos(planPagosDefaultParaTipo(nuevoTipo))
+      fetchSiguienteCorrelativo(nuevoTipo)
+    }
   }
 
   useEffect(() => {
@@ -214,6 +219,7 @@ export default function NuevaCotizacionPage() {
     const tipoInicial: TipoCot = tipoParam === 'limpieza' ? 'limpieza' : 'perforacion'
     if (tipoInicial === 'limpieza') {
       setTipo('limpieza')
+      setPlanPagos(planPagosDefaultParaTipo('limpieza'))
       setProyecto(prev => !prev.trim() || prev === PROYECTO_PERFORACION_DEFAULT ? PROYECTO_SERVICIO_DEFAULT : prev)
     }
 
@@ -316,6 +322,7 @@ export default function NuevaCotizacionPage() {
             if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
             if (typeof d.mostrarNotaCheque === 'boolean') setMostrarNotaCheque(d.mostrarNotaCheque)
             if (d.planPagos)       setPlanPagos(d.planPagos)
+            else if (d.tipo)       setPlanPagos(planPagosDefaultParaTipo(d.tipo === 'limpieza' ? 'limpieza' : 'perforacion'))
             if (d.monedaCotizacion === 'USD' || d.monedaCotizacion === 'GTQ') setMonedaCotizacion(d.monedaCotizacion)
             if (typeof d.tipoCambioUsd === 'number') setTipoCambioUsd(normalizeExchangeRate(d.tipoCambioUsd))
             // Snapshots de pipas y grava — si la cotización los guardó, usarlos; sino defaults de Config
@@ -392,6 +399,7 @@ export default function NuevaCotizacionPage() {
             if (typeof d.mostrarDesgloseImpuestos === 'boolean') setMostrarDesgloseImpuestos(d.mostrarDesgloseImpuestos)
             if (typeof d.mostrarNotaCheque === 'boolean') setMostrarNotaCheque(d.mostrarNotaCheque)
             if (d.planPagos)       setPlanPagos(d.planPagos)
+            else                   setPlanPagos(planPagosDefaultParaTipo(tipoDuplicado))
             if (d.monedaCotizacion === 'USD' || d.monedaCotizacion === 'GTQ') setMonedaCotizacion(d.monedaCotizacion)
             if (typeof d.tipoCambioUsd === 'number') setTipoCambioUsd(normalizeExchangeRate(d.tipoCambioUsd))
             if (typeof d.pipaPrecioVentaUnitario === 'number') setPipaPrecioVentaUnitario(d.pipaPrecioVentaUnitario)
@@ -474,7 +482,7 @@ export default function NuevaCotizacionPage() {
   const [preciosVentaOverride, setPreciosVentaOverride] = useState<Record<string, number>>({})  // precio venta editado por cotización
   const [costosBaseOverride, setCostosBaseOverride] = useState<Record<string, number>>({})      // costos base editados en Configuración global (superadmin, permanente)
   const [costosCotizacionOverride, setCostosCotizacionOverride] = useState<Record<string, number>>({})  // costo editado SOLO en esta cotización (temporal)
-  const [planPagos, setPlanPagos] = useState<HitoPago[]>(DEFAULT_PLAN_PAGOS)
+  const [planPagos, setPlanPagos] = useState<HitoPago[]>(() => planPagosDefaultParaTipo('perforacion'))
   const [condicionesPerf, setCondicionesPerf] = useState(defaultCondicionesPerf)
   const [condicionesLimp, setCondicionesLimp] = useState(defaultCondicionesLimp)
   // Condiciones perforación con toggle + texto editable por cotización

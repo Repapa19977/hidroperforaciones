@@ -25,6 +25,11 @@ export const DEFAULT_PLAN_PAGOS: HitoPago[] = [
   { id: 'prueba',     label: 'Antes de prueba de bombeo',  pct: 5,  fijo: false, visible: true },
 ]
 
+export const DEFAULT_PLAN_PAGOS_SERVICIO: HitoPago[] = [
+  { id: 'anticipo-servicio', label: 'Anticipo',       pct: 80, fijo: false, visible: true },
+  { id: 'contra-entrega',    label: 'Contra entrega', pct: 20, fijo: false, visible: true },
+]
+
 export interface QuotationData {
   correlativo: string
   tipo: 'perforacion' | 'limpieza'
