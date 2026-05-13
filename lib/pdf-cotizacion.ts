@@ -600,8 +600,8 @@ export async function generarPDF(
   const setDraw = (hex: string) => doc.setDrawColor(...rgb(hex))
   const setText = (hex: string) => doc.setTextColor(hex)
   const limpiar = (value: unknown) => textoSeguroPdf(String(value ?? ''))
-  const pageTop = data.tipo === 'perforacion' ? 31 : 34
-  const footerBottom = data.tipo === 'perforacion' ? 24 : 27
+  const pageTop = data.tipo === 'perforacion' ? 27 : 34
+  const footerBottom = data.tipo === 'perforacion' ? 21 : 27
   const presupuestoCompacto = data.tipo === 'perforacion' && lineas.length >= 16
 
   function headerV2(page: number, totalPages: number) {
@@ -639,7 +639,7 @@ export async function generarPDF(
   }
 
   function footerV2() {
-    const yFooter = data.tipo === 'perforacion' ? H - 22 : H - 24
+    const yFooter = data.tipo === 'perforacion' ? H - 20 : H - 24
     setDraw('#d9e2ef')
     doc.line(mg, yFooter, W - mg, yFooter)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.6); setText('#173765')
@@ -718,27 +718,27 @@ export async function generarPDF(
     for (const [label, value] of left) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
       doc.text(label, x1, rowY)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.65 : 6); setText('#1f2937')
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 7.35 : 6); setText('#1f2937')
       doc.text(value.slice(0, 42), x1 + 23, rowY)
-      rowY += presupuestoCompacto ? 5.05 : 5.6
+      rowY += presupuestoCompacto ? 5.35 : 5.6
     }
 
     rowY = yPos + 5
     for (const [label, value] of right) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
       doc.text(label, x2, rowY)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.35 : 5.7); setText('#1f2937')
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6.95 : 5.7); setText('#1f2937')
       const lines = doc.splitTextToSize(value, colW - 27)
       const maxLines = label === 'PROYECTO' || label === 'DIRECCION DEL PROYECTO' ? 2 : 1
       doc.text(lines.slice(0, maxLines), x2 + 27, rowY)
-      rowY += maxLines === 2 ? (presupuestoCompacto ? 8.4 : 9.5) : (presupuestoCompacto ? 4.8 : 5.2)
+      rowY += maxLines === 2 ? (presupuestoCompacto ? 8.65 : 9.5) : (presupuestoCompacto ? 5.15 : 5.2)
     }
 
     return yPos + boxH + 5
   }
 
   function drawTotalCard(yPos: number) {
-    const cardH = presupuestoCompacto ? 12.5 : 15
+    const cardH = presupuestoCompacto ? 14.5 : 15
     const cardW = W - 2 * mg
     const textColW = cardW * 0.63
     setFill('#173765')
@@ -749,13 +749,13 @@ export async function generarPDF(
     doc.setLineWidth(0.3)
     doc.line(mg + textColW, yPos + 2, mg + textColW, yPos + cardH - 2)
 
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.1 : 5.5); setText('#bfd4ff')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6.65 : 5.5); setText('#bfd4ff')
     doc.text('MONTO EN LETRAS', mg + 4, yPos + 4.3)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6 : 6.5); setText(WHITE)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 7.8 : 6.5); setText(WHITE)
     doc.text(doc.splitTextToSize(limpiar(totalEnLetras), textColW - 8).slice(0, 2), mg + 4, yPos + 7.5)
 
     const totalLabelX = mg + textColW + 4
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 5.1 : 5.5); setText('#bfd4ff')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6.65 : 5.5); setText('#bfd4ff')
     doc.text(monedaCotizacion === 'USD' ? 'TOTAL A PAGAR (USD)' : 'TOTAL A PAGAR', totalLabelX, yPos + 4.3)
 
     // La etiqueta refleja si esta cotizacion realmente suma IVA al total.
@@ -770,8 +770,8 @@ export async function generarPDF(
     doc.setTextColor(180, 83, 9)
     doc.text(etiqueta, etiquetaX + 2.5, yPos + 8.8)
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 12 : 13); setText(WHITE)
-    doc.text(formatMonto(total), W - mg - 4, yPos + (presupuestoCompacto ? 10 : 10.8), { align: 'right' })
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 15.5 : 13); setText(WHITE)
+    doc.text(formatMonto(total), W - mg - 4, yPos + (presupuestoCompacto ? 10.9 : 10.8), { align: 'right' })
     return yPos + cardH
   }
 
@@ -819,7 +819,7 @@ export async function generarPDF(
     if (lineas.length > 0) {
       autoTable(doc, {
         startY: yPos,
-        margin: { left: mg, right: mg, top: 32, bottom: presupuestoCompacto ? footerBottom + 15 : footerBottom },
+        margin: { left: mg, right: mg, top: 32, bottom: presupuestoCompacto ? footerBottom + 19 : footerBottom },
         head: [['#', 'DESCRIPCION', 'UND', 'CANT.', 'P. UNITARIO', 'SUBTOTAL']],
         body: lineas.map((l, i) => [
           String(i + 1),
@@ -831,32 +831,32 @@ export async function generarPDF(
         ]),
         theme: 'plain',
         styles: { overflow: 'linebreak', lineColor: rgb('#d9e2ef'), lineWidth: 0.08 },
-        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: presupuestoCompacto ? 6.5 : 7.5, fontStyle: 'bold', cellPadding: presupuestoCompacto ? 1.2 : 1.75 },
+        headStyles: { fillColor: rgb('#173765'), textColor: rgb(WHITE), fontSize: presupuestoCompacto ? 8.45 : 7.5, fontStyle: 'bold', cellPadding: presupuestoCompacto ? 0.75 : 1.75 },
         bodyStyles: {
-          fontSize: presupuestoCompacto ? 5.95 : 7.1,
+          fontSize: presupuestoCompacto ? 7.75 : 7.1,
           textColor: rgb('#1f2937'),
           cellPadding: presupuestoCompacto
-            ? { top: 0.62, right: 0.8, bottom: 0.62, left: 0.8 }
+            ? { top: 0.25, right: 0.6, bottom: 0.25, left: 0.6 }
             : { top: 1.35, right: 1, bottom: 1.35, left: 1 },
         },
         alternateRowStyles: { fillColor: rgb('#fbfcfe') },
         columnStyles: {
-          0: { cellWidth: presupuestoCompacto ? 6 : 7, halign: 'center', textColor: rgb('#173765'), fontStyle: 'bold' },
-          1: { cellWidth: presupuestoCompacto ? 103 : 97 },
-          2: { cellWidth: presupuestoCompacto ? 12 : 13, halign: 'center', textColor: rgb('#64748b'), fontSize: presupuestoCompacto ? 5.2 : 6.2 },
-          3: { cellWidth: presupuestoCompacto ? 12 : 13, halign: 'right' },
-          4: { cellWidth: presupuestoCompacto ? 21 : 23, halign: 'right' },
-          5: { cellWidth: presupuestoCompacto ? 24 : 25, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765') },
+          0: { cellWidth: presupuestoCompacto ? 5 : 7, halign: 'center', textColor: rgb('#173765'), fontStyle: 'bold' },
+          1: { cellWidth: presupuestoCompacto ? 110 : 97 },
+          2: { cellWidth: presupuestoCompacto ? 10 : 13, halign: 'center', textColor: rgb('#64748b'), fontSize: presupuestoCompacto ? 6.75 : 6.2 },
+          3: { cellWidth: presupuestoCompacto ? 10 : 13, halign: 'right' },
+          4: { cellWidth: presupuestoCompacto ? 20 : 23, halign: 'right' },
+          5: { cellWidth: presupuestoCompacto ? 23 : 25, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765') },
         },
         didParseCell: d => {
-          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = presupuestoCompacto ? 5.45 : 6.65
+          if (d.section === 'body' && d.column.index === 1) d.cell.styles.fontSize = presupuestoCompacto ? 7.1 : 6.65
         },
       })
       yPos = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? yPos) + 3
     }
 
     const altoInfoPago = (!presupuestoCompacto && (mostrarNotaCheque || (data.tipo === 'perforacion' && valorPorPie > 0))) ? 24 : 0
-    const altoTotal = presupuestoCompacto ? 13.5 : 18
+    const altoTotal = presupuestoCompacto ? 15.8 : 18
     if (yPos + altoTotal + altoInfoPago > H - footerBottom) {
       doc.addPage()
       yPos = pageTop
@@ -940,7 +940,7 @@ export async function generarPDF(
       const tableBottom = footerBottom
       const numberW = 8
       const textW = W - 2 * mg - numberW
-      const candidates = [4.65, 4.45, 4.25, 4.05, 3.85, 3.65]
+      const candidates = [6.05, 5.8, 5.55, 5.3, 5.05, 4.75]
       let chosen = candidates[candidates.length - 1]
       for (const fontSize of candidates) {
         doc.setFont('helvetica', 'normal')
@@ -960,7 +960,7 @@ export async function generarPDF(
         styles: {
           font: 'helvetica',
           fontSize: chosen,
-          cellPadding: { top: 0.35, right: 0.8, bottom: 0.42, left: 0.7 },
+          cellPadding: { top: 0.32, right: 0.8, bottom: 0.38, left: 0.7 },
           overflow: 'linebreak',
           lineWidth: 0,
           textColor: rgb('#1f2937'),
@@ -974,11 +974,11 @@ export async function generarPDF(
       return
     }
 
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setText('#374151')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.45); setText('#374151')
     const parrafos = condicionesLimpText.split(/\n\n+/).filter(p => p.trim())
     for (const parrafo of parrafos) {
       const lines = doc.splitTextToSize(limpiar(parrafo.trim()), W - 2 * mg)
-      const blockH = lines.length * 2.8 + 1.4
+      const blockH = lines.length * 3.6 + 1.4
       if (yPos + blockH > H - footerBottom) {
         doc.addPage()
         yPos = pageTop
