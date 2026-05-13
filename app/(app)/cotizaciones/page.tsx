@@ -15,6 +15,7 @@ import { KPICard } from '@/components/kpi-card'
 import { type Rol } from '@/lib/config-store'
 import { exportJsonXlsx } from '@/lib/export-xlsx'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { type VendedorOption } from '@/lib/vendedores'
 
 // ── Formatters específicos (formatQ estándar viene de lib/utils) ──────────────
 const fmtQk    = (n: number) =>
@@ -77,7 +78,7 @@ export default function CotizacionesPage() {
 
   // Modal de reasignación (solo superadmin)
   const [reasignarTarget, setReasignarTarget] = useState<CotizacionRecord | null>(null)
-  const [vendedoresDB, setVendedoresDB] = useState<string[]>([])
+  const [vendedoresDB, setVendedoresDB] = useState<VendedorOption[]>([])
 
   // Persist view
   useEffect(() => {
@@ -103,7 +104,7 @@ export default function CotizacionesPage() {
     if (r === 'superadmin') {
       fetch('/api/vendedores')
         .then(res => res.ok ? res.json() : [])
-        .then((rows: { nombre: string }[]) => setVendedoresDB(rows.map(x => x.nombre).filter(Boolean)))
+        .then((rows: VendedorOption[]) => setVendedoresDB(rows.filter(x => x.nombre)))
         .catch(() => {})
     }
   }, [fetchRows])
@@ -492,11 +493,13 @@ export default function CotizacionesPage() {
 // ── Modal: reasignar vendedor de una cotización ──────────────────────────────
 function ReasignarModal({ cotizacion, vendedoresActivos, onCancel, onConfirm }: {
   cotizacion: CotizacionRecord
-  vendedoresActivos: string[]
+  vendedoresActivos: VendedorOption[]
   onCancel: () => void
   onConfirm: (nuevo: string) => void
 }) {
   const [nuevo, setNuevo] = useState(cotizacion.vendedor)
+  const vendedorActualEnLista = vendedoresActivos.some(v => v.nombre === cotizacion.vendedor)
+  const asesorSeleccionado = vendedoresActivos.find(v => v.nombre === nuevo)
   const sinCambio = nuevo === cotizacion.vendedor
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -518,15 +521,20 @@ function ReasignarModal({ cotizacion, vendedoresActivos, onCancel, onConfirm }: 
             <select value={nuevo} onChange={e => setNuevo(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500/50">
               {vendedoresActivos.map(v => (
-                <option key={v} value={v} className="bg-[#0d1526]">{v}</option>
+                <option key={v.nombre} value={v.nombre} className="bg-[#0d1526]">
+                  {v.nombre}{v.rol ? ` - ${v.rol}` : ''}
+                </option>
               ))}
               {/* Si el vendedor actual no está en la lista activa, lo agregamos para no perderlo */}
-              {!vendedoresActivos.includes(cotizacion.vendedor) && (
+              {!vendedorActualEnLista && (
                 <option value={cotizacion.vendedor} className="bg-[#0d1526] text-slate-500">
                   {cotizacion.vendedor} (legacy)
                 </option>
               )}
             </select>
+            {asesorSeleccionado?.email && (
+              <p className="mt-1 text-[10px] text-slate-500 truncate">{asesorSeleccionado.email}</p>
+            )}
           </div>
           <p className="text-[10px] text-slate-600 leading-relaxed">
             El proyecto asociado (si existe) también cambia de dueño.

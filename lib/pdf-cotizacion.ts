@@ -14,6 +14,7 @@ import { numeroADolaresEnLetras, numeroAQuetzalesEnLetras } from './numero-a-let
 import { resolverCondiciones } from './condiciones-perf'
 import { formatFechaDDMMYYYY } from './date-format'
 import { convertFromGTQ, formatCurrency, normalizeCurrency, normalizeExchangeRate } from './currency'
+import { resolverEmailVendedor } from './vendedores'
 
 // ── Colores ──────────────────────────────────────────────────────────────────
 const WHITE  = '#ffffff'
@@ -392,27 +393,6 @@ function textoSeguroPdf(texto: string): string {
     .replace(/\u00f7/g, '/')
 }
 
-function normalizarVendedor(vendedor: string): string {
-  return textoSeguroPdf(vendedor)
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function resolverEmailVendedor(vendedor: string): string {
-  const emailDirecto = vendedor.trim().match(/[A-Z0-9._%+-]+@hidroperforaciones\.com/i)?.[0]
-  if (emailDirecto) return emailDirecto.toLowerCase()
-  const normalizado = normalizarVendedor(vendedor)
-  const compact = normalizado.replace(/\s+/g, '')
-  if (!compact) return 'ventas@hidroperforaciones.com'
-  if (compact === 'mr' || compact.includes('mramirez') || normalizado.includes('mario') || normalizado.includes('ramirez')) return 'mramirez@hidroperforaciones.com'
-  if (compact === 'gg' || compact.includes('ggarcia') || normalizado.includes('gilda') || normalizado.includes('garcia')) return 'ggarcia@hidroperforaciones.com'
-  if (compact === 'rd' || compact.includes('rdominguez') || normalizado.includes('rene') || normalizado.includes('dominguez')) return 'rdominguez@hidroperforaciones.com'
-  if (normalizado.includes('berner') || normalizado.includes('ventas')) return 'ventas@hidroperforaciones.com'
-  return 'ventas@hidroperforaciones.com'
-}
-
 async function cargarLogoBase64(): Promise<string | null> {
   for (const ruta of ['/pdf-assets/logo.png', '/logo.png']) {
     try {
@@ -581,7 +561,7 @@ export async function generarPDF(
     ? (data.condicionesLimp ?? data.condiciones ?? '')
     : ''
 
-  const emailVendedor = resolverEmailVendedor(data.vendedor || '')
+  const emailVendedor = resolverEmailVendedor(data.vendedor || '', data.vendedorEmail)
   const fechaCotizacion = formatFechaDDMMYYYY(data.fecha)
 
   const mostrarNotaCheque = data.mostrarNotaCheque ?? true

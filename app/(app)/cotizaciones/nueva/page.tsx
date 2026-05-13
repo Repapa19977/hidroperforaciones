@@ -33,8 +33,10 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_TIPO_CAMBIO_USD, formatCurrency, normalizeExchangeRate, type CurrencyCode } from '@/lib/currency'
 import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
 import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
+import { crearVendedorOption, resolverEmailVendedor, type VendedorOption } from '@/lib/vendedores'
 
 type TipoCot = 'perforacion' | 'limpieza'
+const vendedoresDefaultOptions: VendedorOption[] = VENDEDORES.map(nombre => crearVendedorOption(nombre))
 
 const hitoPagoVisible = (hito: HitoPago) => hito.visible !== false
 const sumaPlanPagosVisible = (plan: HitoPago[]) =>
@@ -137,7 +139,7 @@ export default function NuevaCotizacionPage() {
   // Duplicación: si venimos de un ?duplicate=, mostramos de qué cotización se duplicó
   const [duplicadoDe, setDuplicadoDe] = useState<string | null>(null)
   // Vendedores dinámicos desde BD (solo superadmin los usa para reasignar)
-  const [vendedoresDB, setVendedoresDB] = useState<string[]>(VENDEDORES)
+  const [vendedoresDB, setVendedoresDB] = useState<VendedorOption[]>(vendedoresDefaultOptions)
 
   const patchPl = (key: keyof PreciosLineas, val: number) =>
     setPl(prev => ({ ...prev, [key]: val }))
@@ -161,14 +163,21 @@ export default function NuevaCotizacionPage() {
     setRolUsuario(rol)
     const venMatch = document.cookie.match(/user_vendedor=([^;]+)/)
     const miNombre = venMatch?.[1] ? decodeURIComponent(venMatch[1]) : ''
-    if (miNombre) setVendedor(miNombre)  // vendedor default = quien está logueado
+    if (miNombre) {
+      setVendedor(miNombre)
+      setVendedorEmail(resolverEmailVendedor(miNombre))
+    }
 
     // Cargar vendedores activos desde BD (solo útil para superadmin en dropdown)
     fetch('/api/vendedores')
       .then(r => r.ok ? r.json() : [])
-      .then((rows: { nombre: string }[]) => {
-        const nombres = rows.map(x => x.nombre).filter(Boolean)
-        if (nombres.length > 0) setVendedoresDB(nombres)
+      .then((rows: VendedorOption[]) => {
+        const asesores = rows.filter(x => x.nombre)
+        if (asesores.length > 0) {
+          setVendedoresDB(asesores)
+          const seleccionado = asesores.find(x => x.nombre === miNombre)
+          if (seleccionado) setVendedorEmail(seleccionado.email)
+        }
       })
       .catch(() => {})
 
@@ -249,7 +258,12 @@ export default function NuevaCotizacionPage() {
             if (d.departamento) setDepartamento(d.departamento)
             if (d.municipio)    setMunicipio(d.municipio)
             if (d.duracion)   setDuracion(d.duracion)
-            if (d.vendedor)   setVendedor(d.vendedor)
+            if (d.vendedor) {
+              setVendedor(d.vendedor)
+              setVendedorEmail(resolverEmailVendedor(d.vendedor, d.vendedorEmail))
+            } else if (d.vendedorEmail) {
+              setVendedorEmail(d.vendedorEmail)
+            }
             if (d.notas)      setNotas(d.notas)
             // backward compat: old quotes stored a single condiciones field
             if (d.condicionesPerf) setCondicionesPerf(d.condicionesPerf)
@@ -406,7 +420,12 @@ export default function NuevaCotizacionPage() {
   const [municipio, setMunicipio] = useState('')
   const [duracion, setDuracion] = useState('')  // auto-sincroniza con totalDiasMaquinaria
   const [vendedor, setVendedor] = useState(VENDEDORES[0])
+  const [vendedorEmail, setVendedorEmail] = useState(resolverEmailVendedor(VENDEDORES[0]))
   const [notas, setNotas] = useState('')
+  const vendedorOpciones = useMemo(() => {
+    if (!vendedor || vendedoresDB.some(v => v.nombre === vendedor)) return vendedoresDB
+    return [...vendedoresDB, crearVendedorOption(vendedor, vendedorEmail, 'legacy')]
+  }, [vendedoresDB, vendedor, vendedorEmail])
 
   const [ip, setIp] = useState<InputsPerforacion>(defaultInputsPerforacion)
   // Sincronización única al crear cotización nueva: el precio/pie arranca con la fórmula,
@@ -642,6 +661,7 @@ export default function NuevaCotizacionPage() {
       validezDias: 15, cliente, contactoId, empresa, nit, telefono, email, proyecto,
       departamento, municipio, direccion, duracion,
       vendedor,
+      vendedorEmail,
       ip: tipo === 'perforacion' ? ip : undefined,
       il: tipo === 'limpieza' ? il : undefined,
       preciosLineas: pl,
@@ -953,15 +973,28 @@ export default function NuevaCotizacionPage() {
                     )}
                   </label>
                   {rolUsuario === 'superadmin' ? (
-                    <select value={vendedor} onChange={e => setVendedor(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer">
-                      {vendedoresDB.map(v => (
-                        <option key={v} value={v} className="bg-[#0d1526]">{v}</option>
+                    <>
+                      <select
+                      value={vendedor}
+                      onChange={e => {
+                          const asesor = vendedorOpciones.find(v => v.nombre === e.target.value)
+                        setVendedor(e.target.value)
+                        setVendedorEmail(resolverEmailVendedor(e.target.value, asesor?.email))
+                      }}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
+                    >
+                      {vendedorOpciones.map(v => (
+                        <option key={v.nombre} value={v.nombre} className="bg-[#0d1526]">
+                          {v.nombre}{v.rol ? ` - ${v.rol}` : ''}
+                        </option>
                       ))}
                     </select>
+                      <p className="mt-1 text-[10px] text-slate-500 truncate">{vendedorEmail}</p>
+                    </>
                   ) : (
                     <div className="w-full bg-white/3 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-slate-300 cursor-not-allowed">
-                      {vendedor || '—'}
+                      <span className="block">{vendedor || '-'}</span>
+                      <span className="block text-[10px] text-slate-500 truncate">{vendedorEmail}</span>
                     </div>
                   )}
                 </div>

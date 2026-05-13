@@ -5,6 +5,7 @@ import { sacosDebentonita } from '@/lib/calculator'
 import { patchCotizacionSchema, formatZodError } from '@/lib/validators'
 import { requireAuth, getCurrentUser, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
+import { crearVendedorOption, normalizarVendedor, type VendedorOption } from '@/lib/vendedores'
 
 async function getJwtRole(request: NextRequest): Promise<string | null> {
   const token = request.cookies.get('auth_token')?.value
@@ -13,6 +14,24 @@ async function getJwtRole(request: NextRequest): Promise<string | null> {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(process.env.JWT_SECRET!))
     return String(payload.role ?? '')
   } catch { return null }
+}
+
+async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption | null> {
+  const buscado = normalizarVendedor(nombre)
+  if (!buscado) return null
+
+  const usuarios = await prisma.usuario.findMany({
+    where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
+    select: { nombre: true, email: true, rol: true },
+  })
+  const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === buscado)
+  if (usuario) return crearVendedorOption(usuario.nombre, usuario.email, usuario.rol)
+
+  const envSuperadmin = process.env.SUPERADMIN_VENDEDOR
+  if (envSuperadmin && normalizarVendedor(envSuperadmin) === buscado) {
+    return crearVendedorOption(envSuperadmin, null, 'superadmin')
+  }
+  return null
 }
 
 // GET — obtener cotización con datos completos (para re-abrir/imprimir)
@@ -58,7 +77,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const data: Record<string, unknown> = {}
   if (estado   !== undefined) data.estado = estado
-  if (vendedor !== undefined) data.vendedor = vendedor
+  let vendedorAsignado: VendedorOption | null = null
+  if (vendedor !== undefined) {
+    vendedorAsignado = await resolverVendedorAsignable(vendedor)
+    if (!vendedorAsignado) {
+      return NextResponse.json({ error: 'El asesor asignado debe ser un admin o superadmin activo.' }, { status: 400 })
+    }
+    data.vendedor = vendedorAsignado.nombre
+    const datos = JSON.parse(before.datos || '{}')
+    data.datos = JSON.stringify({
+      ...datos,
+      vendedor: vendedorAsignado.nombre,
+      vendedorEmail: vendedorAsignado.email,
+    })
+  }
 
   const row = await prisma.cotizacion.update({
     where: { correlativo: id },
@@ -69,7 +101,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (vendedor !== undefined) {
     await prisma.proyecto.updateMany({
       where: { correlativo: id },
-      data: { vendedor },
+      data: { vendedor: vendedorAsignado?.nombre ?? vendedor },
     }).catch(() => {})
   }
 
@@ -85,13 +117,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       },
     })
   }
-  if (before && vendedor !== undefined && before.vendedor !== vendedor) {
+  if (before && vendedorAsignado && before.vendedor !== vendedorAsignado.nombre) {
     await prisma.cotizacionHistorial.create({
       data: {
         correlativo: id,
         campo: 'vendedor',
         valorAntes: before.vendedor,
-        valorDespues: vendedor,
+        valorDespues: vendedorAsignado.nombre,
         usuario: usuario ?? '',
       },
     })
