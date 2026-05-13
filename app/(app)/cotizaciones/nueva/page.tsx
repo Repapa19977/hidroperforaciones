@@ -55,6 +55,22 @@ const sumaPlanPagosVisible = (plan: HitoPago[]) =>
   Math.round(plan.filter(hitoPagoVisible).reduce((acc, hito) => acc + Number(hito.pct || 0), 0) * 100) / 100
 const planPagosDefaultParaTipo = (tipo: TipoCot) =>
   (tipo === 'limpieza' ? DEFAULT_PLAN_PAGOS_SERVICIO : DEFAULT_PLAN_PAGOS).map(hito => ({ ...hito }))
+const MONEY_INPUT_LABEL_RE = /\b(q|precio|costo|costos|salario|vi[aá]tico|viaticos|hospedaje|diesel|bonificaci[oó]n|flete|venta|monto|total|pipas|broca|sanitario)\b/i
+
+function isMoneyInputLabel(label: string): boolean {
+  return label.includes('(Q') || MONEY_INPUT_LABEL_RE.test(label)
+}
+
+function parseDecimalInput(value: string): number {
+  const normalized = value.trim().replace(',', '.')
+  const parsed = Number.parseFloat(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatDecimalInput(value: number, decimals = 2): string {
+  const safeValue = Number.isFinite(value) ? value : 0
+  return safeValue.toFixed(decimals)
+}
 
 function inputsServicioDesdeConfig(servicio?: Partial<ServicioCotizacionConfig>): Partial<InputsLimpieza> {
   const s = { ...DEFAULT_SERVICIO_COTIZACION, ...(servicio ?? {}) }
@@ -1225,10 +1241,9 @@ export default function NuevaCotizacionPage() {
                         <p className="text-[10px] text-slate-600 mb-1">{hint}</p>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">Q</span>
-                          <input
-                            type="number"
+                          <DecimalInput
                             value={pl[key]}
-                            onChange={e => patchPl(key, Number(e.target.value))}
+                            onValueChange={value => patchPl(key, value)}
                             disabled={preciosBloqueados && rolUsuario !== 'superadmin'}
                             className={cn(
                               'w-full bg-white/5 border rounded-lg pl-7 pr-3 py-2 text-sm text-white outline-none transition-colors',
@@ -1248,10 +1263,9 @@ export default function NuevaCotizacionPage() {
                       <p className="text-[10px] text-slate-600 mb-1">Condicional — visible solo cuando el servicio está activo</p>
                       <div className="relative w-48">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">Q</span>
-                        <input
-                          type="number"
+                        <DecimalInput
                           value={pl.desarrolloLimpieza}
-                          onChange={e => patchPl('desarrolloLimpieza', Number(e.target.value))}
+                          onValueChange={value => patchPl('desarrolloLimpieza', value)}
                           disabled={preciosBloqueados && rolUsuario !== 'superadmin'}
                           className={cn(
                             'w-full bg-white/5 border rounded-lg pl-7 pr-3 py-2 text-sm text-white outline-none transition-colors',
@@ -1516,12 +1530,11 @@ export default function NuevaCotizacionPage() {
                       {/* Total */}
                       {tipo === 'limpieza' ? (
                         <div className="w-[92px] sm:w-[112px] shrink-0 text-right">
-                          <input
-                            type="number"
+                          <DecimalInput
                             min={0}
                             step="0.01"
                             value={Number.isFinite(l.precio) ? l.precio : 0}
-                            onChange={e => setPrecioLinea(parseFloat(e.target.value) || 0)}
+                            onValueChange={setPrecioLinea}
                             className={cn('w-full rounded border bg-white/5 px-1.5 py-1 text-right text-[11px] tabular-nums outline-none focus:border-emerald-500/50',
                               !cfg.cobrar ? 'border-amber-500/30 text-amber-300 line-through' : 'border-white/10 text-white')}
                             title="Precio unitario de venta al cliente"
@@ -1587,10 +1600,12 @@ export default function NuevaCotizacionPage() {
                 {aplicarDescuento && (
                   <div className="flex items-center gap-1 border border-emerald-500/40 bg-emerald-500/5 rounded px-1.5 py-0.5">
                     <span className="text-[10px] text-emerald-400/70">Q</span>
-                    <input
-                      type="number" step="1" min={0} max={totalAntesDescuento}
-                      value={descuentoMonto || ''}
-                      onChange={e => setDescuentoMonto(parseFloat(e.target.value) || 0)}
+                    <DecimalInput
+                      step={0.01}
+                      min={0}
+                      max={totalAntesDescuento}
+                      value={descuentoMonto}
+                      onValueChange={setDescuentoMonto}
                       placeholder="0"
                       className="w-20 bg-transparent text-[11px] text-emerald-200 font-semibold outline-none tabular-nums"
                     />
@@ -1642,13 +1657,12 @@ export default function NuevaCotizacionPage() {
                   {monedaCotizacion === 'USD' && (
                     <div>
                       <label className="text-[10px] text-slate-500 mb-1 block">Tipo de cambio Q por USD</label>
-                      <input
-                        type="number"
+                      <DecimalInput
                         min={0.01}
                         step={0.01}
                         value={tipoCambioUsd}
-                        onChange={e => {
-                          const next = Number(e.target.value)
+                        onValueChange={value => {
+                          const next = Number(value)
                           setTipoCambioUsd(Number.isFinite(next) && next > 0 ? next : DEFAULT_TIPO_CAMBIO_USD)
                         }}
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 tabular-nums"
@@ -2094,11 +2108,11 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         </div>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
-          <input
-            type="number" step="1" min={0}
+          <DecimalInput
+            step={0.01}
+            min={0}
             value={ip.precioPorPieVenta}
-            onChange={e => patchIp('precioPorPieVenta', parseInt(e.target.value) || 0)}
-            inputMode="decimal"
+            onValueChange={value => patchIp('precioPorPieVenta', value)}
             className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-3 text-lg font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
           />
         </div>
@@ -2148,11 +2162,11 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-medium">Q</span>
-              <input
-                type="number" step="1" min={0}
+              <DecimalInput
+                step={0.01}
+                min={0}
                 value={ip.precioPorPieVenta}
-                onChange={e => patchIp('precioPorPieVenta', parseInt(e.target.value) || 0)}
-                inputMode="decimal"
+                onValueChange={value => patchIp('precioPorPieVenta', value)}
                 className="w-full bg-white/5 border border-blue-500/30 rounded-lg pl-7 pr-3 py-2.5 text-sm font-semibold text-white outline-none focus:border-blue-500/60 transition-colors tabular-nums"
               />
             </div>
@@ -3204,6 +3218,49 @@ function PanelComparativaLimpieza({
   )
 }
 
+type DecimalInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'type' | 'inputMode'> & {
+  value: number
+  onValueChange: (value: number) => void
+  onValueBlur?: (value: number) => void
+  decimals?: number
+}
+
+function DecimalInput({
+  value,
+  onValueChange,
+  onValueBlur,
+  decimals = 2,
+  ...props
+}: DecimalInputProps) {
+  const [draft, setDraft] = useState('')
+  const [focused, setFocused] = useState(false)
+  const formattedValue = formatDecimalInput(value, decimals)
+
+  return (
+    <input
+      {...props}
+      type="text"
+      inputMode="decimal"
+      value={focused ? draft : formattedValue}
+      onFocus={() => {
+        setDraft(formattedValue)
+        setFocused(true)
+      }}
+      onChange={e => {
+        setDraft(e.target.value)
+        onValueChange(parseDecimalInput(e.target.value))
+      }}
+      onBlur={e => {
+        const next = parseDecimalInput(e.target.value)
+        onValueChange(next)
+        onValueBlur?.(next)
+        setDraft(formatDecimalInput(next, decimals))
+        setFocused(false)
+      }}
+    />
+  )
+}
+
 function NumInput({ label, value, onChange, onBlur, hint, accent }: {
   label: string; value: number; onChange: (v: number) => void
   onBlur?: (v: number) => void
@@ -3211,23 +3268,38 @@ function NumInput({ label, value, onChange, onBlur, hint, accent }: {
 }) {
   const id = useId()
   const hintId = hint ? `${id}-hint` : undefined
+  const moneyInput = isMoneyInputLabel(label)
+  const inputClass = cn('w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors',
+    accent
+      ? 'bg-blue-500/10 border border-blue-500/30 text-blue-300 focus:border-blue-400'
+      : 'bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
+  )
   return (
     <div>
       <label htmlFor={id} className="text-xs text-slate-400 mb-1 block font-medium">{label}</label>
-      <input
-        id={id}
-        type="number"
-        inputMode="decimal"
-        value={value}
-        aria-describedby={hintId}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        onBlur={onBlur ? e => onBlur(parseFloat(e.target.value) || 0) : undefined}
-        className={cn('w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors',
-          accent
-            ? 'bg-blue-500/10 border border-blue-500/30 text-blue-300 focus:border-blue-400'
-            : 'bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
-        )}
-      />
+      {moneyInput ? (
+        <DecimalInput
+          id={id}
+          min={0}
+          step={0.01}
+          value={value}
+          aria-describedby={hintId}
+          onValueChange={onChange}
+          onValueBlur={onBlur}
+          className={inputClass}
+        />
+      ) : (
+        <input
+          id={id}
+          type="number"
+          inputMode="decimal"
+          value={value}
+          aria-describedby={hintId}
+          onChange={e => onChange(parseFloat(e.target.value) || 0)}
+          onBlur={onBlur ? e => onBlur(parseFloat(e.target.value) || 0) : undefined}
+          className={inputClass}
+        />
+      )}
       {hint && <p id={hintId} className="text-[10px] text-slate-600 mt-1 leading-snug">{hint}</p>}
     </div>
   )
@@ -3992,13 +4064,11 @@ function PanelMargenRubros({
                         </button>
                       )}
                     </label>
-                    <input
-                      type="number"
+                    <DecimalInput
                       step="0.01"
-                      value={r.costo.toFixed(2)}
-                      onChange={(e) => {
+                      value={r.costo}
+                      onValueChange={(nuevoCosto) => {
                         if (!setCostosCotizacionOverride) return
-                        const nuevoCosto = parseFloat(e.target.value) || 0
                         setCostosCotizacionOverride(prev => ({ ...prev, [r.rubroKey]: nuevoCosto }))
                       }}
                       className={cn(
@@ -4014,11 +4084,10 @@ function PanelMargenRubros({
                   {/* Venta editable */}
                   <div>
                     <label className="text-[9px] text-slate-500 uppercase tracking-wide">Venta u.</label>
-                    <input
-                      type="number"
+                    <DecimalInput
                       step="0.01"
-                      value={r.venta.toFixed(2)}
-                      onChange={(e) => actualizarVenta(r.linea.key, parseFloat(e.target.value) || 0)}
+                      value={r.venta}
+                      onValueChange={value => actualizarVenta(r.linea.key, value)}
                       className="w-full bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white tabular-nums focus:border-blue-400/50 focus:outline-none"
                     />
                   </div>
@@ -4447,19 +4516,21 @@ function LineasExtrasEditor({
                   </div>
                   <div>
                     <label className="text-[9px] text-slate-500 uppercase tracking-wide">Costo u.</label>
-                    <input
-                      type="number" step="0.01" min={0}
+                    <DecimalInput
+                      step="0.01"
+                      min={0}
                       value={e.costoUnitario}
-                      onChange={ev => patch(e.id, 'costoUnitario', parseFloat(ev.target.value) || 0)}
+                      onValueChange={value => patch(e.id, 'costoUnitario', value)}
                       className="w-full bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white tabular-nums outline-none focus:border-emerald-500/50"
                     />
                   </div>
                   <div>
                     <label className="text-[9px] text-slate-500 uppercase tracking-wide">Venta u.</label>
-                    <input
-                      type="number" step="0.01" min={0}
+                    <DecimalInput
+                      step="0.01"
+                      min={0}
                       value={e.precioVentaUnitario}
-                      onChange={ev => patch(e.id, 'precioVentaUnitario', parseFloat(ev.target.value) || 0)}
+                      onValueChange={value => patch(e.id, 'precioVentaUnitario', value)}
                       className="w-full bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white tabular-nums outline-none focus:border-emerald-500/50"
                     />
                   </div>
@@ -4640,7 +4711,7 @@ function AforoDetalladoEditor({
               <MiniInput label="IVA %" value={aforo.ivaPct * 100} step={1} onChange={v => patch('ivaPct', v / 100)} />
             </div>
             <p className="px-3 pb-2 text-[10px] text-slate-500">
-              IVA e ISR se aplican sobre el precio de venta (Q {aforo.precioVentaTotal.toLocaleString()}).
+              IVA e ISR se aplican sobre el precio de venta ({formatQ(aforo.precioVentaTotal)}).
             </p>
           </details>
 
@@ -4653,24 +4724,21 @@ function AforoDetalladoEditor({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wide">Total (Q)</label>
-                <input
-                  type="number"
-                  step="1"
+                <DecimalInput
+                  step="0.01"
                   min={0}
                   value={aforo.precioVentaTotal}
-                  onChange={e => patch('precioVentaTotal', parseFloat(e.target.value) || 0)}
+                  onValueChange={value => patch('precioVentaTotal', value)}
                   className="w-full bg-white/10 border border-emerald-500/40 rounded-lg px-3 py-2 text-lg font-bold text-white tabular-nums focus:border-emerald-400 focus:outline-none"
                 />
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wide">Por hora (Q)</label>
-                <input
-                  type="number"
+                <DecimalInput
                   step="0.01"
                   min={0}
-                  value={precioHora.toFixed(2)}
-                  onChange={e => {
-                    const nuevaHora = parseFloat(e.target.value) || 0
+                  value={precioHora}
+                  onValueChange={nuevaHora => {
                     patch('precioVentaTotal', nuevaHora * aforo.horasAforo)
                   }}
                   className="w-full bg-white/10 border border-emerald-500/40 rounded-lg px-3 py-2 text-lg font-bold text-white tabular-nums focus:border-emerald-400 focus:outline-none"
@@ -4732,17 +4800,29 @@ function MiniInput({
   onChange: (v: number) => void
   step?: number
 }) {
+  const moneyInput = isMoneyInputLabel(label)
+  const inputClass = "w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white tabular-nums focus:border-cyan-400/50 focus:outline-none"
   return (
     <div>
       <label className="text-[9px] text-slate-500 uppercase tracking-wide block mb-0.5">{label}</label>
-      <input
-        type="number"
-        step={step}
-        min={0}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white tabular-nums focus:border-cyan-400/50 focus:outline-none"
-      />
+      {moneyInput ? (
+        <DecimalInput
+          step={0.01}
+          min={0}
+          value={value}
+          onValueChange={onChange}
+          className={inputClass}
+        />
+      ) : (
+        <input
+          type="number"
+          step={step}
+          min={0}
+          value={value}
+          onChange={e => onChange(parseFloat(e.target.value) || 0)}
+          className={inputClass}
+        />
+      )}
     </div>
   )
 }

@@ -18,8 +18,9 @@ export function convertFromGTQ(montoQ: number, currency: CurrencyCode, tipoCambi
 
 export function formatCurrency(montoQ: number, currency: CurrencyCode = 'GTQ', tipoCambioUsd = DEFAULT_TIPO_CAMBIO_USD): string {
   const amount = convertFromGTQ(montoQ, currency, tipoCambioUsd)
+  const safeAmount = Number.isFinite(amount) ? amount : 0
   if (currency === 'USD') {
-    return `$ ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    return `$ ${safeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
-  return `Q ${Math.round(amount).toLocaleString('es-GT')}`
+  return `Q ${safeAmount.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }

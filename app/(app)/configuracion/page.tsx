@@ -17,7 +17,7 @@ import {
   TrendingUp, RotateCcw, Key, Plus, Copy, Loader2,
   Activity, RefreshCw, QrCode,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatQ } from '@/lib/utils'
 
 const formatPct = (n: number) => `${(n * 100).toFixed(0)}%`
 const round2 = (value: number) => Math.round(value * 100) / 100
@@ -2650,7 +2650,7 @@ function NuevaMedidaTuberia({
         <div>
           <label className="text-[10px] uppercase tracking-wider text-emerald-400/70 mb-1 block">Precio cliente ref.</label>
           <div className="w-full bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2 py-1.5 text-sm text-emerald-200 font-semibold tabular-nums">
-            Q {precioCliente.toLocaleString('es-GT')}
+            {formatQ(precioCliente)}
           </div>
         </div>
       </div>

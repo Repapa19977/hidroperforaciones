@@ -52,7 +52,7 @@ function getCookie(name: string) {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
-const fmtQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
+const fmtQ  = (n: number) => 'Q ' + (Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtQk = (n: number) =>
   n >= 1_000_000 ? `Q${(n/1_000_000).toFixed(1)}M` :
   n >= 1_000     ? `Q${(n/1_000).toFixed(0)}k`     : `Q${n}`
@@ -401,9 +401,9 @@ export default function DashboardPage() {
         [`Periodo: ${periodLabel}`],
         [],
         ['Cotizaciones:', vs.total],
-        ['Monto Total:', `Q ${vs.monto.toLocaleString('es-GT')}`],
+        ['Monto Total:', fmtQ(vs.monto)],
         ['Confirmadas:', vs.confirmadas],
-        ['Monto Confirmado:', `Q ${vs.confirmadoMonto.toLocaleString('es-GT')}`],
+        ['Monto Confirmado:', fmtQ(vs.confirmadoMonto)],
         ['% Conversion:', `${vs.conversionPct}%`],
         [],
         ['Correlativo', 'Fecha', 'Cliente', 'Empresa', 'Tipo', 'Monto (Q)', 'Estado'],
@@ -688,7 +688,7 @@ export default function DashboardPage() {
                           pct={p.bentonita.pctUsado}
                           unidad="sacos"
                           colorBase="amber"
-                          subPagado={`Cliente pagó Q ${p.bentonita.clienteQ.toLocaleString('es-GT')} · costo real Q ${p.bentonita.costoRealQ.toLocaleString('es-GT')}`}
+                          subPagado={`Cliente pagó ${fmtQ(p.bentonita.clienteQ)} · costo real ${fmtQ(p.bentonita.costoRealQ)}`}
                         />
                         <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
                           <div className="flex items-center justify-between mb-1">
@@ -699,7 +699,7 @@ export default function DashboardPage() {
                             <span className="text-sm font-normal text-slate-500"> pipas consumidas</span>
                           </p>
                           <p className="text-[10px] text-slate-500">
-                            Cliente pagó <b className="text-cyan-400">Q {p.pipas.clienteQ.toLocaleString('es-GT')}</b>
+                            Cliente pagó <b className="text-cyan-400">{fmtQ(p.pipas.clienteQ)}</b>
                           </p>
                         </div>
                       </div>
@@ -802,7 +802,7 @@ export default function DashboardPage() {
                         contentStyle={{ background: '#0f1829', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12, color: '#e2e8f0', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
                         labelStyle={{ color: '#94a3b8', marginBottom: 4, fontWeight: 600 }}
                         itemStyle={{ color: '#e2e8f0' }}
-                        formatter={(v, _, p) => [`Q ${Number(v).toLocaleString('es-GT')}k  ·  ${(p.payload as {count:number}).count} cot.`, '']}
+                        formatter={(v, _, p) => [`Q ${Number(v).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}k  ·  ${(p.payload as {count:number}).count} cot.`, '']}
                       />
                       <Area type="monotone" dataKey="monto" stroke="#3b82f6" strokeWidth={2} fill="url(#blueGrad)" />
                     </AreaChart>

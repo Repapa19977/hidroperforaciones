@@ -422,7 +422,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-amber-300 mb-0.5">Horas adversas cobrables al cliente</p>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Días con menos de {piesMinimoTurno} pies. Según la configuración, estas horas son cobrables a Q {valorHoraAdversa.toLocaleString('es-GT')}/hora (rendimiento mínimo {rendimientoMinimo.toFixed(2)} pies/h en turno de {horasTurno}h).
+                Días con menos de {piesMinimoTurno} pies. Según la configuración, estas horas son cobrables a {formatQ(valorHoraAdversa)}/hora (rendimiento mínimo {rendimientoMinimo.toFixed(2)} pies/h en turno de {horasTurno}h).
               </p>
             </div>
           </div>
@@ -439,7 +439,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
             </div>
             <div>
               <p className="text-[10px] text-slate-500 uppercase tracking-wider">Cobro total</p>
-              <p className="text-lg font-bold text-emerald-300 tabular-nums">Q {Math.round(ejecutado.cobroHorasAdversas).toLocaleString('es-GT')}</p>
+              <p className="text-lg font-bold text-emerald-300 tabular-nums">{formatQ(ejecutado.cobroHorasAdversas)}</p>
             </div>
           </div>
 
@@ -462,7 +462,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                     <td className="px-2 py-1.5 text-right text-red-400 font-semibold tabular-nums">{d.piesPerforados.toFixed(1)}</td>
                     <td className="px-2 py-1.5 text-right text-slate-400 tabular-nums">{d.horasProductivas.toFixed(2)} h</td>
                     <td className="px-2 py-1.5 text-right text-amber-300 font-semibold tabular-nums">{d.horasAdversas.toFixed(2)} h</td>
-                    <td className="px-2 py-1.5 text-right text-emerald-300 font-bold tabular-nums">Q {Math.round(d.cobro).toLocaleString('es-GT')}</td>
+                    <td className="px-2 py-1.5 text-right text-emerald-300 font-bold tabular-nums">{formatQ(d.cobro)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -470,7 +470,7 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                 <tr className="border-t-2 border-amber-500/30">
                   <td colSpan={3} className="px-2 py-2 text-right font-bold text-slate-300">TOTAL</td>
                   <td className="px-2 py-2 text-right text-amber-300 font-bold tabular-nums">{ejecutado.horasAdversasTotal.toFixed(2)} h</td>
-                  <td className="px-2 py-2 text-right text-emerald-300 font-bold tabular-nums">Q {Math.round(ejecutado.cobroHorasAdversas).toLocaleString('es-GT')}</td>
+                  <td className="px-2 py-2 text-right text-emerald-300 font-bold tabular-nums">{formatQ(ejecutado.cobroHorasAdversas)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1104,12 +1104,12 @@ function BentonitaCard({ b }: { b: NonNullable<InvStatus['bentonita']> }) {
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">Mi reserva (30%)</p>
             <p className="text-sm font-bold text-amber-300 tabular-nums">{b.mi_reserva_inicial} sacos</p>
-            <p className="text-[10px] text-slate-600">valor Q{Math.round(b.valor_reserva_inicial).toLocaleString('es-GT')} · costo Q{Math.round(b.costo_unitario)}/saco</p>
+            <p className="text-[10px] text-slate-600">valor {formatQ(b.valor_reserva_inicial)} · costo {formatQ(b.costo_unitario)}/saco</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">Valor disponible</p>
-            <p className="text-sm font-bold text-emerald-300 tabular-nums">{`Q ${Math.round(b.valor_disponible).toLocaleString('es-GT')}`}</p>
-            <p className="text-[10px] text-slate-600">{b.disponible} sacos × Q{Math.round(b.costo_unitario)}/saco</p>
+            <p className="text-sm font-bold text-emerald-300 tabular-nums">{formatQ(b.valor_disponible)}</p>
+            <p className="text-[10px] text-slate-600">{b.disponible} sacos × {formatQ(b.costo_unitario)}/saco</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">Ventas externas</p>
@@ -1150,12 +1150,12 @@ function PipasCard({ p }: { p: InvStatus['pipas'] }) {
         <div className="border-t border-cyan-500/10 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">Total gastado en pipas</p>
-            <p className="text-sm font-bold text-cyan-300 tabular-nums">{`Q ${p.valor_comprado.toLocaleString('es-GT')}`}</p>
+            <p className="text-sm font-bold text-cyan-300 tabular-nums">{formatQ(p.valor_comprado)}</p>
             <p className="text-[10px] text-slate-600">costo promedio Q{p.costo_promedio.toFixed(2)}/pipa</p>
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">Valor disponible</p>
-            <p className="text-sm font-bold text-emerald-300 tabular-nums">{`Q ${p.valor_disponible.toLocaleString('es-GT')}`}</p>
+            <p className="text-sm font-bold text-emerald-300 tabular-nums">{formatQ(p.valor_disponible)}</p>
             <p className="text-[10px] text-slate-600">{p.disponible} pipas × Q{p.costo_promedio.toFixed(2)}</p>
           </div>
           <div>
@@ -1252,7 +1252,7 @@ function RubroExpand({ rubro, compras, precioCotUnit, onAgregar, onEliminar }: {
         </div>
         <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2.5">
           <p className="text-[10px] text-slate-500 uppercase tracking-wider">Total gastado</p>
-          <p className="text-lg font-bold text-violet-300 tabular-nums">Q {Math.round(montoTotal).toLocaleString('es-GT')}</p>
+          <p className="text-lg font-bold text-violet-300 tabular-nums">{formatQ(montoTotal)}</p>
           <p className="text-[10px] text-slate-600">{cantTotal.toLocaleString('es-GT')} {rubro.unidad} · {comprasOrdenadas.length} compra(s)</p>
         </div>
       </div>
@@ -1325,7 +1325,7 @@ function RubroExpand({ rubro, compras, precioCotUnit, onAgregar, onEliminar }: {
                     <td className="px-3 py-1.5 text-slate-400">{c.fecha}</td>
                     <td className="px-2 py-1.5 text-right text-slate-300 tabular-nums">{c.cantidad}</td>
                     <td className="px-2 py-1.5 text-right text-white tabular-nums font-medium">Q {c.costoUnitario.toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right text-slate-300 tabular-nums">Q {Math.round(c.cantidad * c.costoUnitario).toLocaleString('es-GT')}</td>
+                    <td className="px-2 py-1.5 text-right text-slate-300 tabular-nums">{formatQ(c.cantidad * c.costoUnitario)}</td>
                     <td className={cn('px-2 py-1.5 text-right tabular-nums', cls)}>
                       {icon} {variacionQ === 0 ? 'igual' : `${variacionQ > 0 ? '+' : ''}${variacionPct.toFixed(1)}%`}
                     </td>

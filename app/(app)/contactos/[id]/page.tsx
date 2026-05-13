@@ -86,7 +86,7 @@ const ETAPA_COLORS: Record<string, string> = {
   lost:        'bg-red-500/20 text-red-400',
 }
 
-const formatQ = (n: number) => `Q ${Math.round(n).toLocaleString('es-GT')}`
+const formatQ = (n: number) => `Q ${(Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 type Tab = 'resumen' | 'timeline' | 'cotizaciones' | 'proyectos' | 'oportunidades'
 

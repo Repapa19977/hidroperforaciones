@@ -5,9 +5,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Formato estándar de moneda quetzales (sin decimales). Fuente única en toda la app. */
+/** Formato estándar de moneda quetzales con dos decimales. Fuente única en toda la app. */
 export const formatQ = (n: number): string =>
-  `Q ${Math.round(n).toLocaleString('es-GT')}`
+  `Q ${(Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 /** Formato de porcentaje desde fracción (0.12 → "12%") */
 export const formatPct = (n: number): string =>

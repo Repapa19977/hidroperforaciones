@@ -48,7 +48,7 @@ function getCookie(name: string) {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
-const fmtQ  = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
+const fmtQ  = (n: number) => 'Q ' + (Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtQk = (n: number) =>
   n >= 1_000_000 ? `Q${(n/1_000_000).toFixed(1)}M` :
   n >= 1_000     ? `Q${(n/1_000).toFixed(0)}k`     : `Q${n}`

@@ -44,7 +44,7 @@ const GRAY = '#6b7280'
 const DARK = '#1f2937'
 
 function q(n: number): string {
-  return `Q ${Math.round(Number(n) || 0).toLocaleString('es-GT')}`
+  return `Q ${(Number(n) || 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function n2(n: number): string {

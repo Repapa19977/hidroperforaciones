@@ -26,7 +26,7 @@ interface PortalData {
   totales: { proyectos: number; activos: number; completados: number }
 }
 
-const formatQ = (n: number) => `Q ${Math.round(n).toLocaleString('es-GT')}`
+const formatQ = (n: number) => `Q ${(Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export default function ClienteDashboardPage() {
   const router = useRouter()

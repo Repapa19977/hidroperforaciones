@@ -34,7 +34,8 @@ function costoBasePorKey(key: string): number | null {
   return rubro ? COSTOS_BASE[rubro]?.costoUnitario ?? null : null
 }
 
-const fmtQ = (n: number) => 'Q ' + Math.round(n).toLocaleString('es-GT')
+const fmtQ = (n: number) =>
+  'Q ' + (Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const FACTOR_IVA_ISR = 1 + IVA + ISR  // 1.17
 
 // Input numérico editable — definido FUERA del componente padre para que React
@@ -44,7 +45,7 @@ function NumCell({ value, onChange }: { value: number; onChange: (n: number) => 
   return (
     <input
       type="number"
-      value={Number.isFinite(value) ? value : 0}
+      value={Number.isFinite(value) ? value.toFixed(2) : '0.00'}
       onChange={e => onChange(parseFloat(e.target.value) || 0)}
       className="w-full min-w-[110px] bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-right tabular-nums text-white outline-none focus:border-blue-500/60 focus:bg-white/10"
       step="0.01"

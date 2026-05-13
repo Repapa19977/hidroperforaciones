@@ -92,11 +92,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const excedente = Math.max(0, consumido - contratado)
     const costoExtra = Math.round(excedente * costoUnit)
     const ventaExtra = Math.round(excedente * ventaUnit)
+    const formatQ = (value: number) => `Q${value.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     let nivel: Alerta['nivel']
     let mensaje: string
     if (pct >= 100) {
       nivel = 'exceso'
-      mensaje = `Excediste el ${producto} contratado por ${excedente.toFixed(1)} ${unidad}. Costo extra Q${costoExtra.toLocaleString('es-GT')} · cobrable al cliente Q${ventaExtra.toLocaleString('es-GT')}.`
+      mensaje = `Excediste el ${producto} contratado por ${excedente.toFixed(1)} ${unidad}. Costo extra ${formatQ(costoExtra)} · cobrable al cliente ${formatQ(ventaExtra)}.`
       if (reserva !== undefined && reserva > 0) {
         mensaje += ` Tienes ${reserva.toFixed(0)} ${unidad} en reserva (30%).`
       }
