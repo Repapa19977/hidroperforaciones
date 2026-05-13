@@ -3620,7 +3620,15 @@ function buildLineasLimp(
   const rows: LineaCot[] = []
   const precioDe = (key: string, fallback: number) => {
     const override = preciosVentaOverride[key]
-    return typeof override === 'number' && Number.isFinite(override) ? Math.max(0, override) : Math.max(0, fallback)
+    const fallbackSeguro = Math.max(0, fallback)
+    const esTuberiaServicio = key === 'extraccion-tuberia-servicio' || key === 'instalacion-tuberia-servicio'
+    if (typeof override === 'number' && Number.isFinite(override)) {
+      const overrideSeguro = Math.max(0, override)
+      return esTuberiaServicio && overrideSeguro <= 0 && fallbackSeguro > 0
+        ? fallbackSeguro
+        : overrideSeguro
+    }
+    return fallbackSeguro
   }
 
   if (usaServicioBasico) {

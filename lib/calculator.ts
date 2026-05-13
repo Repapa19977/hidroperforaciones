@@ -977,7 +977,31 @@ export function getReglaTuberiaServicio(
 ): ServicioTuberiaRegla | null {
   const d = normalizarDiametroServicio(diametro)
   if (!d) return null
-  return tabla.find(r => Math.abs(r.diametro - d) < 0.001) ?? null
+  const regla = tabla.find(r => Math.abs(r.diametro - d) < 0.001)
+  if (!regla) return null
+
+  const fallback = DEFAULT_SERVICIO_TUBERIA.find(r => Math.abs(r.diametro - d) < 0.001)
+  const precioExtraccion = Number(regla.precioExtraccion)
+  const precioInstalacion = Number(regla.precioInstalacion)
+  const tubosHoraExtraccion = Number(regla.tubosHoraExtraccion)
+  const tubosHoraInstalacion = Number(regla.tubosHoraInstalacion)
+
+  return {
+    ...regla,
+    precioExtraccion: Number.isFinite(precioExtraccion) && precioExtraccion > 0
+      ? precioExtraccion
+      : fallback?.precioExtraccion ?? 0,
+    precioInstalacion: Number.isFinite(precioInstalacion) && precioInstalacion > 0
+      ? precioInstalacion
+      : fallback?.precioInstalacion ?? 0,
+    tubosHoraExtraccion: Number.isFinite(tubosHoraExtraccion) && tubosHoraExtraccion > 0
+      ? tubosHoraExtraccion
+      : fallback?.tubosHoraExtraccion ?? 1,
+    tubosHoraInstalacion: Number.isFinite(tubosHoraInstalacion) && tubosHoraInstalacion > 0
+      ? tubosHoraInstalacion
+      : fallback?.tubosHoraInstalacion ?? 1,
+    personal: d >= 6 ? 3 : 2,
+  }
 }
 
 export function calcularLimpieza(inp: InputsLimpieza): ResultadosLimpieza {
