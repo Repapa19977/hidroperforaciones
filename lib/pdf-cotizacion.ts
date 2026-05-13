@@ -682,7 +682,7 @@ export async function generarPDF(
   function drawQuoteInfo(yPos: number) {
     sectionTitle('DATOS DE LA COTIZACION', yPos)
     yPos += 3.5
-    const boxH = presupuestoCompacto ? 36 : 42
+    const boxH = presupuestoCompacto ? 38 : 42
     setFill('#f7f9fc'); setDraw('#d9e2ef'); doc.setLineWidth(0.2)
     doc.roundedRect(mg, yPos, W - 2 * mg, boxH, 2, 2, 'FD')
 
@@ -716,22 +716,22 @@ export async function generarPDF(
 
     let rowY = yPos + 5
     for (const [label, value] of left) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 6.5 : 5); setText('#64748b')
       doc.text(label, x1, rowY)
       doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 7.35 : 6); setText('#1f2937')
-      doc.text(value.slice(0, 42), x1 + 23, rowY)
-      rowY += presupuestoCompacto ? 5.35 : 5.6
+      doc.text(value.slice(0, presupuestoCompacto ? 34 : 42), x1 + (presupuestoCompacto ? 29 : 23), rowY)
+      rowY += presupuestoCompacto ? 5.65 : 5.6
     }
 
     rowY = yPos + 5
     for (const [label, value] of right) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(5); setText('#64748b')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(presupuestoCompacto ? 6.5 : 5); setText('#64748b')
       doc.text(label, x2, rowY)
       doc.setFont('helvetica', 'normal'); doc.setFontSize(presupuestoCompacto ? 6.95 : 5.7); setText('#1f2937')
-      const lines = doc.splitTextToSize(value, colW - 27)
+      const lines = doc.splitTextToSize(value, colW - (presupuestoCompacto ? 38 : 27))
       const maxLines = label === 'PROYECTO' || label === 'DIRECCION DEL PROYECTO' ? 2 : 1
-      doc.text(lines.slice(0, maxLines), x2 + 27, rowY)
-      rowY += maxLines === 2 ? (presupuestoCompacto ? 8.65 : 9.5) : (presupuestoCompacto ? 5.15 : 5.2)
+      doc.text(lines.slice(0, maxLines), x2 + (presupuestoCompacto ? 38 : 27), rowY)
+      rowY += maxLines === 2 ? (presupuestoCompacto ? 9.4 : 9.5) : (presupuestoCompacto ? 5.35 : 5.2)
     }
 
     return yPos + boxH + 5
@@ -940,7 +940,7 @@ export async function generarPDF(
       const tableBottom = footerBottom
       const numberW = 8
       const textW = W - 2 * mg - numberW
-      const candidates = [6.05, 5.8, 5.55, 5.3, 5.05, 4.75]
+      const candidates = [5.45, 5.22, 5, 4.77, 4.55, 4.28]
       let chosen = candidates[candidates.length - 1]
       for (const fontSize of candidates) {
         doc.setFont('helvetica', 'normal')
@@ -967,18 +967,18 @@ export async function generarPDF(
           valign: 'top',
         },
         columnStyles: {
-          0: { cellWidth: numberW, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765'), fontSize: chosen + 0.25 },
+          0: { cellWidth: numberW, halign: 'right', fontStyle: 'bold', textColor: rgb('#173765'), fontSize: chosen + 0.23 },
           1: { cellWidth: textW },
         },
       })
       return
     }
 
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.45); setText('#374151')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); setText('#374151')
     const parrafos = condicionesLimpText.split(/\n\n+/).filter(p => p.trim())
     for (const parrafo of parrafos) {
       const lines = doc.splitTextToSize(limpiar(parrafo.trim()), W - 2 * mg)
-      const blockH = lines.length * 3.6 + 1.4
+      const blockH = lines.length * 3.25 + 1.4
       if (yPos + blockH > H - footerBottom) {
         doc.addPage()
         yPos = pageTop
