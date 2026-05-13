@@ -247,12 +247,16 @@ export const DEFAULT_CONFIG: AppConfig = {
 }
 
 export const HORAS_ADVERSAS_CONFIG_VERSION = 2
-export const SERVICIO_COTIZACION_CONFIG_VERSION = 4
+export const SERVICIO_COTIZACION_CONFIG_VERSION = 5
 
 export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
   const cfg: AppConfig = { ...DEFAULT_CONFIG, ...(raw ?? {}) }
   cfg.preciosLineas = { ...DEFAULT_PRECIOS_LINEAS, ...(raw?.preciosLineas ?? {}) }
   const rawServicio = raw?.servicioCotizacion
+  const numeroPositivo = (value: unknown, fallback: number) => {
+    const n = Number(value)
+    return Number.isFinite(n) && n > 0 ? n : fallback
+  }
   cfg.servicioCotizacion = {
     ...DEFAULT_SERVICIO_COTIZACION,
     ...(rawServicio ?? {}),
@@ -261,9 +265,9 @@ export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
           const fallback = DEFAULT_SERVICIO_TUBERIA[idx] ?? DEFAULT_SERVICIO_TUBERIA[0]
           return {
             diametro: Number(r.diametro) || fallback.diametro,
-            precioExtraccion: Number(r.precioExtraccion) || 0,
+            precioExtraccion: numeroPositivo(r.precioExtraccion, fallback.precioExtraccion),
             tubosHoraExtraccion: Number(r.tubosHoraExtraccion) || fallback.tubosHoraExtraccion,
-            precioInstalacion: Number(r.precioInstalacion) || 0,
+            precioInstalacion: numeroPositivo(r.precioInstalacion, fallback.precioInstalacion),
             tubosHoraInstalacion: Number(r.tubosHoraInstalacion) || fallback.tubosHoraInstalacion,
             personal: (Number(r.diametro) || fallback.diametro) >= 6 ? 3 : 2,
           }

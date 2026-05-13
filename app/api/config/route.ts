@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { DEFAULT_CONFIG, HORAS_ADVERSAS_CONFIG_VERSION, normalizeAppConfig } from '@/lib/config-store'
+import { DEFAULT_CONFIG, HORAS_ADVERSAS_CONFIG_VERSION, SERVICIO_COTIZACION_CONFIG_VERSION, normalizeAppConfig } from '@/lib/config-store'
 import { requireSuperAdmin, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
 
@@ -27,7 +27,11 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const body = await request.json()
-  const cfgToSave = { ...body, horasAdversasConfigVersion: HORAS_ADVERSAS_CONFIG_VERSION }
+  const cfgToSave = {
+    ...body,
+    horasAdversasConfigVersion: HORAS_ADVERSAS_CONFIG_VERSION,
+    servicioCotizacionConfigVersion: SERVICIO_COTIZACION_CONFIG_VERSION,
+  }
   const before = await prisma.config.findUnique({ where: { id: 'singleton' } })
 
   await prisma.config.upsert({

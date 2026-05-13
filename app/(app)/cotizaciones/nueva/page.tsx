@@ -44,6 +44,7 @@ const PROYECTO_SERVICIO_DEFAULT = 'Servicios de mantenimiento'
 const vendedoresDefaultOptions: VendedorOption[] = VENDEDORES.map(nombre => crearVendedorOption(nombre))
 
 const SERVICIO_OPTIONAL_LINE_KEYS = new Set([
+  'tecnico-chequeo-servicio',
   'inspeccion-camara',
   'medicion-nivel-agua',
   'analisis-agua-servicio',
@@ -64,6 +65,7 @@ function inputsServicioDesdeConfig(servicio?: Partial<ServicioCotizacionConfig>)
     personal: s.personalServicio,
     precioMaterialInstalacionServicio: s.materialInstalacionPrecio,
     costoMaterialInstalacionServicio: s.materialInstalacionCosto,
+    incluirTecnicoChequeoServicio: true,
     precioTecnicoChequeoServicio: s.tecnicoChequeoPrecio,
     costoTecnicoChequeoServicio: s.tecnicoChequeoCosto,
     precioInspeccionCamara: s.camaraInspeccionPrecio,
@@ -613,6 +615,7 @@ export default function NuevaCotizacionPage() {
     if (extra) return { mostrar: extra.mostrar, cobrar: extra.cobrar }
     if (tipo === 'limpieza' && SERVICIO_OPTIONAL_LINE_KEYS.has(key)) {
       const seleccionada =
+        key === 'tecnico-chequeo-servicio' ? (il.incluirTecnicoChequeoServicio ?? true) :
         key === 'inspeccion-camara' ? !!il.inspeccionCamara :
         key === 'medicion-nivel-agua' ? !!il.incluirMedicionNivelServicio :
         key === 'analisis-agua-servicio' ? !!il.incluirAnalisisAguaServicio :
@@ -2558,30 +2561,23 @@ function CalcServicios({
     patchIl('tubosInstalacion', modo === 'extraccion' ? 0 : cantidad)
   }
   const tecnicoKey = 'tecnico-chequeo-servicio'
-  const tecnicoCfg = lineasConfig[tecnicoKey] ?? { mostrar: true, cobrar: true }
+  const tecnicoCfgActual = lineasConfig[tecnicoKey]
+  const tecnicoIncluido = il.incluirTecnicoChequeoServicio ?? (tecnicoCfgActual ? tecnicoCfgActual.mostrar && tecnicoCfgActual.cobrar : true)
   const costoTecnico = il.costoTecnicoChequeoServicio ?? 1200
   const ventaTecnico = il.precioTecnicoChequeoServicio ?? 2500
   const markupTecnico = costoTecnico > 0 ? ((ventaTecnico - costoTecnico) / costoTecnico) * 100 : 0
-  const toggleTecnico = (campo: 'mostrar' | 'cobrar') => {
+  const setTecnicoEnabled = (enabled: boolean) => {
+    patchIl('incluirTecnicoChequeoServicio', enabled)
     setLineasConfig(prev => ({
       ...prev,
-      [tecnicoKey]: { ...tecnicoCfg, [campo]: !tecnicoCfg[campo] },
+      [tecnicoKey]: { mostrar: enabled, cobrar: enabled },
     }))
   }
-  const optionalCfg = (key: string, enabled: boolean): LineaConfig =>
-    lineasConfig[key] ?? { mostrar: enabled, cobrar: enabled }
   const setOptionalEnabled = (key: string, inputKey: keyof InputsLimpieza, enabled: boolean) => {
     patchIl(inputKey, enabled)
     setLineasConfig(prev => ({
       ...prev,
       [key]: { mostrar: enabled, cobrar: enabled },
-    }))
-  }
-  const toggleOptionalCampo = (key: string, enabled: boolean, campo: 'mostrar' | 'cobrar') => {
-    const cfg = optionalCfg(key, enabled)
-    setLineasConfig(prev => ({
-      ...prev,
-      [key]: { ...cfg, [campo]: !cfg[campo] },
     }))
   }
   const setMarkupTecnico = (pct: number) => {
@@ -2716,43 +2712,6 @@ function CalcServicios({
                 <p className="mt-1 text-xs text-slate-500">Selecciona un diametro para cargar precios y ritmo desde Configuracion.</p>
               )}
             </div>
-            <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-white/10 bg-white/3 px-3 py-3 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Tecnico para chequeo</p>
-                  <p className="text-[10px] text-slate-600">Estos controles modifican solo la linea de tecnico en la cotizacion.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => toggleTecnico('mostrar')}
-                    className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
-                      tecnicoCfg.mostrar ? 'bg-blue-500 border-blue-500 shadow-sm shadow-blue-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
-                    title={tecnicoCfg.mostrar ? 'Visible en PDF' : 'Oculto del PDF'}
-                  >
-                    {tecnicoCfg.mostrar
-                      ? <Eye className="w-3.5 h-3.5 text-white" />
-                      : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleTecnico('cobrar')}
-                    className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
-                      tecnicoCfg.cobrar ? 'bg-emerald-500 border-emerald-500 shadow-sm shadow-emerald-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
-                    title={tecnicoCfg.cobrar ? 'Se cobra al cliente' : 'No se cobra'}
-                  >
-                    <DollarSign className={cn('w-3.5 h-3.5', tecnicoCfg.cobrar ? 'text-white' : 'text-slate-500')} />
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
-                <NumInput label="Venta tecnico (Q)" value={ventaTecnico} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
-                  accent hint={`Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`} />
-                <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
-                  hint="Al cambiar el %, recalcula la venta al cliente." />
-              </div>
-            </div>
             <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
               hint="Linea global del presupuesto de servicio" />
           </>
@@ -2773,6 +2732,25 @@ function CalcServicios({
 
         {usaLimpieza && (
           <>
+            <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-white/10 bg-white/3 p-3 space-y-3">
+              <button
+                type="button"
+                onClick={() => setTecnicoEnabled(!tecnicoIncluido)}
+                className={cn(toggleClass(tecnicoIncluido), '!h-auto min-h-[58px] w-full py-2')}
+              >
+                Tecnico para chequeo: {tecnicoIncluido ? 'Si' : 'No'}
+                <span className="block text-[10px] text-slate-500 mt-0.5">Chequeo de equipo, parametros, panel, instalacion, arranque y pruebas.</span>
+              </button>
+              {tecnicoIncluido && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
+                  <NumInput label="Venta tecnico (Q)" value={ventaTecnico} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
+                    accent hint={`Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`} />
+                  <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
+                    hint="Al cambiar el %, recalcula la venta al cliente." />
+                </div>
+              )}
+            </div>
             {([
               {
                 key: 'inspeccion-camara',
@@ -2817,41 +2795,16 @@ function CalcServicios({
                 saleHint: 'Solo sale en PDF si esta incluido y cobrado',
               },
             ] as const).map(item => {
-              const cfg = optionalCfg(item.key, item.enabled)
               return (
                 <div key={item.key} className="sm:col-span-2 md:col-span-3 rounded-lg border border-white/10 bg-white/3 p-3 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setOptionalEnabled(item.key, item.inputKey, !item.enabled)}
-                      className={cn(toggleClass(item.enabled), '!h-auto min-h-[58px] w-full sm:w-auto min-w-[220px] py-2')}
-                    >
-                      {item.title}: {item.enabled ? 'Si' : 'No'}
-                      <span className="block text-[10px] text-slate-500 mt-0.5">{item.hint}</span>
-                    </button>
-                    {item.enabled && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleOptionalCampo(item.key, item.enabled, 'mostrar')}
-                          className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
-                            cfg.mostrar ? 'bg-blue-500 border-blue-500 shadow-sm shadow-blue-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
-                          title={cfg.mostrar ? 'Visible en PDF' : 'Oculto del PDF'}
-                        >
-                          {cfg.mostrar ? <Eye className="w-3.5 h-3.5 text-white" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleOptionalCampo(item.key, item.enabled, 'cobrar')}
-                          className={cn('w-8 h-8 rounded-lg border flex items-center justify-center transition-all',
-                            cfg.cobrar ? 'bg-emerald-500 border-emerald-500 shadow-sm shadow-emerald-500/30' : 'bg-white/5 border-white/20 hover:border-white/40')}
-                          title={cfg.cobrar ? 'Se cobra al cliente' : 'No se cobra'}
-                        >
-                          <DollarSign className={cn('w-3.5 h-3.5', cfg.cobrar ? 'text-white' : 'text-slate-500')} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOptionalEnabled(item.key, item.inputKey, !item.enabled)}
+                    className={cn(toggleClass(item.enabled), '!h-auto min-h-[58px] w-full py-2')}
+                  >
+                    {item.title}: {item.enabled ? 'Si' : 'No'}
+                    <span className="block text-[10px] text-slate-500 mt-0.5">{item.hint}</span>
+                  </button>
                   {item.enabled && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <NumInput label={item.costLabel} value={item.costValue} onChange={v => patchIl(item.costInput, v)} hint="Costo interno" />
@@ -3620,7 +3573,15 @@ function buildLineasLimp(
   const rows: LineaCot[] = []
   const precioDe = (key: string, fallback: number) => {
     const override = preciosVentaOverride[key]
-    return typeof override === 'number' && Number.isFinite(override) ? Math.max(0, override) : Math.max(0, fallback)
+    const fallbackSeguro = Math.max(0, fallback)
+    const esTuberiaServicio = key === 'extraccion-tuberia-servicio' || key === 'instalacion-tuberia-servicio'
+    if (typeof override === 'number' && Number.isFinite(override)) {
+      const overrideSeguro = Math.max(0, override)
+      return esTuberiaServicio && overrideSeguro <= 0 && fallbackSeguro > 0
+        ? fallbackSeguro
+        : overrideSeguro
+    }
+    return fallbackSeguro
   }
 
   if (usaServicioBasico) {
@@ -3690,7 +3651,7 @@ function buildLineasLimp(
       nombre: 'Tecnico para chequeo de equipo sumergible, medicion de parametros, limpieza de panel de control, instalacion, arranque y pruebas',
       unidad: 'Global',
       cant: 1,
-      precio: precioDe('tecnico-chequeo-servicio', il.precioTecnicoChequeoServicio ?? 0),
+      precio: precioDe('tecnico-chequeo-servicio', res.precioTecnicoChequeoServicio),
       total: 0,
     })
   }

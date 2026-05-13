@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { Fragment, useEffect, useState, useId } from 'react'
+import { Fragment, useEffect, useState, useId, type FormEvent } from 'react'
 import Link from 'next/link'
 import {
   getRol, setRol, verificarPinSuperAdmin,
@@ -112,6 +112,11 @@ export default function ConfiguracionPage() {
   const [userError, setUserError]       = useState('')
   const [userLoading, setUserLoading]   = useState(false)
   const [showNewPass, setShowNewPass]   = useState(false)
+  const [configAccessGranted, setConfigAccessGranted] = useState(false)
+  const [masterPassword, setMasterPassword] = useState('')
+  const [showMasterPassword, setShowMasterPassword] = useState(false)
+  const [masterError, setMasterError] = useState('')
+  const [masterLoading, setMasterLoading] = useState(false)
 
   // Modal de confirmación con re-password (para acciones destructivas)
   const [confirmPwd, setConfirmPwd] = useState<{
@@ -132,18 +137,23 @@ export default function ConfiguracionPage() {
 
   useEffect(() => {
     setRolState(getRol())
+    setConfigAccessGranted(sessionStorage.getItem('hidrocrm_config_access') === '1')
+  }, [])
+
+  useEffect(() => {
+    if (!configAccessGranted) return
     fetch('/api/config', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : DEFAULT_CONFIG)
       .then(cfg => setConfig(normalizeAppConfig(cfg)))
-  }, [])
+  }, [configAccessGranted])
 
   // Cargar usuarios cuando es superadmin
   useEffect(() => {
-    if (rol !== 'superadmin') return
+    if (!configAccessGranted || rol !== 'superadmin') return
     fetch('/api/usuarios')
       .then(r => r.ok ? r.json() : [])
       .then(setUsuarios)
-  }, [rol])
+  }, [configAccessGranted, rol])
 
   const isSuperAdmin = rol === 'superadmin'
 
@@ -162,6 +172,35 @@ export default function ConfiguracionPage() {
   function handleLock() {
     setRol('admin')
     setRolState('admin')
+  }
+
+  async function handleMasterAccess(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!masterPassword.trim()) {
+      setMasterError('Ingresa la contraseña')
+      return
+    }
+    setMasterLoading(true)
+    setMasterError('')
+    try {
+      const res = await fetch('/api/auth/verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: masterPassword }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setMasterError(err.error ?? 'Contraseña incorrecta')
+        return
+      }
+      sessionStorage.setItem('hidrocrm_config_access', '1')
+      setConfigAccessGranted(true)
+      setMasterPassword('')
+    } catch {
+      setMasterError('No se pudo validar la contraseña')
+    } finally {
+      setMasterLoading(false)
+    }
   }
 
   async function handleSave() {
@@ -440,6 +479,54 @@ export default function ConfiguracionPage() {
         setUsuarios(prev => prev.map(u => u.id === id ? { ...u, ...data } : u))
       },
     })
+  }
+
+  if (!configAccessGranted) {
+    return (
+      <div className="min-h-[calc(100dvh-9rem)] p-4 sm:p-6 flex items-center justify-center">
+        <form onSubmit={handleMasterAccess} className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1526] p-5 sm:p-6 shadow-2xl shadow-black/20">
+          <div className="flex items-start gap-3">
+            <div className="h-11 w-11 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center shrink-0">
+              <ShieldCheck className="h-5 w-5 text-violet-300" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white">Acceso a Configuración</h1>
+              <p className="text-sm text-slate-400 mt-1">Confirmá tu contraseña para abrir los parámetros del sistema.</p>
+            </div>
+          </div>
+
+          <label className="text-xs text-slate-500 mt-6 mb-1.5 block">Contraseña maestra</label>
+          <div className="relative">
+            <input
+              type={showMasterPassword ? 'text' : 'password'}
+              value={masterPassword}
+              onChange={e => { setMasterPassword(e.target.value); setMasterError('') }}
+              autoComplete="current-password"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 pr-11"
+              placeholder="Contraseña de tu usuario"
+            />
+            <button
+              type="button"
+              onClick={() => setShowMasterPassword(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              aria-label={showMasterPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+            >
+              {showMasterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          {masterError && <p className="text-xs text-red-400 mt-2">{masterError}</p>}
+
+          <button
+            type="submit"
+            disabled={masterLoading || !masterPassword}
+            className="mt-5 w-full rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            {masterLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+            Entrar a Configuración
+          </button>
+        </form>
+      </div>
+    )
   }
 
   return (
