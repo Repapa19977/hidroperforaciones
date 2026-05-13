@@ -1353,7 +1353,7 @@ export const defaultInputsLimpieza: InputsLimpieza = {
 
 // ── UTILIDADES ────────────────────────────────────────────────────────────────
 export const formatQ = (n: number) =>
-  'Q ' + Math.round(n).toLocaleString('es-GT', { minimumFractionDigits: 0 })
+  'Q ' + Math.round(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export const formatQDecimal = (n: number) =>
   'Q ' + n.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

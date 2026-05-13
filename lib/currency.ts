@@ -21,5 +21,5 @@ export function formatCurrency(montoQ: number, currency: CurrencyCode = 'GTQ', t
   if (currency === 'USD') {
     return `$ ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
-  return `Q ${Math.round(amount).toLocaleString('es-GT')}`
+  return `Q ${Math.round(amount).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
