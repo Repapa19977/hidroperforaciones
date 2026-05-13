@@ -294,8 +294,9 @@ export default function ImprimirPage() {
         alert(err.error ?? 'No se pudo enviar el correo')
         return
       }
+      const result = await res.json().catch(() => ({})) as { fromEmail?: string; notifyEmail?: string | null }
       setEmailOpen(false)
-      setNotice(`Correo enviado a ${destino}. Cotizacion marcada como enviada.`)
+      setNotice(`Correo enviado desde ${result.fromEmail ?? 'el asesor asignado'} a ${destino}. Cotizacion marcada como enviada.`)
     } finally {
       setSendingEmail(false)
     }
@@ -425,7 +426,9 @@ export default function ImprimirPage() {
                 />
               </label>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Archivo adjunto: <span className="font-mono font-semibold text-slate-900">{nombreArchivo()}</span>
+                <p>Remitente: <span className="font-semibold text-slate-900">{data.vendedor || 'Asesor asignado'}</span></p>
+                <p>Copia oculta fija: <span className="font-semibold text-slate-900">rdominguez@hidroperforaciones.com</span></p>
+                <p>Archivo adjunto: <span className="font-mono font-semibold text-slate-900">{nombreArchivo()}</span></p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-200 bg-slate-50">

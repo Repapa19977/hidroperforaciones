@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Resend } from 'resend'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { formatFechaArchivoPdf, formatFechaDDMMYYYY } from '@/lib/date-format'
+import { normalizarVendedor, resolverEmailVendedor } from '@/lib/vendedores'
+import { sendSmtpRelayMail } from '@/lib/smtp-relay'
 
 const CONTACT_EMAIL = 'ventas@hidroperforaciones.com'
-const FROM_EMAIL = (process.env.RESEND_FROM_EMAIL ?? CONTACT_EMAIL).trim()
 const DEFAULT_INTERNAL_NOTIFY_EMAIL = 'rdominguez@hidroperforaciones.com'
 const INTERNAL_NOTIFY_EMAIL = (process.env.COTIZACION_NOTIFY_EMAIL ?? DEFAULT_INTERNAL_NOTIFY_EMAIL).trim()
+const SMTP_RELAY_HOST = (process.env.SMTP_RELAY_HOST ?? 'smtp-relay.gmail.com').trim()
+const SMTP_RELAY_PORT = Number(process.env.SMTP_RELAY_PORT ?? 587)
 const MAX_PDF_BASE64_BYTES = 12 * 1024 * 1024
 
 function escapeHtml(value: string): string {
@@ -38,13 +40,40 @@ function sameEmail(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase()
 }
 
+function isHidroEmail(value: string): boolean {
+  return /^[^\s@]+@hidroperforaciones\.com$/i.test(value.trim())
+}
+
+function parseDatosCotizacion(datos: string): { vendedor?: string; vendedorEmail?: string } {
+  try {
+    const parsed = JSON.parse(datos || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function resolverRemitenteAsignado(row: { vendedor: string; datos: string }) {
+  const datos = parseDatosCotizacion(row.datos)
+  const vendedor = String(datos.vendedor || row.vendedor || '').trim()
+  const vendedorNorm = normalizarVendedor(vendedor)
+
+  const usuarios = await prisma.usuario.findMany({
+    where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
+    select: { nombre: true, email: true },
+  })
+  const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === vendedorNorm)
+  const email = resolverEmailVendedor(vendedor, usuario?.email || datos.vendedorEmail)
+
+  return {
+    nombre: vendedor || row.vendedor || 'Hidroperforaciones',
+    email: isHidroEmail(email) ? email.toLowerCase() : CONTACT_EMAIL,
+  }
+}
+
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
-
-  if (!process.env.RESEND_API_KEY) {
-    return NextResponse.json({ error: 'RESEND_API_KEY no configurado' }, { status: 500 })
-  }
 
   const body = await request.json().catch(() => null) as {
     pdfBase64?: string
@@ -82,7 +111,8 @@ export async function POST(request: NextRequest) {
   const fecha = String(body.fecha ?? row.fecha ?? '')
   const cliente = String(body.cliente ?? row.cliente ?? '')
   const empresa = String(body.empresa ?? row.empresa ?? '')
-  const vendedor = String(body.vendedor ?? row.vendedor ?? '')
+  const remitente = await resolverRemitenteAsignado(row)
+  const vendedor = remitente.nombre
   const fechaLabel = formatFechaDDMMYYYY(fecha)
   const subject = String(body.subject ?? '').trim() ||
     `Cotizacion ${correlativo} - Hidroperforaciones`
@@ -103,14 +133,17 @@ export async function POST(request: NextRequest) {
     subject: escapeHtml(subject),
   }
 
-  const resend = new Resend(process.env.RESEND_API_KEY)
-  const { error } = await resend.emails.send({
-    from: `Hidroperforaciones <${FROM_EMAIL}>`,
-    replyTo: CONTACT_EMAIL,
-    to: [emailTo],
-    bcc: internalBcc,
-    subject,
-    html: `
+  try {
+    await sendSmtpRelayMail({
+      host: SMTP_RELAY_HOST,
+      port: SMTP_RELAY_PORT,
+      from: { name: vendedor || 'Hidroperforaciones', email: remitente.email },
+      replyTo: remitente.email,
+      to: [emailTo],
+      bcc: internalBcc,
+      subject,
+      text: message,
+      html: `
       <div style="margin: 0; padding: 24px; background-color: #f3f4f6; color: #111827; color-scheme: light only;">
       <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; color: #111827;">
         <div style="background: #173765; padding: 24px; border-radius: 8px 8px 0 0;">
@@ -133,21 +166,16 @@ export async function POST(request: NextRequest) {
       </div>
       </div>
     `,
-    attachments: [{
-      filename,
-      content: pdfBase64,
-    }],
-  })
-
-  if (error) {
-    console.error('[email/cotizacion] Resend error:', error)
-    const message = (error as { message?: string }).message ?? 'Error al enviar'
-    if (message.toLowerCase().includes('domain is not verified')) {
-      return NextResponse.json({
-        error: `El remitente ${FROM_EMAIL} no esta verificado en Resend. Verifica el dominio o configura RESEND_FROM_EMAIL con un remitente verificado.`,
-      }, { status: 500 })
-    }
-    return NextResponse.json({ error: message }, { status: 500 })
+      attachments: [{
+        filename,
+        contentBase64: pdfBase64,
+        contentType: 'application/pdf',
+      }],
+    })
+  } catch (error) {
+    console.error('[email/cotizacion] SMTP relay error:', error)
+    const message = error instanceof Error ? error.message : 'Error al enviar'
+    return NextResponse.json({ error: `No se pudo enviar por SMTP Relay: ${message}` }, { status: 500 })
   }
 
   if (row.estado !== 'enviada') {
@@ -171,10 +199,10 @@ export async function POST(request: NextRequest) {
       correlativo,
       campo: 'envio',
       valorAntes: '',
-      valorDespues: `correo:${emailTo}${internalBcc?.length ? `;bcc:${internalBcc.join(',')}` : ''}`,
+      valorDespues: `correo:${emailTo};from:${remitente.email}${internalBcc?.length ? `;bcc:${internalBcc.join(',')}` : ''}`,
       usuario: auth.user.vendedor ?? auth.user.username ?? '',
     },
   })
 
-  return NextResponse.json({ ok: true, notifyEmail: internalBcc?.[0] ?? null })
+  return NextResponse.json({ ok: true, fromEmail: remitente.email, notifyEmail: internalBcc?.[0] ?? null })
 }

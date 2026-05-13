@@ -11,7 +11,7 @@ function normalizarEmail(email: unknown): string {
 }
 
 function emailValido(email: string): boolean {
-  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  return !email || /^[^\s@]+@hidroperforaciones\.com$/i.test(email)
 }
 
 // GET - listar todos los usuarios de la DB
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Usuario, nombre y contraseña son requeridos' }, { status: 400 })
   }
   if (!emailValido(emailNormalizado)) {
-    return NextResponse.json({ error: 'Correo inválido' }, { status: 400 })
+    return NextResponse.json({ error: 'El correo del asesor debe ser @hidroperforaciones.com' }, { status: 400 })
   }
 
   const errPw = validarPassword(password)

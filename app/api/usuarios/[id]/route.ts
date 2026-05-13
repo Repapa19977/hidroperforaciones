@@ -24,7 +24,7 @@ function normalizarEmail(email: unknown): string {
 }
 
 function emailValido(email: string): boolean {
-  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  return !email || /^[^\s@]+@hidroperforaciones\.com$/i.test(email)
 }
 
 async function contarSuperAdminsActivos(excludeId?: string): Promise<number> {
@@ -62,7 +62,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.email === 'string') {
     const email = normalizarEmail(body.email)
     if (!emailValido(email)) {
-      return NextResponse.json({ error: 'Correo inválido' }, { status: 400 })
+      return NextResponse.json({ error: 'El correo del asesor debe ser @hidroperforaciones.com' }, { status: 400 })
     }
     data.email = email
   }

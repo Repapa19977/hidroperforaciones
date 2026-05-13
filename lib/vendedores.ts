@@ -43,6 +43,15 @@ export function resolverEmailVendedor(vendedor: string, emailPreferido?: string 
       return 'rdominguez@hidroperforaciones.com'
     }
     if (
+      compact === 'ac' ||
+      compact.includes('acastro') ||
+      normalizado.includes('anabella') ||
+      normalizado.includes('annabella') ||
+      normalizado.includes('castro')
+    ) {
+      return 'acastro@hidroperforaciones.com'
+    }
+    if (
       compact === 'bf' ||
       normalizado.includes('berner') ||
       normalizado.includes('verner') ||
