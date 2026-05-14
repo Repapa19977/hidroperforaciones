@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
 import { prisma } from '@/lib/db'
-import { checkRateLimit, getClientIp } from '@/lib/rate-limit'
+import { checkRateLimit, getClientIp, getRateLimitStatus, resetRateLimit } from '@/lib/rate-limit'
 import { auditLog } from '@/lib/audit'
 import { getRequestInfo, hashPassword, isLegacyPasswordHash, verifyPassword } from '@/lib/auth'
 import { z } from 'zod'
@@ -28,15 +28,28 @@ export async function POST(request: NextRequest) {
 
   // Rate limit
   const ip = getClientIp(request)
-  const ipCheck = checkRateLimit(`cliente-ip:${ip}`, IP_LIMIT, WINDOW_MS)
-  const userCheck = checkRateLimit(`cliente-email:${email.toLowerCase()}`, USER_LIMIT, WINDOW_MS)
-  if (!ipCheck.ok || !userCheck.ok) {
-    const resetAt = Math.max(ipCheck.resetAt, userCheck.resetAt)
+  const ipRateKey = `cliente-ip:${ip}`
+  const userRateKey = `cliente-email:${email.toLowerCase()}`
+  const ipCheck = getRateLimitStatus(ipRateKey, IP_LIMIT, WINDOW_MS)
+  const userCheck = getRateLimitStatus(userRateKey, USER_LIMIT, WINDOW_MS)
+  const rateLimitResponse = (
+    nextIpCheck: { ok: boolean; resetAt: number },
+    nextUserCheck: { ok: boolean; resetAt: number },
+  ) => {
+    if (nextIpCheck.ok && nextUserCheck.ok) return null
+    const resetAt = Math.max(nextIpCheck.resetAt, nextUserCheck.resetAt)
     const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
     return NextResponse.json(
       { error: 'Demasiados intentos. Intentá más tarde.', retryAfter },
       { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
+  }
+  const blockedResponse = rateLimitResponse(ipCheck, userCheck)
+  if (blockedResponse) return blockedResponse
+  const registerFailedLogin = () => {
+    const nextIpCheck = checkRateLimit(ipRateKey, IP_LIMIT, WINDOW_MS)
+    const nextUserCheck = checkRateLimit(userRateKey, USER_LIMIT, WINDOW_MS)
+    return rateLimitResponse(nextIpCheck, nextUserCheck)
   }
 
   const usuario = await prisma.usuario.findFirst({
@@ -46,10 +59,12 @@ export async function POST(request: NextRequest) {
   const info = getRequestInfo(request)
 
   if (!usuario || !verifyPassword(password, usuario.passwordHash)) {
+    const failedLimitResponse = registerFailedLogin()
     await auditLog({
       user: null, accion: 'login', entidad: 'cliente_final', entidadId: email,
       despues: { resultado: 'falla' }, ...info,
     })
+    if (failedLimitResponse) return failedLimitResponse
     return NextResponse.json({ error: 'Email o contraseña incorrectos' }, { status: 401 })
   }
 
@@ -74,6 +89,8 @@ export async function POST(request: NextRequest) {
     accion: 'login', entidad: 'cliente_final', entidadId: usuario.id,
     despues: { resultado: 'exito' }, ...info,
   })
+  resetRateLimit(ipRateKey)
+  resetRateLimit(userRateKey)
 
   const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
   const token = await new SignJWT({
