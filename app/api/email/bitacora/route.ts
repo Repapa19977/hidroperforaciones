@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;">
         <div style="background: #1a3a6e; padding: 24px; border-radius: 8px 8px 0 0;">
-          <h2 style="color: #fff; margin: 0; font-size: 20px;">Hidroperforaciones Guatemala</h2>
-          <p style="color: #94c8f5; margin: 4px 0 0; font-size: 13px;">Reporte diario de bitacora</p>
+          <h2 style="color: #fff; margin: 0; font-size: 20px;">Hidroperforaciones, S.A.</h2>
+          <p style="color: #94c8f5; margin: 4px 0 0; font-size: 13px;">Reporte diario de bitacora · Asesor: ${safe.vendedor || 'Hidroperforaciones'}</p>
         </div>
         <div style="background: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
           <p style="font-size: 15px;">Estimado/a <strong>${safe.cliente}</strong>,</p>
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
           <p style="font-size: 12px; color: #9ca3af;">
             Enviado por: ${safe.vendedor}<br/>
-            Hidroperforaciones Guatemala - ${CONTACT_EMAIL}
+            Hidroperforaciones, S.A. - ${CONTACT_EMAIL}
           </p>
         </div>
       </div>

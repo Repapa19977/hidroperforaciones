@@ -147,8 +147,8 @@ export async function POST(request: NextRequest) {
       <div style="margin: 0; padding: 24px; background-color: #f3f4f6; color: #111827; color-scheme: light only;">
       <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; color: #111827;">
         <div style="background: #173765; padding: 24px; border-radius: 8px 8px 0 0;">
-          <h2 style="color: #fff; margin: 0; font-size: 20px;">Hidroperforaciones Guatemala</h2>
-          <p style="color: #a8cff0; margin: 4px 0 0; font-size: 13px;">Cotizacion ${safe.correlativo}</p>
+          <h2 style="color: #fff; margin: 0; font-size: 20px;">Hidroperforaciones, S.A.</h2>
+          <p style="color: #a8cff0; margin: 4px 0 0; font-size: 13px;">Cotizacion ${safe.correlativo} · Asesor: ${safe.vendedor || 'Hidroperforaciones'}</p>
         </div>
         <div style="background: #f9fafb; color: #111827; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
           ${renderMessageHtml(message)}
