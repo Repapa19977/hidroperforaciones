@@ -1065,22 +1065,19 @@ export default function NuevaCotizacionPage() {
                       errors.email ? 'border-red-500/50 bg-red-500/5' : 'border-white/10')} />
                   <p className="text-[10px] text-slate-600 mt-1">Obligatorio — se usa para enviar la cotización por correo</p>
                 </div>
+                {tipo !== 'perforacion' && (
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <Clock className="w-3 h-3" /> Duración Estimada
-                    <span className="text-[9px] text-blue-400 ml-auto">auto · desde profundidad</span>
+                    <span className="text-[9px] text-blue-400 ml-auto">auto</span>
                   </label>
                   <div className="w-full bg-white/3 border border-white/8 rounded-lg px-3 py-2.5 text-sm text-slate-300 flex items-center justify-between">
                     <span className="tabular-nums font-semibold text-white">
-                      {tipo === 'perforacion' ? resPerf.totalDiasMaquinaria : resLimp.diasTotales} días hábiles
+                      {resLimp.diasTotales} días hábiles
                     </span>
-                    {tipo === 'perforacion' && (
-                      <span className="text-[10px] text-slate-500">
-                        {resPerf.diasPerforacion}d perforación + {ip.diasExtra}d extras
-                      </span>
-                    )}
                   </div>
                 </div>
+                )}
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <User className="w-3 h-3" /> Vendedor
@@ -2333,7 +2330,7 @@ function CalcPerforacion({
             <span className="text-[10px] text-slate-500 hidden sm:inline">{ip.profundidad} pies × {formatQ(ip.precioPorPieVenta)}</span>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <NumInput
             label="Km al lugar"
             value={ip.kilometros}
@@ -2364,6 +2361,20 @@ function CalcPerforacion({
             <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
               Auto-sugerido {formatQ(res.precioPorPieCalculado)}
             </p>
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+              <Clock className="w-3 h-3" /> Duración Estimada
+              <span className="text-[9px] text-blue-400 ml-auto">auto · desde profundidad</span>
+            </label>
+            <div className="w-full min-h-[42px] bg-white/3 border border-blue-500/20 rounded-lg px-3 py-2.5 text-sm text-slate-300 flex items-center justify-between gap-3">
+              <span className="tabular-nums font-semibold text-white whitespace-nowrap">
+                {res.totalDiasMaquinaria} días hábiles
+              </span>
+              <span className="text-[10px] text-slate-500 text-right leading-tight">
+                {res.diasPerforacion}d perforación + {ip.diasExtra}d extras
+              </span>
+            </div>
           </div>
         </div>
         <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
