@@ -528,6 +528,8 @@ export interface InputsPerforacion {
   costoBroca: number           // Q por broca (default 27,500)
 
   // ── Costos de servicios opcionales ──
+  costoRegistroElectrico: number // Q costo interno registro eléctrico
+  costoSelloSanitario: number    // Q costo interno sello sanitario
   costoExtraccionLodos: number // Q total extracción de lodos (default 32,000)
   costoSeguridad: number       // Q cargo seguridad (default 200)
   costoSanitario: number       // Q baños portátiles (default 800)
@@ -543,6 +545,7 @@ export interface InputsPerforacion {
 
   // ── Limpieza mecánica interna (cuando incluirLimpieza=true) ──
   horasLimpiezaMecanica: number  // horas de limpieza interna (default 20, Excel)
+  costoLimpiezaMecanicaOverride?: number // Q costo interno manual; si no existe usa cálculo automático
 
   // ── Override de catálogo de tuberías (viene del Config global) ──
   // Map de `${tipo}-${diametro}-${espesor}` → costo interno editado. Si existe, reemplaza CATALOGO_TUBERIA.
@@ -603,6 +606,7 @@ export interface ResultadosPerforacion {
   reservaFlete: number     // 30% del cargo — margen reservado (solo superadmin)
   costoTuberia: number     // tubos lisos × precio
   costoFiltros: number     // tubos ranurados × precio
+  costoRegistroElectrico: number
   costoAforo: number
   costoLimpieza: number
   costoComision: number
@@ -726,8 +730,10 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   const costoTuberia = inp.tubosLisos     * precioTubLisa
   const costoFiltros = inp.tubosRanurados * precioTubRanurada
 
-  // Sello sanitario: cap de concreto superficial (3-5 m de lechada) — costo fijo ~Q500
-  const costoSelloSanitario = inp.incluirSelloSanitario ? 500 : 0
+  const costoRegistroElectrico = inp.incluirRegistroElectrico ? (inp.costoRegistroElectrico ?? 8000) : 0
+
+  // Sello sanitario: cap de concreto superficial (3-5 m de lechada) — costo fijo editable
+  const costoSelloSanitario = inp.incluirSelloSanitario ? (inp.costoSelloSanitario ?? 500) : 0
 
   // Aforo: si hay aforoDetallado se calcula con los 18 sub-inputs (Excel "COSTO DE AFORO (1)"),
   // sino se usa la fórmula legacy simple: base × (1 + imprev) × (1 + IVA + ISR)
@@ -738,17 +744,21 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   // Limpieza mecánica interna — fórmula dinámica (Excel hoja "Limpieza mecanica")
   // 20h × Q331.79/h = Q6,635.71 en el ejemplo del Excel
   // Usa calcularLimpieza con defaults y retorna subtotalSinImprevistos (= lo que reporta Margenes)
+  const costoLimpiezaAuto = (() => {
+    const horas = inp.horasLimpiezaMecanica ?? 20
+    const r = calcularLimpieza({
+      ...defaultInputsLimpieza,
+      horasLimpieza: horas,
+      horasDia: 10,
+      diasTrabajo: Math.ceil(horas / 10),
+    })
+    return r.subtotalSinImprevistos
+  })()
+  const costoLimpiezaManual = inp.costoLimpiezaMecanicaOverride
   const costoLimpieza = inp.incluirLimpieza
-    ? (() => {
-        const horas = inp.horasLimpiezaMecanica ?? 20
-        const r = calcularLimpieza({
-          ...defaultInputsLimpieza,
-          horasLimpieza: horas,
-          horasDia: 10,
-          diasTrabajo: Math.ceil(horas / 10),
-        })
-        return r.subtotalSinImprevistos
-      })()
+    ? (typeof costoLimpiezaManual === 'number' && Number.isFinite(costoLimpiezaManual) && costoLimpiezaManual >= 0
+      ? costoLimpiezaManual
+      : costoLimpiezaAuto)
     : 0
 
   // Comisión: 1% sobre ingresos NETOS (bruto - IVA 12% - ISR 5% = bruto x 0.83)
@@ -790,7 +800,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   const costoTotalProyecto =
     costoOperacionPerforacion + costoTraslado +
     costoBentonita + costoGrava + costoFleteReal + costoTuberia + costoFiltros +
-    costoSelloSanitario + costoAforo + costoLimpieza + costoComision +
+    costoRegistroElectrico + costoSelloSanitario + costoAforo + costoLimpieza + costoComision +
     costoPipasAgua + costoSoldador + costoTaponTuberia + costoBrocaCompra +
     costoExtraccionLodosTotal + costoSeguridadTotal + costoSanitarioTotal
 
@@ -818,7 +828,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
     costoHospedaje, costoBonificaciones, costoTraslado, imprevistoTraslado, totalTrasladoIV,
     costoBentonita, sacosBentonita, sacosEntregaCliente, sacosReserva, valorReservaBentonita,
     m3Grava, costoGrava, costoFleteGrava, camionesFlete, costoFleteReal, reservaFlete,
-    costoTuberia, costoFiltros, costoSelloSanitario,
+    costoTuberia, costoFiltros, costoRegistroElectrico, costoSelloSanitario,
     costoAforo, costoLimpieza, costoComision,
     costoPipasAgua, costoSoldador, costoTaponTuberia, costoBrocaCompra,
     costoExtraccionLodosTotal, costoSeguridadTotal, costoSanitarioTotal,
@@ -1274,6 +1284,8 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   costoBroca: 27500,
 
   // Servicios opcionales con costo (Hoja "Precio pie perforado")
+  costoRegistroElectrico: 8000,
+  costoSelloSanitario: 500,
   costoExtraccionLodos: 32000, // Q20,000 base + Q12,000 adicional = Q32,000
   costoSeguridad: 200,         // cargo de seguridad
   costoSanitario: 800,         // baños portátiles

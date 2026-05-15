@@ -650,8 +650,13 @@ export default function NuevaCotizacionPage() {
     ? ajustarResidualPerforacionPorPrecioPie(lineasBase, ip.profundidad, ip.precioPorPieVenta, cfgDe)
     : lineasBase
   const lineasBaseConDescripcion = lineasBaseAjustadas.map(linea => {
-    const descripcion = cfgDe(linea.key).descripcionCustom?.trim()
-    return descripcion ? { ...linea, nombre: descripcion } : linea
+    const cfg = cfgDe(linea.key)
+    const nombre = cfg.nombreCustom?.trim()
+    const descripcion = cfg.descripcionCustom?.trim()
+    if (nombre && descripcion) return { ...linea, nombre: `${nombre}. ${descripcion}` }
+    if (nombre) return { ...linea, nombre }
+    if (descripcion) return { ...linea, nombre: descripcion }
+    return linea
   })
   const todasLineas = [...lineasBaseConDescripcion, ...lineasExtrasFormateadas]
   const lineasCobradas = todasLineas.filter(l => cfgDe(l.key).cobrar)
@@ -1188,7 +1193,12 @@ export default function NuevaCotizacionPage() {
             {/* Calculadora */}
             {tipo === 'perforacion'
               ? <CalcPerforacion ip={ip} patchIp={patchIp} showCostos={showCostos} setShowCostos={setShowCostos} res={resPerf} rol={rolUsuario}
+                  pl={pl}
+                  patchPl={patchPl}
                   preciosVentaOverride={preciosVentaOverride}
+                  setPreciosVentaOverride={setPreciosVentaOverride}
+                  costosCotizacionOverride={costosCotizacionOverride}
+                  setCostosCotizacionOverride={setCostosCotizacionOverride}
                   lineasConfig={lineasConfig}
                   setLineasConfig={setLineasConfig} />
               : <CalcServicios
@@ -2036,16 +2046,37 @@ function ContactoSelector({ onSelect }: { onSelect: (c: ContactoMini) => void })
 }
 
 // ── Calculadora Perforación ──────────────────────────────────────────────────
-function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, preciosVentaOverride, lineasConfig, setLineasConfig }: {
+function CalcPerforacion({
+  ip,
+  patchIp,
+  showCostos,
+  setShowCostos,
+  res,
+  rol,
+  pl,
+  patchPl,
+  preciosVentaOverride,
+  setPreciosVentaOverride,
+  costosCotizacionOverride,
+  setCostosCotizacionOverride,
+  lineasConfig,
+  setLineasConfig,
+}: {
   ip: InputsPerforacion; patchIp: (k: keyof InputsPerforacion, v: number | boolean | string) => void
   showCostos: boolean; setShowCostos: (v: boolean) => void
   res: ReturnType<typeof calcularPerforacion>
   rol: 'admin' | 'superadmin'
+  pl: PreciosLineas
+  patchPl: (key: keyof PreciosLineas, val: number) => void
   preciosVentaOverride?: Record<string, number>
+  setPreciosVentaOverride: React.Dispatch<React.SetStateAction<Record<string, number>>>
+  costosCotizacionOverride?: Record<string, number>
+  setCostosCotizacionOverride: React.Dispatch<React.SetStateAction<Record<string, number>>>
   lineasConfig: Record<string, LineaConfig>
   setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
   const ovr = preciosVentaOverride ?? {}
+  const costosOverride = costosCotizacionOverride ?? {}
   const sacos = sacosDebentonita(ip.diametro, ip.profundidad)
   const espLisa  = getEspesoresDisponibles('lisa',     ip.diametroTuberia, ip.tuberiasExtra ?? [])
   const espRan   = getEspesoresDisponibles('ranurada', ip.diametroTuberia, ip.tuberiasExtra ?? [])
@@ -2104,6 +2135,20 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
   }
   const detalleServicio = (key: string, fallback: string) =>
     lineasConfig[key]?.descripcionCustom ?? fallback
+  const nombreServicio = (key: string, fallback: string) =>
+    lineasConfig[key]?.nombreCustom ?? fallback
+  const setNombreServicio = (key: string, value: string) => {
+    setLineasConfig(prev => {
+      const actual = prev[key] ?? { mostrar: true, cobrar: true }
+      return {
+        ...prev,
+        [key]: {
+          ...actual,
+          nombreCustom: value,
+        },
+      }
+    })
+  }
   const setDetalleServicio = (key: string, value: string) => {
     setLineasConfig(prev => {
       const actual = prev[key] ?? { mostrar: true, cobrar: true }
@@ -2115,6 +2160,154 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         },
       }
     })
+  }
+  const limpiarOverrideVenta = (lineKey: string) => {
+    setPreciosVentaOverride(prev => {
+      if (!(lineKey in prev)) return prev
+      const next = { ...prev }
+      delete next[lineKey]
+      return next
+    })
+  }
+  const piesSello = Math.max(1, ip.piesSelloSanitario ?? 20)
+  const horasLimpieza = Math.max(1, ip.horasLimpiezaMecanica ?? 20)
+  const ventaTotalServicio = (lineKey: string): number | null => {
+    const override = preciosVentaOverride?.[lineKey]
+    if (lineKey === 'registro-electrico') return override ?? pl.registroElectrico
+    if (lineKey === 'sello-sanitario') return override ?? (pl.selloSanitario * piesSello)
+    if (lineKey === 'extraccion-lodos') return override ?? pl.desarrolloLimpieza
+    if (lineKey === 'limpieza-mecanica') return override !== undefined ? override * horasLimpieza : pl.precioLimpiezaHora * horasLimpieza
+    if (lineKey === 'sopleteado') return override ?? pl.sopleteado
+    return null
+  }
+  const setVentaTotalServicio = (lineKey: string, value: number) => {
+    const total = Math.max(0, value)
+    if (lineKey === 'registro-electrico') {
+      patchPl('registroElectrico', total)
+      limpiarOverrideVenta(lineKey)
+    } else if (lineKey === 'sello-sanitario') {
+      patchPl('selloSanitario', Math.round((total / piesSello) * 100) / 100)
+      limpiarOverrideVenta(lineKey)
+    } else if (lineKey === 'extraccion-lodos') {
+      patchPl('desarrolloLimpieza', total)
+      limpiarOverrideVenta(lineKey)
+    } else if (lineKey === 'limpieza-mecanica') {
+      patchPl('precioLimpiezaHora', Math.round((total / horasLimpieza) * 100) / 100)
+      limpiarOverrideVenta(lineKey)
+    } else if (lineKey === 'sopleteado') {
+      patchPl('sopleteado', total)
+      limpiarOverrideVenta(lineKey)
+    }
+  }
+  const costoServicio = (lineKey: string): number => {
+    if (lineKey === 'registro-electrico') return ip.costoRegistroElectrico ?? COSTOS_BASE.registroElectrico.costoUnitario
+    if (lineKey === 'sello-sanitario') return ip.costoSelloSanitario ?? 500
+    if (lineKey === 'extraccion-lodos') return ip.costoExtraccionLodos
+    if (lineKey === 'servicio-perf-seguridad') return ip.costoSeguridad
+    if (lineKey === 'servicio-perf-sanitario') return ip.costoSanitario
+    if (lineKey === 'limpieza-mecanica') return res.costoLimpieza
+    if (lineKey === 'servicio-perf-broca') return ip.costoBroca
+    if (lineKey === 'sopleteado') return costosOverride.sopleteado ?? COSTOS_BASE.sopleteado.costoUnitario
+    return 0
+  }
+  const setCostoServicio = (lineKey: string, value: number) => {
+    const costo = Math.max(0, value)
+    if (lineKey === 'registro-electrico') patchIp('costoRegistroElectrico', costo)
+    else if (lineKey === 'sello-sanitario') patchIp('costoSelloSanitario', costo)
+    else if (lineKey === 'extraccion-lodos') patchIp('costoExtraccionLodos', costo)
+    else if (lineKey === 'servicio-perf-seguridad') patchIp('costoSeguridad', costo)
+    else if (lineKey === 'servicio-perf-sanitario') patchIp('costoSanitario', costo)
+    else if (lineKey === 'limpieza-mecanica') patchIp('costoLimpiezaMecanicaOverride', costo)
+    else if (lineKey === 'servicio-perf-broca') patchIp('costoBroca', costo)
+    else if (lineKey === 'sopleteado') setCostosCotizacionOverride(prev => ({ ...prev, sopleteado: costo }))
+  }
+  const renderServicioEditor = (servicio: {
+    lineKey: string
+    label: string
+    detalle: string
+    visibleCliente: boolean
+  }) => {
+    const nombre = nombreServicio(servicio.lineKey, servicio.label)
+    const detalle = detalleServicio(servicio.lineKey, servicio.detalle)
+    const costo = costoServicio(servicio.lineKey)
+    const venta = ventaTotalServicio(servicio.lineKey)
+    const ganancia = venta === null ? null : venta - costo
+
+    return (
+      <div className="px-3 pb-3 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Nombre</label>
+            <input
+              value={nombre}
+              onChange={e => setNombreServicio(servicio.lineKey, e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Me sale</label>
+              <DecimalInput
+                step={0.01}
+                min={0}
+                value={costo}
+                onValueChange={value => setCostoServicio(servicio.lineKey, value)}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Le gano</label>
+              {ganancia === null ? (
+                <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-[11px] text-slate-400">
+                  En margen general
+                </div>
+              ) : (
+                <DecimalInput
+                  step={0.01}
+                  value={ganancia}
+                  onValueChange={value => setVentaTotalServicio(servicio.lineKey, costo + value)}
+                  className={cn(
+                    'w-full rounded-lg border bg-white/5 px-3 py-2 text-xs tabular-nums outline-none focus:border-blue-500/50',
+                    ganancia >= 0 ? 'border-white/10 text-emerald-300' : 'border-red-500/40 text-red-300'
+                  )}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+        {venta !== null && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Le cobro</label>
+              <DecimalInput
+                step={0.01}
+                min={0}
+                value={venta}
+                onValueChange={value => setVentaTotalServicio(servicio.lineKey, value)}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
+              />
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2">
+              <span className="block text-[10px] text-slate-500 uppercase tracking-wide">Margen</span>
+              <span className={cn('text-sm font-bold tabular-nums', ganancia !== null && ganancia >= 0 ? 'text-emerald-300' : 'text-red-300')}>
+                {ganancia !== null && venta > 0 ? `${((ganancia / venta) * 100).toFixed(1)}%` : '0.0%'}
+              </span>
+            </div>
+          </div>
+        )}
+        <div>
+          <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">
+            {servicio.visibleCliente ? 'Texto visible en cotizacion' : 'Nota interna editable'}
+          </label>
+          <textarea
+            value={detalle}
+            onChange={e => setDetalleServicio(servicio.lineKey, e.target.value)}
+            rows={2}
+            className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -2398,7 +2591,7 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         <div className="space-y-2">
           {serviciosIncluidos.map(s => {
             const active = !!ip[s.key]
-            const detalle = detalleServicio(s.lineKey, s.detalle)
+            const nombre = nombreServicio(s.lineKey, s.label)
             return (
             <div
               key={s.key}
@@ -2431,24 +2624,17 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
                     {active ? 'Si' : 'No'}
                   </span>
                   <span className="min-w-0">
-                    <span className={cn('block text-sm font-semibold', active ? 'text-white' : 'text-slate-400')}>{s.label}</span>
+                    <span className={cn('block text-sm font-semibold', active ? 'text-white' : 'text-slate-400')}>{nombre}</span>
                     <span className="block text-[10px] text-slate-600 mt-0.5">{s.hint}</span>
                   </span>
                 </div>
               </button>
-              {active && (
-                <div className="px-3 pb-3">
-                  <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">
-                    {s.visibleCliente ? 'Texto visible en cotizacion' : 'Nota interna editable'}
-                  </label>
-                  <textarea
-                    value={detalle}
-                    onChange={e => setDetalleServicio(s.lineKey, e.target.value)}
-                    rows={2}
-                    className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
-                  />
-                </div>
-              )}
+              {active && renderServicioEditor({
+                lineKey: s.lineKey,
+                label: s.label,
+                detalle: s.detalle,
+                visibleCliente: s.visibleCliente,
+              })}
             </div>
             )
           })}
@@ -2476,22 +2662,12 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
                   {servicioSopleteado.active ? 'Si' : 'No'}
                 </span>
                 <span className="min-w-0">
-                  <span className={cn('block text-sm font-semibold', servicioSopleteado.active ? 'text-white' : 'text-slate-400')}>{servicioSopleteado.label}</span>
+                  <span className={cn('block text-sm font-semibold', servicioSopleteado.active ? 'text-white' : 'text-slate-400')}>{nombreServicio(servicioSopleteado.lineKey, servicioSopleteado.label)}</span>
                   <span className="block text-[10px] text-slate-600 mt-0.5">{servicioSopleteado.hint}</span>
                 </span>
               </div>
             </button>
-            {servicioSopleteado.active && (
-              <div className="px-3 pb-3">
-                <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Texto visible en cotizacion</label>
-                <textarea
-                  value={detalleServicio(servicioSopleteado.lineKey, servicioSopleteado.detalle)}
-                  onChange={e => setDetalleServicio(servicioSopleteado.lineKey, e.target.value)}
-                  rows={2}
-                  className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
-                />
-              </div>
-            )}
+            {servicioSopleteado.active && renderServicioEditor(servicioSopleteado)}
           </div>
         </div>
 
@@ -3110,6 +3286,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
           [`Bentonita (${res.sacosBentonita} sacos)`, res.costoBentonita],
           ['Pipas de agua',          res.costoPipasAgua],
           ['Aforo',                  res.costoAforo],
+          ...(res.costoRegistroElectrico > 0   ? [['Registro eléctrico',  res.costoRegistroElectrico]]   : []),
           ['Soldador',               res.costoSoldador],
           ['Tubería lisa (costo interno)',           res.costoTuberia],
           ['Tubería ranurada (costo interno)',       res.costoFiltros],
@@ -3741,7 +3918,7 @@ function buildLineasPerf(
 
     ...(ip.incluirSelloSanitario ? [{ key: 'sello-sanitario',
       nombre: 'Instalación de sello sanitario de concreto.',
-      unidad: 'Und', cant: 1, precio: pl.selloSanitario }] : []),
+      unidad: 'Und', cant: 1, precio: Math.round(pl.selloSanitario * (ip.piesSelloSanitario ?? 20)) }] : []),
 
     { key: 'sopleteado',
       nombre: 'Sopleteado con compresor para acomodamiento de la grava y agitación del acuífero.',
@@ -3750,7 +3927,7 @@ function buildLineasPerf(
     // Línea 14 y 15 separadas nuevamente (desecha la unificación previa)
     ...(ip.incluirLimpieza ? [{ key: 'limpieza-mecanica',
       nombre: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.',
-      unidad: 'Hora', cant: 20, precio: pl.precioLimpiezaHora }] : []),
+      unidad: 'Hora', cant: ip.horasLimpiezaMecanica ?? 20, precio: pl.precioLimpiezaHora }] : []),
 
     ...(ip.incluirExtraccionLodos ? [{ key: 'extraccion-lodos',
       nombre: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.',

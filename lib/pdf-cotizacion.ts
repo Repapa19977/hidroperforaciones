@@ -125,7 +125,7 @@ export function buildLineasPerf(
     // Línea 14 y 15 separadas nuevamente (desecha la unificación previa)
     ...(ip.incluirLimpieza ? [{ key: 'limpieza-mecanica',
       nombre: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.',
-      unidad: 'Hora', cant: 20, precio: pl.precioLimpiezaHora }] : []),
+      unidad: 'Hora', cant: ip.horasLimpiezaMecanica ?? 20, precio: pl.precioLimpiezaHora }] : []),
 
     ...(ip.incluirExtraccionLodos ? [{ key: 'extraccion-lodos',
       nombre: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.',
@@ -566,8 +566,13 @@ export async function generarPDF(
     ? ajustarResidualPerforacion(lineasBase)
     : lineasBase
   const lineasBaseConDescripcion = lineasBaseAjustadas.map(linea => {
-    const descripcion = getLineaConfig(linea.key, lineasConfig, lineasActivas).descripcionCustom?.trim()
-    return descripcion ? { ...linea, nombre: descripcion } : linea
+    const cfg = getLineaConfig(linea.key, lineasConfig, lineasActivas)
+    const nombre = cfg.nombreCustom?.trim()
+    const descripcion = cfg.descripcionCustom?.trim()
+    if (nombre && descripcion) return { ...linea, nombre: `${nombre}. ${descripcion}` }
+    if (nombre) return { ...linea, nombre }
+    if (descripcion) return { ...linea, nombre: descripcion }
+    return linea
   })
   const todasLineas: LineaFinal[] = [...lineasBaseConDescripcion, ...extras]
 

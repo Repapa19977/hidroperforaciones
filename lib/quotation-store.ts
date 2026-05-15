@@ -91,6 +91,7 @@ export interface QuotationData {
 export interface LineaConfig {
   mostrar: boolean   // true = visible en PDF al cliente
   cobrar: boolean    // true = suma al subtotal de la cotización
+  nombreCustom?: string       // nombre/título editable para la línea base
   descripcionCustom?: string  // texto editable visible para líneas base o nota interna para toggles
 }
 
