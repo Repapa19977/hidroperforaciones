@@ -638,7 +638,9 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   const profundidadMetros = Math.round(inp.profundidad * 0.3048)
 
   // Días
-  const diasPerforacion = Math.ceil(inp.profundidad / inp.rendimientoPorDia)
+  const diasPerforacion = inp.profundidad > 0 && inp.rendimientoPorDia > 0
+    ? Math.ceil(inp.profundidad / inp.rendimientoPorDia)
+    : 0
   const totalDiasMaquinaria = diasPerforacion + inp.diasExtra
 
   // ── INGRESOS ──
@@ -814,7 +816,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
 
   // Precio/pie: usa SOLO costo de operación (no materiales) — fórmula Excel reunión
   // Ej: operación 211,300 / 1100 pies = 192.09 × 1.19 × 1.55 = Q 354.31/pie
-  const costoPorPie = costoOperacionPerforacion / inp.profundidad
+  const costoPorPie = inp.profundidad > 0 ? costoOperacionPerforacion / inp.profundidad : 0
   const markupPct = inp.markupPrecioPorPiePct ?? 0.55
   const precioPorPieCalculado = costoPorPie * (1 + TOTAL_IMPUESTOS) * (1 + markupPct)
 
@@ -1216,12 +1218,12 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   // Pozo
   diametro: 12.25,           // "12 1/4 pulgadas" — diámetro de perforación
   diametroTuberia: 8,        // tubería 8 pulgadas
-  profundidad: 800,
-  precioPorPieVenta: 750,
+  profundidad: 0,
+  precioPorPieVenta: 0,
 
-  // Tubería 70/30 (40 tubos total)
-  tubosLisos: 28,            // 70% × 40
-  tubosRanurados: 12,        // 30% × 40
+  // Tubería 70/30
+  tubosLisos: 0,             // se auto-calcula al ingresar profundidad
+  tubosRanurados: 0,         // se auto-calcula al ingresar profundidad
   espesorLisa: 0.250,        // 8 × 0.250 = Q2,600/tubo
   espesorRanurada: 0.250,    // 8 × 0.250 = Q3,200/tubo
   tipoRanura: 'longitudinal',
@@ -1252,7 +1254,7 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   casaEquipoMensual: 2250,      // Q/mes renta casa donde se queda el equipo (nuevo rubro)
 
   // Traslado — valores reales del Excel COSTO TRASLADO PERFORACION.xlsx
-  kilometros: 120,
+  kilometros: 0,
   precioDieselTraslado: 33.81,
   diasTraslado: 2,
   diasTrasladoTuberia: 3,          // piloto camión tubería: 1 día extra

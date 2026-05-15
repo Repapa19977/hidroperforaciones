@@ -262,8 +262,6 @@ export default function NuevaCotizacionPage() {
       // ── Modo edición: cargar cotización existente ──────────────────────────
       setEditMode(true)
       setCorrelativo(editParam)
-      // Al editar, marcar el precio/pie como ya inicializado para no sobrescribir el guardado
-      setPrecioPieInicializado(true)
       // Cargar solo precios lineas + permisos de config (no defaults de ip/il)
       fetch('/api/config')
         .then(r => r.ok ? r.json() : DEFAULT_CONFIG)
@@ -349,7 +347,6 @@ export default function NuevaCotizacionPage() {
     } else if (duplicateParam) {
       // ── Modo duplicación: cargar datos de la original pero con correlativo NUEVO y estado borrador ──
       setDuplicadoDe(duplicateParam)
-      setPrecioPieInicializado(true)
       // Config
       fetch('/api/config')
         .then(r => r.ok ? r.json() : DEFAULT_CONFIG)
@@ -483,9 +480,6 @@ export default function NuevaCotizacionPage() {
   }, [vendedoresDB, vendedor, vendedorEmail])
 
   const [ip, setIp] = useState<InputsPerforacion>(defaultInputsPerforacion)
-  // Sincronización única al crear cotización nueva: el precio/pie arranca con la fórmula,
-  // después el usuario lo edita manualmente (no hay auto-sync continuo).
-  const [precioPieInicializado, setPrecioPieInicializado] = useState(false)
   const [il, setIl] = useState<InputsLimpieza>(defaultInputsLimpieza)
 
   // Opciones de cotización
@@ -528,22 +522,11 @@ export default function NuevaCotizacionPage() {
     setDuracion(`${dias} días hábiles`)
   }, [tipo, resPerf.totalDiasMaquinaria, resLimp.diasTotales])
 
-  // Init ONE-TIME: cuando es cotización nueva (no edición), setear precio/pie con la fórmula
-  // como punto de partida. Después queda 100% manual — usuario puede editar libremente.
-  useEffect(() => {
-    if (precioPieInicializado || editMode || tipo !== 'perforacion') return
-    const sugerido = Math.round(resPerf.precioPorPieCalculado)
-    if (sugerido > 0) {
-      setIp(prev => ({ ...prev, precioPorPieVenta: sugerido }))
-      setPrecioPieInicializado(true)
-    }
-  }, [precioPieInicializado, editMode, tipo, resPerf.precioPorPieCalculado])
-
   // Auto-sync tubos cuando cambia profundidad — SIEMPRE aplica 70/30 (lisa/ranurada).
   // Cada tubo = 20 pies. Ajustes manuales posteriores se respetan hasta el próximo cambio de profundidad.
   useEffect(() => {
     setIp(prev => {
-      const tubosTotales = Math.max(1, Math.ceil(prev.profundidad / 20))
+      const tubosTotales = prev.profundidad > 0 ? Math.ceil(prev.profundidad / 20) : 0
       const nuevosLisos = Math.round(tubosTotales * 0.7)
       const nuevosRanurados = tubosTotales - nuevosLisos
       if (prev.tubosLisos === nuevosLisos && prev.tubosRanurados === nuevosRanurados) return prev
@@ -570,8 +553,17 @@ export default function NuevaCotizacionPage() {
     setIl(prev => prev.equipoServicio === '10T1' ? prev : { ...prev, equipoServicio: '10T1' })
   }, [tipo])
 
-  const patchIp = (key: keyof InputsPerforacion, val: number | boolean | string) =>
+  const patchIp = (key: keyof InputsPerforacion, val: number | boolean | string) => {
     setIp(prev => ({ ...prev, [key]: val }))
+    if ((key === 'kilometros' || key === 'profundidad' || key === 'precioPorPieVenta') && typeof val === 'number' && val > 0) {
+      setErrors(prev => {
+        if (!prev[key]) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    }
+  }
   const patchIl = (key: keyof InputsLimpieza, val: number | boolean | string) =>
     setIl(prev => ({ ...prev, [key]: val }))
   const setServicioSubtipo = (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => {
@@ -721,6 +713,15 @@ export default function NuevaCotizacionPage() {
     }
 
     if (tipo === 'perforacion') {
+      if (!Number.isFinite(ip.kilometros) || ip.kilometros <= 0) {
+        e.kilometros = 'Km obligatorio'
+      }
+      if (!Number.isFinite(ip.profundidad) || ip.profundidad <= 0) {
+        e.profundidad = 'Profundidad obligatoria'
+      }
+      if (!Number.isFinite(ip.precioPorPieVenta) || ip.precioPorPieVenta <= 0) {
+        e.precioPorPieVenta = 'Precio obligatorio'
+      }
       if (ip.tubosLisos > 0) {
         const precioLisa = getPrecioTuberia('lisa', ip.diametroTuberia, ip.espesorLisa, ip.tuberiasOverride, ip.tuberiasExtra)
         if (precioLisa <= 0) {
@@ -1196,6 +1197,7 @@ export default function NuevaCotizacionPage() {
                   setPreciosVentaOverride={setPreciosVentaOverride}
                   costosCotizacionOverride={costosCotizacionOverride}
                   setCostosCotizacionOverride={setCostosCotizacionOverride}
+                  errors={errors}
                   lineasConfig={lineasConfig}
                   setLineasConfig={setLineasConfig} />
               : <CalcServicios
@@ -2056,6 +2058,7 @@ function CalcPerforacion({
   setPreciosVentaOverride,
   costosCotizacionOverride,
   setCostosCotizacionOverride,
+  errors,
   lineasConfig,
   setLineasConfig,
 }: {
@@ -2069,6 +2072,7 @@ function CalcPerforacion({
   setPreciosVentaOverride: React.Dispatch<React.SetStateAction<Record<string, number>>>
   costosCotizacionOverride?: Record<string, number>
   setCostosCotizacionOverride: React.Dispatch<React.SetStateAction<Record<string, number>>>
+  errors: Record<string, string>
   lineasConfig: Record<string, LineaConfig>
   setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
@@ -2085,12 +2089,12 @@ function CalcPerforacion({
   // Auto-calcular tubos desde profundidad: cada tubo = 20 pies.
   // 800 pies / 20 = 40 tubos totales → 70% lisos (28) + 30% ranurados (12)
   function autoSplit70_30() {
-    const tubosTotales = Math.max(1, Math.ceil(ip.profundidad / 20))
+    const tubosTotales = ip.profundidad > 0 ? Math.ceil(ip.profundidad / 20) : 0
     const lisos = Math.round(tubosTotales * 0.7)
     patchIp('tubosLisos', lisos)
     patchIp('tubosRanurados', tubosTotales - lisos)
   }
-  const tubosSugeridos = Math.max(1, Math.ceil(ip.profundidad / 20))
+  const tubosSugeridos = ip.profundidad > 0 ? Math.ceil(ip.profundidad / 20) : 0
   const lisosSugeridos = Math.round(tubosSugeridos * 0.7)
   const ranuradosSugeridos = tubosSugeridos - lisosSugeridos
   const coincideConProfundidad = (ip.tubosLisos + ip.tubosRanurados) === tubosSugeridos
@@ -2336,17 +2340,21 @@ function CalcPerforacion({
             value={ip.kilometros}
             onChange={v => patchIp('kilometros', v)}
             hint={`${ip.kilometros * 2} km ida y vuelta - afecta traslado`}
+            error={errors.kilometros}
           />
           <NumInput
             label="Profundidad (pies)"
             value={ip.profundidad}
             onChange={v => patchIp('profundidad', v)}
             hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`}
+            error={errors.profundidad}
           />
           <div>
             <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
               Precio/pie venta (Q)
-              <span className="text-[9px] text-blue-400 ml-auto">editable</span>
+              {errors.precioPorPieVenta
+                ? <span className="text-[10px] text-red-400 ml-auto">{errors.precioPorPieVenta}</span>
+                : <span className="text-[9px] text-blue-400 ml-auto">editable</span>}
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
@@ -2355,11 +2363,16 @@ function CalcPerforacion({
                 min={0}
                 value={ip.precioPorPieVenta}
                 onValueChange={value => patchIp('precioPorPieVenta', value)}
-                className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-2.5 text-sm font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
+                className={cn(
+                  'w-full border rounded-lg pl-8 pr-3 py-2.5 text-sm font-bold text-white outline-none transition-colors tabular-nums',
+                  errors.precioPorPieVenta
+                    ? 'bg-red-500/5 border-red-500/50 focus:border-red-400'
+                    : 'bg-white/5 border-blue-500/40 focus:border-blue-500/70'
+                )}
               />
             </div>
             <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-              Auto-sugerido {formatQ(res.precioPorPieCalculado)}
+              {errors.precioPorPieVenta ?? <>Auto-sugerido {formatQ(res.precioPorPieCalculado)}</>}
             </p>
           </div>
           <div>
@@ -3562,22 +3575,27 @@ function DecimalInput({
   )
 }
 
-function NumInput({ label, value, onChange, onBlur, hint, accent }: {
+function NumInput({ label, value, onChange, onBlur, hint, accent, error }: {
   label: string; value: number; onChange: (v: number) => void
   onBlur?: (v: number) => void
-  hint?: string; accent?: boolean
+  hint?: string; accent?: boolean; error?: string
 }) {
   const id = useId()
-  const hintId = hint ? `${id}-hint` : undefined
+  const hintId = hint || error ? `${id}-hint` : undefined
   const moneyInput = isMoneyInputLabel(label)
   const inputClass = cn('w-full rounded-lg px-3 py-2.5 text-base sm:text-sm font-medium outline-none transition-colors',
-    accent
+    error
+      ? 'bg-red-500/5 border border-red-500/50 text-white focus:border-red-400'
+      : accent
       ? 'bg-blue-500/10 border border-blue-500/30 text-blue-300 focus:border-blue-400'
       : 'bg-white/5 border border-white/10 text-white focus:border-blue-500/50'
   )
   return (
     <div>
-      <label htmlFor={id} className="text-xs text-slate-400 mb-1 block font-medium">{label}</label>
+      <label htmlFor={id} className="text-xs text-slate-400 mb-1 block font-medium">
+        {label}
+        {error && <span className="ml-2 text-red-400">{error}</span>}
+      </label>
       {moneyInput ? (
         <DecimalInput
           id={id}
@@ -3601,7 +3619,11 @@ function NumInput({ label, value, onChange, onBlur, hint, accent }: {
           className={inputClass}
         />
       )}
-      {hint && <p id={hintId} className="text-[10px] text-slate-600 mt-1 leading-snug">{hint}</p>}
+      {(hint || error) && (
+        <p id={hintId} className={cn('text-[10px] mt-1 leading-snug', error ? 'text-red-400' : 'text-slate-600')}>
+          {error ?? hint}
+        </p>
+      )}
     </div>
   )
 }
