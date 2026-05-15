@@ -2371,14 +2371,6 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         </div>
       </div>
 
-      {/* 3. Rendimiento */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <NumInput label="Rendimiento (pies/día)" value={ip.rendimientoPorDia} onChange={v => patchIp('rendimientoPorDia', v)}
-          hint={`${res.diasPerforacion} días perforación + ${ip.diasExtra} extra = ${res.totalDiasMaquinaria} total`} />
-        <NumInput label="Días extra (engr./tubería)" value={ip.diasExtra} onChange={v => patchIp('diasExtra', v)}
-          hint={`Total maquinaria: ${res.totalDiasMaquinaria} días`} />
-      </div>
-
       {/* 4. Servicios incluidos */}
       <div>
         <p className="text-xs text-slate-500 mb-3 font-medium">Servicios Incluidos</p>
@@ -2500,6 +2492,19 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
 
           <div>
             <p className="text-xs text-slate-500 mb-3 font-medium">Maquinaria y Operación</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+              <NumInput label="Rendimiento (pies/día)" value={ip.rendimientoPorDia} onChange={v => patchIp('rendimientoPorDia', v)}
+                hint={`${res.diasPerforacion} días perforación + ${ip.diasExtra} extra = ${res.totalDiasMaquinaria} total`} />
+              <NumInput label="Días extra (engr./tubería)" value={ip.diasExtra} onChange={v => patchIp('diasExtra', v)}
+                hint={`Total maquinaria: ${res.totalDiasMaquinaria} días`} />
+              <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2.5">
+                <span className="block text-xs text-slate-500 mb-1.5">Total maquinaria</span>
+                <span className="block text-lg font-bold text-white tabular-nums">{res.totalDiasMaquinaria} días</span>
+                <span className="block text-[10px] text-slate-600 mt-1">
+                  {res.diasPerforacion} días perforación + {ip.diasExtra} extra
+                </span>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <NumInput label="Maquinaria/día (Q)" value={ip.costomaquinariaDia} onChange={v => patchIp('costomaquinariaDia', v)} hint="Rentabilidad diaria" />
               <NumInput label="Diésel/día en obra (Q)" value={ip.costoDieselDia} onChange={v => patchIp('costoDieselDia', v)} />
@@ -2523,7 +2528,8 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <NumInput label="Kilómetros al sitio" value={ip.kilometros} onChange={v => patchIp('kilometros', v)}
                 hint={`${ip.kilometros * 2} km ida/vuelta`} />
-              <NumInput label="Diésel traslado (Q/gal)" value={ip.precioDieselTraslado} onChange={v => patchIp('precioDieselTraslado', v)} />
+              <NumInput label="Precio diésel actual (Q/gal)" value={ip.precioDieselTraslado} onChange={v => patchIp('precioDieselTraslado', v)}
+                hint="Referencia MEM: Q33.81/gal autoservicio, 12-18 mayo 2026" />
               <NumInput label="Días traslado (regular)" value={ip.diasTraslado} onChange={v => patchIp('diasTraslado', v)}
                 hint={`Perf + 3 pilotos + supervisor`} />
               <NumInput label="Días piloto tubería" value={ip.diasTrasladoTuberia} onChange={v => patchIp('diasTrasladoTuberia', v)}

@@ -498,7 +498,7 @@ export interface InputsPerforacion {
   // Vehículos: 4 pesados (5 km/gal) + 2 livianos (25 km/gal)
   // Roles: personalPerforacion + 3 pilotos regulares + 1 piloto tubería + 1 supervisor
   kilometros: number              // km al sitio una vía (ej: 120 → 240 ida/vuelta)
-  precioDieselTraslado: number    // Q/galón (default 28)
+  precioDieselTraslado: number    // Q/galón (default 33.81, MEM 12-18 mayo 2026)
   diasTraslado: number            // días traslado grupo regular (default 2)
   diasTrasladoTuberia: number     // días piloto camión tubería (default 3 — trabaja un día más)
   personalTraslado: number        // @deprecated — mantener por backward compat
@@ -1243,7 +1243,7 @@ export const defaultInputsPerforacion: InputsPerforacion = {
 
   // Traslado — valores reales del Excel COSTO TRASLADO PERFORACION.xlsx
   kilometros: 120,
-  precioDieselTraslado: 28,
+  precioDieselTraslado: 33.81,
   diasTraslado: 2,
   diasTrasladoTuberia: 3,          // piloto camión tubería: 1 día extra
   personalTraslado: 7,             // @deprecated — no usado en fórmula
