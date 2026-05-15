@@ -254,8 +254,6 @@ export default function NuevaCotizacionPage() {
           }
           if (c.telefono)     setTelefono(c.telefono)
           if (c.email)        setEmail(c.email)
-          const partesDir = [c.municipio, c.departamento].filter(Boolean).join(', ')
-          if (partesDir)      setDireccion(partesDir)
         })
         .catch(() => {})
     }
@@ -471,7 +469,7 @@ export default function NuevaCotizacionPage() {
   const [email, setEmail]         = useState('')
   const [proyecto, setProyecto] = useState(PROYECTO_PERFORACION_DEFAULT)
   const [direccion, setDireccion] = useState('')
-  // Ubicación — usada para auto-crear el contacto con depto+municipio ya poblados.
+  // Ubicacion del pozo/proyecto. No se autollena desde Contacto porque ahi puede ir la oficina.
   const [departamento, setDepartamento] = useState('')
   const [municipio, setMunicipio] = useState('')
   const [aldea, setAldea] = useState('')
@@ -987,10 +985,6 @@ export default function NuevaCotizacionPage() {
                     if (c.empresa) setTipoCliente('empresa')
                     setTelefono(c.telefono || '')
                     setEmail(c.email || '')
-                    if (c.departamento) setDepartamento(c.departamento)
-                    if (c.municipio)    setMunicipio(c.municipio)
-                    const dir = [c.municipio, c.departamento].filter(Boolean).join(', ')
-                    if (dir) setDireccion(dir)
                   }}
                 />
               )}
@@ -1121,7 +1115,7 @@ export default function NuevaCotizacionPage() {
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Direccion exacta del proyecto
+                    <MapPin className="w-3 h-3" /> Direccion exacta del pozo / lugar de trabajo
                   </label>
                   <input value={direccion} onChange={e => setDireccion(e.target.value)}
                     placeholder="Ej. km. 16 carretera a El Salvador, lotificacion Arrazola 1"
@@ -1129,7 +1123,7 @@ export default function NuevaCotizacionPage() {
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Departamento *
+                    <MapPin className="w-3 h-3" /> Departamento del proyecto *
                     {errors.departamento && <span className="text-red-400 ml-1">{errors.departamento}</span>}
                   </label>
                   <select
@@ -1153,7 +1147,7 @@ export default function NuevaCotizacionPage() {
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Municipio *
+                    <MapPin className="w-3 h-3" /> Municipio del proyecto *
                     {errors.municipio && <span className="text-red-400 ml-1">{errors.municipio}</span>}
                     {!departamento && (
                       <span className="text-[10px] text-slate-600 ml-auto">elegi depto primero</span>
@@ -1178,7 +1172,7 @@ export default function NuevaCotizacionPage() {
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Aldea
+                    <MapPin className="w-3 h-3" /> Aldea / referencia
                   </label>
                   <input value={aldea} onChange={e => setAldea(e.target.value)}
                     placeholder="Opcional"
@@ -2114,37 +2108,60 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         </div>
       </div>
 
-      {/* 0. VALOR POR PIE — input principal destacado al inicio (SIEMPRE visible) */}
+      {/* 0. Datos principales del pozo */}
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-        <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div>
-            <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Valor por pie (al cliente)</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Precio de venta unitario - con IVA + ISR por defecto</p>
+            <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Datos principales del pozo</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Orden de captura: km al lugar, profundidad y precio al cliente.</p>
           </div>
           {ip.profundidad > 0 && (
-            <span className="text-[10px] text-slate-500 hidden sm:inline">× {ip.profundidad} pies</span>
+            <span className="text-[10px] text-slate-500 hidden sm:inline">{ip.profundidad} pies × {formatQ(ip.precioPorPieVenta)}</span>
           )}
         </div>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
-          <DecimalInput
-            step={0.01}
-            min={0}
-            value={ip.precioPorPieVenta}
-            onValueChange={value => patchIp('precioPorPieVenta', value)}
-            className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-3 text-lg font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <NumInput
+            label="Km al lugar"
+            value={ip.kilometros}
+            onChange={v => patchIp('kilometros', v)}
+            hint={`${ip.kilometros * 2} km ida y vuelta - afecta traslado`}
           />
+          <NumInput
+            label="Profundidad (pies)"
+            value={ip.profundidad}
+            onChange={v => patchIp('profundidad', v)}
+            hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`}
+          />
+          <div>
+            <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
+              Precio/pie venta (Q)
+              <span className="text-[9px] text-blue-400 ml-auto">editable</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
+              <DecimalInput
+                step={0.01}
+                min={0}
+                value={ip.precioPorPieVenta}
+                onValueChange={value => patchIp('precioPorPieVenta', value)}
+                className="w-full bg-white/5 border border-blue-500/40 rounded-lg pl-8 pr-3 py-2.5 text-sm font-bold text-white outline-none focus:border-blue-500/70 transition-colors tabular-nums"
+              />
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+              Auto-sugerido {formatQ(res.precioPorPieCalculado)}
+            </p>
+          </div>
         </div>
         <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
           {ip.profundidad > 0
-            ? <>Apagá los toggles IVA/ISR en el panel derecho y ese impuesto se <b>resta</b> del total final.</>
-            : <>Meté primero la profundidad del pozo abajo para ver el cálculo total.</>}
+            ? <>IVA/ISR se controlan desde el panel derecho; al apagarlos se restan del total final.</>
+            : <>Completa estos 3 datos para ver el calculo total.</>}
         </p>
       </div>
 
-      {/* 1. Parámetros del pozo */}
+      {/* 1. Parámetros técnicos del pozo */}
       <div>
-        <p className="text-xs text-slate-500 mb-3 font-medium">Parámetros del Pozo</p>
+        <p className="text-xs text-slate-500 mb-3 font-medium">Parámetros Técnicos del Pozo</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* Diámetro de perforación (broca) */}
           <div>
@@ -2168,29 +2185,6 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
             <p className="text-[10px] text-slate-600 mt-1">
               {PERFORACION_MM[ip.diametro] ? `${PERFORACION_MM[ip.diametro]} mm · ` : ''}{sacos} sacos bentonita
               {PRECIOS_BROCAS[ip.diametro] ? ` · broca ${formatQ(PRECIOS_BROCAS[ip.diametro])}` : ''}
-            </p>
-          </div>
-          <NumInput label="Profundidad (pies)" value={ip.profundidad} onChange={v => patchIp('profundidad', v)}
-            hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`} />
-          {/* Precio/pie venta al cliente — editable directo aquí (sincronizado con
-              el Valor por pie destacado del panel derecho). Cambia el total final. */}
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
-              Precio/pie venta (Q)
-              <span className="text-[9px] text-blue-400 ml-auto">editable</span>
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-medium">Q</span>
-              <DecimalInput
-                step={0.01}
-                min={0}
-                value={ip.precioPorPieVenta}
-                onValueChange={value => patchIp('precioPorPieVenta', value)}
-                className="w-full bg-white/5 border border-blue-500/30 rounded-lg pl-7 pr-3 py-2.5 text-sm font-semibold text-white outline-none focus:border-blue-500/60 transition-colors tabular-nums"
-              />
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-              Precio al cliente con IVA + ISR por defecto - auto-sugerido {formatQ(res.precioPorPieCalculado)}
             </p>
           </div>
         </div>
@@ -2217,16 +2211,10 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         />
       )}
 
-      {/* 1.5 Logística del proyecto (km + horas aforo + horas limpieza) */}
+      {/* 1.5 Logística del proyecto */}
       <div>
         <p className="text-xs text-slate-500 mb-3 font-medium">Logística del Proyecto</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <NumInput
-            label="Kilómetros al sitio"
-            value={ip.kilometros}
-            onChange={v => patchIp('kilometros', v)}
-            hint={`${ip.kilometros * 2} km ida y vuelta · afecta traslado`}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <NumInput
             label="Horas de aforo"
             value={ip.horasAforo}

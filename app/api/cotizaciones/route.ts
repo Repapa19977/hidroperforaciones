@@ -112,11 +112,9 @@ export async function POST(request: NextRequest) {
 
   // Auto-upsert contacto si el cliente tiene teléfono registrado (ignora contactos eliminados).
   // Si no llegó contactoId explícito, intentamos resolverlo por nombre+vendedor (fallback).
-  // Los campos depto/municipio/proyectoNombre vienen del cotizador y enriquecen el contacto.
+  // La ubicacion del cotizador pertenece al pozo/proyecto; no se copia como direccion de oficina del contacto.
   const telefono:       string = (datosCotizacion.telefono ?? '') as string
   const email:          string = (datosCotizacion.email ?? '') as string
-  const departamento:   string = (datosCotizacion.departamento ?? '') as string
-  const municipio:      string = (datosCotizacion.municipio ?? '') as string
   const proyectoNombre: string = (datosCotizacion.proyecto ?? proyecto ?? '') as string
   const tipoPersona = normalizeTipoPersona(
     datosCotizacion.tipoPersona ?? datosCotizacion.tipoCliente,
@@ -130,19 +128,16 @@ export async function POST(request: NextRequest) {
         where: { eliminadoEn: null },
         select: {
           id: true, nombre: true, empresa: true, telefono: true, email: true,
-          vendedor: true, createdAt: true, departamento: true, municipio: true,
-          proyectoNombre: true, tipoPersona: true,
+          vendedor: true, createdAt: true, proyectoNombre: true, tipoPersona: true,
         },
       })
       const existing = findContactoDuplicate({ nombre: cliente, empresa, telefono, email }, candidatos)
       if (existing) {
-        // Completamos campos vacios con lo que venga del cotizador, sin pisar datos ya capturados.
+        // Completamos datos de identidad del contacto sin pisar campos capturados.
         const parche: Record<string, string> = {}
         if (!existing.telefono     && telefono)       parche.telefono       = telefono
         if (!existing.email        && email)          parche.email          = email
         if (!existing.empresa      && empresa)        parche.empresa        = empresa
-        if (!existing.departamento && departamento)   parche.departamento   = departamento
-        if (!existing.municipio    && municipio)      parche.municipio      = municipio
         if (!existing.proyectoNombre && proyectoNombre) parche.proyectoNombre = proyectoNombre
         if (tipoPersona === 'empresa' && existing.tipoPersona !== 'empresa') parche.tipoPersona = 'empresa'
         if (Object.keys(parche).length > 0) {
@@ -158,8 +153,8 @@ export async function POST(request: NextRequest) {
           telefono,
           email,
           tipoPersona,
-          departamento,
-          municipio,
+          departamento: '',
+          municipio: '',
           proyectoNombre,
           vendedor,
         },
