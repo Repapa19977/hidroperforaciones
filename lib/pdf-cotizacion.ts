@@ -565,7 +565,11 @@ export async function generarPDF(
   const lineasBaseAjustadas = data.tipo === 'perforacion'
     ? ajustarResidualPerforacion(lineasBase)
     : lineasBase
-  const todasLineas: LineaFinal[] = [...lineasBaseAjustadas, ...extras]
+  const lineasBaseConDescripcion = lineasBaseAjustadas.map(linea => {
+    const descripcion = getLineaConfig(linea.key, lineasConfig, lineasActivas).descripcionCustom?.trim()
+    return descripcion ? { ...linea, nombre: descripcion } : linea
+  })
+  const todasLineas: LineaFinal[] = [...lineasBaseConDescripcion, ...extras]
 
   const lineas = todasLineas.filter(l => esVisible(l) && !ocultarServicioOpcional(l))
   const subtotal = todasLineas.filter(esCobrada).reduce((a, b) => a + b.total, 0)

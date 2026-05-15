@@ -91,6 +91,7 @@ export interface QuotationData {
 export interface LineaConfig {
   mostrar: boolean   // true = visible en PDF al cliente
   cobrar: boolean    // true = suma al subtotal de la cotización
+  descripcionCustom?: string  // texto editable visible para líneas base o nota interna para toggles
 }
 
 /** Override del usuario sobre una de las 18 condiciones default de perforación. */

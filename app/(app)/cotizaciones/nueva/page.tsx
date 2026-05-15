@@ -649,7 +649,11 @@ export default function NuevaCotizacionPage() {
   const lineasBaseAjustadas = tipo === 'perforacion'
     ? ajustarResidualPerforacionPorPrecioPie(lineasBase, ip.profundidad, ip.precioPorPieVenta, cfgDe)
     : lineasBase
-  const todasLineas = [...lineasBaseAjustadas, ...lineasExtrasFormateadas]
+  const lineasBaseConDescripcion = lineasBaseAjustadas.map(linea => {
+    const descripcion = cfgDe(linea.key).descripcionCustom?.trim()
+    return descripcion ? { ...linea, nombre: descripcion } : linea
+  })
+  const todasLineas = [...lineasBaseConDescripcion, ...lineasExtrasFormateadas]
   const lineasCobradas = todasLineas.filter(l => cfgDe(l.key).cobrar)
   const comparativaLimpieza = tipo === 'limpieza'
     ? buildComparativaLimpieza(il, resLimp, lineasCobradas, lineasExtrasCotizacion)
@@ -2076,24 +2080,41 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
   const setSopleteadoEnabled = (enabled: boolean) => {
     setLineasConfig(prev => ({
       ...prev,
-      sopleteado: { mostrar: enabled, cobrar: enabled },
+      sopleteado: { ...(prev.sopleteado ?? {}), mostrar: enabled, cobrar: enabled },
     }))
   }
   const serviciosIncluidos = [
-    { key: 'incluirRegistroElectrico' as const, label: 'Registro electrico', hint: 'Aparece en la cotizacion.' },
-    { key: 'incluirSelloSanitario' as const, label: 'Sello sanitario (Q75/pie x pies)', hint: 'Aparece en la cotizacion y habilita los pies de sello.' },
-    { key: 'incluirExtraccionLodos' as const, label: 'Extraccion de lodos', hint: 'Aparece en la cotizacion.' },
-    { key: 'incluirSeguridad' as const, label: 'Tuberia de seguridad', hint: 'Costo interno; afecta margen.' },
-    { key: 'incluirSanitario' as const, label: 'Sanitario', hint: 'Costo interno; afecta margen.' },
-    { key: 'incluirLimpieza' as const, label: 'Limpieza mecanica', hint: 'Aparece en la cotizacion.' },
-    { key: 'comprarBroca' as const, label: 'Compra de broca', hint: 'Costo interno; afecta margen.' },
+    { key: 'incluirRegistroElectrico' as const, lineKey: 'registro-electrico', label: 'Registro electrico', hint: 'Aparece en la cotizacion.', visibleCliente: true, detalle: 'Registro eléctrico para la detección de formaciones permeables.' },
+    { key: 'incluirSelloSanitario' as const, lineKey: 'sello-sanitario', label: 'Sello sanitario (Q75/pie x pies)', hint: 'Aparece en la cotizacion y habilita los pies de sello.', visibleCliente: true, detalle: 'Instalación de sello sanitario de concreto.' },
+    { key: 'incluirExtraccionLodos' as const, lineKey: 'extraccion-lodos', label: 'Extraccion de lodos', hint: 'Aparece en la cotizacion.', visibleCliente: true, detalle: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.' },
+    { key: 'incluirSeguridad' as const, lineKey: 'servicio-perf-seguridad', label: 'Tuberia de seguridad', hint: 'Costo interno; afecta margen.', visibleCliente: false, detalle: 'Tubería/casing de seguridad según condiciones del terreno.' },
+    { key: 'incluirSanitario' as const, lineKey: 'servicio-perf-sanitario', label: 'Sanitario', hint: 'Costo interno; afecta margen.', visibleCliente: false, detalle: 'Servicio sanitario portátil en obra.' },
+    { key: 'incluirLimpieza' as const, lineKey: 'limpieza-mecanica', label: 'Limpieza mecanica', hint: 'Aparece en la cotizacion.', visibleCliente: true, detalle: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.' },
+    { key: 'comprarBroca' as const, lineKey: 'servicio-perf-broca', label: 'Compra de broca', hint: 'Costo interno; afecta margen.', visibleCliente: false, detalle: 'Compra de broca según diámetro de perforación.' },
   ]
   const servicioSopleteado = {
     key: 'sopleteado',
+    lineKey: 'sopleteado',
     label: 'Sopleteado con compresor',
     hint: 'Linea 14; aparece y se cobra si esta activo.',
+    visibleCliente: true,
+    detalle: 'Sopleteado con compresor para acomodamiento de la grava y agitación del acuífero.',
     active: sopleteadoActivo,
     onToggle: () => setSopleteadoEnabled(!sopleteadoActivo),
+  }
+  const detalleServicio = (key: string, fallback: string) =>
+    lineasConfig[key]?.descripcionCustom ?? fallback
+  const setDetalleServicio = (key: string, value: string) => {
+    setLineasConfig(prev => {
+      const actual = prev[key] ?? { mostrar: true, cobrar: true }
+      return {
+        ...prev,
+        [key]: {
+          ...actual,
+          descripcionCustom: value,
+        },
+      }
+    })
   }
 
   return (
@@ -2377,68 +2398,101 @@ function CalcPerforacion({ ip, patchIp, showCostos, setShowCostos, res, rol, pre
         <div className="space-y-2">
           {serviciosIncluidos.map(s => {
             const active = !!ip[s.key]
+            const detalle = detalleServicio(s.lineKey, s.detalle)
             return (
-            <button
+            <div
               key={s.key}
-              type="button"
-              onClick={() => {
-                const nuevo = !active
-                patchIp(s.key, nuevo)
-                // Al activar comprarBroca, auto-fill precio desde catálogo
-                if (s.key === 'comprarBroca' && nuevo && PRECIOS_BROCAS[ip.diametro]) {
-                  patchIp('costoBroca', PRECIOS_BROCAS[ip.diametro])
-                }
-              }}
               className={cn(
-                'w-full rounded-lg border px-3 py-2.5 text-left transition-colors',
+                'w-full rounded-lg border transition-colors',
                 active
                   ? 'bg-blue-500/12 border-blue-500/35'
                   : 'bg-white/4 border-white/10 hover:bg-white/6 hover:border-white/20'
               )}
             >
-              <div className="flex items-center gap-3">
-                <span className={cn(
-                  'inline-flex h-7 min-w-[46px] items-center justify-center rounded-md border text-[11px] font-bold uppercase tracking-wide',
-                  active
-                    ? 'border-blue-400/40 bg-blue-500/20 text-blue-200'
-                    : 'border-white/10 bg-white/5 text-slate-500'
-                )}>
-                  {active ? 'Si' : 'No'}
-                </span>
-                <span className="min-w-0">
-                  <span className={cn('block text-sm font-semibold', active ? 'text-white' : 'text-slate-400')}>{s.label}</span>
-                  <span className="block text-[10px] text-slate-600 mt-0.5">{s.hint}</span>
-                </span>
-              </div>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nuevo = !active
+                  patchIp(s.key, nuevo)
+                  // Al activar comprarBroca, auto-fill precio desde catálogo
+                  if (s.key === 'comprarBroca' && nuevo && PRECIOS_BROCAS[ip.diametro]) {
+                    patchIp('costoBroca', PRECIOS_BROCAS[ip.diametro])
+                  }
+                }}
+                className="w-full px-3 py-2.5 text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={cn(
+                    'inline-flex h-7 min-w-[46px] items-center justify-center rounded-md border text-[11px] font-bold uppercase tracking-wide',
+                    active
+                      ? 'border-blue-400/40 bg-blue-500/20 text-blue-200'
+                      : 'border-white/10 bg-white/5 text-slate-500'
+                  )}>
+                    {active ? 'Si' : 'No'}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={cn('block text-sm font-semibold', active ? 'text-white' : 'text-slate-400')}>{s.label}</span>
+                    <span className="block text-[10px] text-slate-600 mt-0.5">{s.hint}</span>
+                  </span>
+                </div>
+              </button>
+              {active && (
+                <div className="px-3 pb-3">
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">
+                    {s.visibleCliente ? 'Texto visible en cotizacion' : 'Nota interna editable'}
+                  </label>
+                  <textarea
+                    value={detalle}
+                    onChange={e => setDetalleServicio(s.lineKey, e.target.value)}
+                    rows={2}
+                    className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
+                  />
+                </div>
+              )}
+            </div>
             )
           })}
-          <button
+          <div
             key={servicioSopleteado.key}
-            type="button"
-            onClick={servicioSopleteado.onToggle}
             className={cn(
-              'w-full rounded-lg border px-3 py-2.5 text-left transition-colors',
+              'w-full rounded-lg border transition-colors',
               servicioSopleteado.active
                 ? 'bg-blue-500/12 border-blue-500/35'
                 : 'bg-white/4 border-white/10 hover:bg-white/6 hover:border-white/20'
             )}
           >
-            <div className="flex items-center gap-3">
-              <span className={cn(
-                'inline-flex h-7 min-w-[46px] items-center justify-center rounded-md border text-[11px] font-bold uppercase tracking-wide',
-                servicioSopleteado.active
-                  ? 'border-blue-400/40 bg-blue-500/20 text-blue-200'
-                  : 'border-white/10 bg-white/5 text-slate-500'
-              )}>
-                {servicioSopleteado.active ? 'Si' : 'No'}
-              </span>
-              <span className="min-w-0">
-                <span className={cn('block text-sm font-semibold', servicioSopleteado.active ? 'text-white' : 'text-slate-400')}>{servicioSopleteado.label}</span>
-                <span className="block text-[10px] text-slate-600 mt-0.5">{servicioSopleteado.hint}</span>
-              </span>
-            </div>
-          </button>
+            <button
+              type="button"
+              onClick={servicioSopleteado.onToggle}
+              className="w-full px-3 py-2.5 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <span className={cn(
+                  'inline-flex h-7 min-w-[46px] items-center justify-center rounded-md border text-[11px] font-bold uppercase tracking-wide',
+                  servicioSopleteado.active
+                    ? 'border-blue-400/40 bg-blue-500/20 text-blue-200'
+                    : 'border-white/10 bg-white/5 text-slate-500'
+                )}>
+                  {servicioSopleteado.active ? 'Si' : 'No'}
+                </span>
+                <span className="min-w-0">
+                  <span className={cn('block text-sm font-semibold', servicioSopleteado.active ? 'text-white' : 'text-slate-400')}>{servicioSopleteado.label}</span>
+                  <span className="block text-[10px] text-slate-600 mt-0.5">{servicioSopleteado.hint}</span>
+                </span>
+              </div>
+            </button>
+            {servicioSopleteado.active && (
+              <div className="px-3 pb-3">
+                <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Texto visible en cotizacion</label>
+                <textarea
+                  value={detalleServicio(servicioSopleteado.lineKey, servicioSopleteado.detalle)}
+                  onChange={e => setDetalleServicio(servicioSopleteado.lineKey, e.target.value)}
+                  rows={2}
+                  className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Input pies de sello sanitario — aparece solo si el toggle está activo */}
