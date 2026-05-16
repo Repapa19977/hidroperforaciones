@@ -522,7 +522,7 @@ function ReasignarModal({ cotizacion, vendedoresActivos, onCancel, onConfirm }: 
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500/50">
               {vendedoresActivos.map(v => (
                 <option key={v.nombre} value={v.nombre} className="bg-[#0d1526]">
-                  {v.nombre}{v.rol ? ` - ${v.rol}` : ''}
+                  {v.nombre}{v.cargo ? ` - ${v.cargo}` : v.rol ? ` - ${v.rol}` : ''}
                 </option>
               ))}
               {/* Si el vendedor actual no está en la lista activa, lo agregamos para no perderlo */}
@@ -532,8 +532,10 @@ function ReasignarModal({ cotizacion, vendedoresActivos, onCancel, onConfirm }: 
                 </option>
               )}
             </select>
-            {asesorSeleccionado?.email && (
-              <p className="mt-1 text-[10px] text-slate-500 truncate">{asesorSeleccionado.email}</p>
+            {asesorSeleccionado && (
+              <p className="mt-1 text-[10px] text-slate-500 truncate">
+                {asesorSeleccionado.cargo ? `${asesorSeleccionado.cargo} · ` : ''}{asesorSeleccionado.email}
+              </p>
             )}
           </div>
           <p className="text-[10px] text-slate-600 leading-relaxed">

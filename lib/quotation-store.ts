@@ -52,6 +52,7 @@ export interface QuotationData {
   duracion: string
   vendedor: string
   vendedorEmail?: string
+  vendedorCargo?: string
   ip?: InputsPerforacion
   il?: InputsLimpieza
   preciosLineas?: PreciosLineas  // precios editados al momento de cotizar

@@ -2,6 +2,7 @@ export type VendedorOption = {
   nombre: string
   email: string
   rol?: string
+  cargo?: string
 }
 
 const DEFAULT_EMAIL = 'ventas@hidroperforaciones.com'
@@ -76,10 +77,40 @@ export function resolverEmailVendedor(vendedor: string, emailPreferido?: string 
   return emailConocido || DEFAULT_EMAIL
 }
 
-export function crearVendedorOption(nombre: string, email?: string | null, rol?: string): VendedorOption {
+export function resolverCargoVendedor(vendedor: string, cargoPreferido?: string | null, rol?: string): string {
+  const cargo = cargoPreferido?.trim()
+  if (cargo) return cargo
+
+  const normalizado = normalizarVendedor(vendedor)
+  const compact = normalizado.replace(/\s+/g, '')
+
+  if (normalizado.includes('rene') || normalizado.includes('dominguez')) {
+    return 'Ventas de Gerencia'
+  }
+  if (normalizado.includes('mario') || normalizado.includes('ramirez')) {
+    return 'Jefe de Operaciones'
+  }
+  if (
+    normalizado.includes('gilda') ||
+    normalizado.includes('garcia') ||
+    normalizado.includes('anabella') ||
+    normalizado.includes('annabella') ||
+    normalizado.includes('castro')
+  ) {
+    return 'Asesora de Ventas'
+  }
+  if (compact.includes('asesordeventas') || compact.includes('asesordebentas')) {
+    return 'Asesor de Ventas'
+  }
+  if (rol === 'superadmin') return 'Ventas de Gerencia'
+  return 'Asesor de Ventas'
+}
+
+export function crearVendedorOption(nombre: string, email?: string | null, rol?: string, cargo?: string | null): VendedorOption {
   return {
     nombre,
     email: resolverEmailVendedor(nombre, email),
     rol,
+    cargo: resolverCargoVendedor(nombre, cargo, rol),
   }
 }

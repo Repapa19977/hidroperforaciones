@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { auditLog } from '@/lib/audit'
 import { getRequestInfo, hashPassword, requireSuperAdmin, validarPassword } from '@/lib/auth'
+import { resolverCargoVendedor } from '@/lib/vendedores'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
   const usuarios = await prisma.usuario.findMany({
     orderBy: { createdAt: 'asc' },
     select: {
-      id: true, username: true, nombre: true, rol: true, activo: true,
+      id: true, username: true, nombre: true, cargo: true, rol: true, activo: true,
       email: true, contactoId: true, ultimoAcceso: true, createdAt: true,
       twoFactorEnabled: true, twoFactorConfirmedAt: true,
     },
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
   const auth = await requireSuperAdmin(request)
   if (!auth.ok) return auth.response
 
-  const { username, nombre, password, rol, email } = await request.json()
+  const { username, nombre, password, rol, email, cargo } = await request.json()
   const emailNormalizado = normalizarEmail(email)
 
   if (!username?.trim() || !nombre?.trim() || !password?.trim()) {
@@ -74,11 +75,12 @@ export async function POST(request: NextRequest) {
       username: usernameNormalizado,
       nombre: nombre.trim(),
       rol: rol === 'superadmin' ? 'superadmin' : 'admin',
+      cargo: resolverCargoVendedor(nombre.trim(), cargo, rol === 'superadmin' ? 'superadmin' : 'admin'),
       email: emailNormalizado,
       passwordHash: hashPassword(password),
     },
     select: {
-      id: true, username: true, nombre: true, rol: true, activo: true,
+      id: true, username: true, nombre: true, cargo: true, rol: true, activo: true,
       email: true, contactoId: true, ultimoAcceso: true, createdAt: true,
       twoFactorEnabled: true, twoFactorConfirmedAt: true,
     },

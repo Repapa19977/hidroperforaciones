@@ -14,7 +14,7 @@ import { numeroADolaresEnLetras, numeroAQuetzalesEnLetras } from './numero-a-let
 import { resolverCondiciones } from './condiciones-perf'
 import { formatFechaDDMMYYYY } from './date-format'
 import { convertFromGTQ, formatCurrency, normalizeCurrency, normalizeExchangeRate } from './currency'
-import { resolverEmailVendedor } from './vendedores'
+import { resolverCargoVendedor, resolverEmailVendedor } from './vendedores'
 
 // ── Colores ──────────────────────────────────────────────────────────────────
 const WHITE  = '#ffffff'
@@ -618,6 +618,7 @@ export async function generarPDF(
     : ''
 
   const emailVendedor = resolverEmailVendedor(data.vendedor || '', data.vendedorEmail)
+  const cargoVendedor = resolverCargoVendedor(data.vendedor || '', data.vendedorCargo)
   const fechaCotizacion = formatFechaDDMMYYYY(data.fecha)
 
   const mostrarNotaCheque = data.mostrarNotaCheque ?? true
@@ -677,7 +678,7 @@ export async function generarPDF(
     setDraw('#d9e2ef')
     doc.line(mg, yFooter, W - mg, yFooter)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(5.6); setText('#173765')
-    doc.text('ASESOR DE VENTA', mg, yFooter + 3.5)
+    doc.text(cargoVendedor.toUpperCase(), mg, yFooter + 3.5)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(6.7); setText('#1f2937')
     doc.text(data.vendedor || 'Gerencia Hidroperforaciones', mg, yFooter + 6.5)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(5.4); setText('#64748b')

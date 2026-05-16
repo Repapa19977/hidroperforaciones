@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_TIPO_CAMBIO_USD, formatCurrency, normalizeExchangeRate, type CurrencyCode } from '@/lib/currency'
 import { DEPARTAMENTOS_GT, getMunicipios } from '@/lib/gt-locations'
 import { ComparativaCostosModal } from '@/components/comparativa-costos-modal'
-import { crearVendedorOption, resolverEmailVendedor, type VendedorOption } from '@/lib/vendedores'
+import { crearVendedorOption, resolverCargoVendedor, resolverEmailVendedor, type VendedorOption } from '@/lib/vendedores'
 
 type TipoCot = 'perforacion' | 'limpieza'
 type TipoClienteCot = 'individual' | 'empresa'
@@ -205,6 +205,7 @@ export default function NuevaCotizacionPage() {
     if (miNombre) {
       setVendedor(miNombre)
       setVendedorEmail(resolverEmailVendedor(miNombre))
+      setVendedorCargo(resolverCargoVendedor(miNombre))
     }
 
     // Cargar vendedores activos desde BD (solo útil para superadmin en dropdown)
@@ -215,7 +216,10 @@ export default function NuevaCotizacionPage() {
         if (asesores.length > 0) {
           setVendedoresDB(asesores)
           const seleccionado = asesores.find(x => x.nombre === miNombre)
-          if (seleccionado) setVendedorEmail(seleccionado.email)
+          if (seleccionado) {
+            setVendedorEmail(seleccionado.email)
+            setVendedorCargo(resolverCargoVendedor(seleccionado.nombre, seleccionado.cargo, seleccionado.rol))
+          }
         }
       })
       .catch(() => {})
@@ -306,6 +310,7 @@ export default function NuevaCotizacionPage() {
             if (d.vendedor) {
               setVendedor(d.vendedor)
               setVendedorEmail(resolverEmailVendedor(d.vendedor, d.vendedorEmail))
+              setVendedorCargo(resolverCargoVendedor(d.vendedor, d.vendedorCargo))
             } else if (d.vendedorEmail) {
               setVendedorEmail(d.vendedorEmail)
             }
@@ -473,11 +478,12 @@ export default function NuevaCotizacionPage() {
   const [duracion, setDuracion] = useState('')  // auto-sincroniza con totalDiasMaquinaria
   const [vendedor, setVendedor] = useState(VENDEDORES[0])
   const [vendedorEmail, setVendedorEmail] = useState(resolverEmailVendedor(VENDEDORES[0]))
+  const [vendedorCargo, setVendedorCargo] = useState(resolverCargoVendedor(VENDEDORES[0]))
   const [notas, setNotas] = useState('')
   const vendedorOpciones = useMemo(() => {
     if (!vendedor || vendedoresDB.some(v => v.nombre === vendedor)) return vendedoresDB
-    return [...vendedoresDB, crearVendedorOption(vendedor, vendedorEmail, 'legacy')]
-  }, [vendedoresDB, vendedor, vendedorEmail])
+    return [...vendedoresDB, crearVendedorOption(vendedor, vendedorEmail, 'legacy', vendedorCargo)]
+  }, [vendedoresDB, vendedor, vendedorEmail, vendedorCargo])
 
   const [ip, setIp] = useState<InputsPerforacion>(defaultInputsPerforacion)
   const [il, setIl] = useState<InputsLimpieza>(defaultInputsLimpieza)
@@ -749,6 +755,7 @@ export default function NuevaCotizacionPage() {
       departamento, municipio, aldea, direccion, duracion,
       vendedor,
       vendedorEmail,
+      vendedorCargo,
       ip: tipo === 'perforacion' ? ip : undefined,
       il: tipo === 'limpieza' ? il : undefined,
       preciosLineas: pl,
@@ -1094,21 +1101,22 @@ export default function NuevaCotizacionPage() {
                           const asesor = vendedorOpciones.find(v => v.nombre === e.target.value)
                         setVendedor(e.target.value)
                         setVendedorEmail(resolverEmailVendedor(e.target.value, asesor?.email))
+                        setVendedorCargo(resolverCargoVendedor(e.target.value, asesor?.cargo, asesor?.rol))
                       }}
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
                     >
                       {vendedorOpciones.map(v => (
                         <option key={v.nombre} value={v.nombre} className="bg-[#0d1526]">
-                          {v.nombre}{v.rol ? ` - ${v.rol}` : ''}
+                          {v.nombre}{v.cargo ? ` - ${v.cargo}` : v.rol ? ` - ${v.rol}` : ''}
                         </option>
                       ))}
                     </select>
-                      <p className="mt-1 text-[10px] text-slate-500 truncate">{vendedorEmail}</p>
+                      <p className="mt-1 text-[10px] text-slate-500 truncate">{vendedorCargo} · {vendedorEmail}</p>
                     </>
                   ) : (
                     <div className="w-full bg-white/3 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-slate-300 cursor-not-allowed">
                       <span className="block">{vendedor || '-'}</span>
-                      <span className="block text-[10px] text-slate-500 truncate">{vendedorEmail}</span>
+                      <span className="block text-[10px] text-slate-500 truncate">{vendedorCargo} · {vendedorEmail}</span>
                     </div>
                   )}
                 </div>

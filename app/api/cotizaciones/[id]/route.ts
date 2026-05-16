@@ -22,10 +22,10 @@ async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption
 
   const usuarios = await prisma.usuario.findMany({
     where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
-    select: { nombre: true, email: true, rol: true },
+    select: { nombre: true, email: true, rol: true, cargo: true },
   })
   const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === buscado)
-  if (usuario) return crearVendedorOption(usuario.nombre, usuario.email, usuario.rol)
+  if (usuario) return crearVendedorOption(usuario.nombre, usuario.email, usuario.rol, usuario.cargo)
 
   const envSuperadmin = process.env.SUPERADMIN_VENDEDOR
   if (envSuperadmin && normalizarVendedor(envSuperadmin) === buscado) {
@@ -89,6 +89,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...datos,
       vendedor: vendedorAsignado.nombre,
       vendedorEmail: vendedorAsignado.email,
+      vendedorCargo: vendedorAsignado.cargo,
     })
   }
 

@@ -78,6 +78,7 @@ interface UsuarioItem {
   id: string
   username: string
   nombre: string
+  cargo: string
   rol: string
   activo: boolean
   email?: string
@@ -108,7 +109,7 @@ export default function ConfiguracionPage() {
   const [saved, setSaved] = useState(false)
   const [showPinForm, setShowPinForm] = useState(false)
   const [usuarios, setUsuarios]         = useState<UsuarioItem[]>([])
-  const [nuevoUser, setNuevoUser]       = useState({ username: '', nombre: '', email: '', password: '', rol: 'admin' })
+  const [nuevoUser, setNuevoUser]       = useState({ username: '', nombre: '', cargo: 'Asesor de Ventas', email: '', password: '', rol: 'admin' })
   const [userError, setUserError]       = useState('')
   const [userLoading, setUserLoading]   = useState(false)
   const [showNewPass, setShowNewPass]   = useState(false)
@@ -134,6 +135,8 @@ export default function ConfiguracionPage() {
   const [editNombreVal, setEditNombreVal] = useState('')
   const [editEmailId, setEditEmailId] = useState<string | null>(null)
   const [editEmailVal, setEditEmailVal] = useState('')
+  const [editCargoId, setEditCargoId] = useState<string | null>(null)
+  const [editCargoVal, setEditCargoVal] = useState('')
 
   useEffect(() => {
     setRolState(getRol())
@@ -313,7 +316,7 @@ export default function ConfiguracionPage() {
       const data = await res.json()
       if (!res.ok) { setUserError(data.error ?? 'Error al crear usuario'); return }
       setUsuarios(prev => [...prev, data])
-      setNuevoUser({ username: '', nombre: '', email: '', password: '', rol: 'admin' })
+      setNuevoUser({ username: '', nombre: '', cargo: 'Asesor de Ventas', email: '', password: '', rol: 'admin' })
     } finally {
       setUserLoading(false)
     }
@@ -417,6 +420,24 @@ export default function ConfiguracionPage() {
     } else {
       const err = await res.json().catch(() => ({}))
       alert(err.error ?? 'No se pudo guardar el correo')
+    }
+  }
+
+  async function handleGuardarCargo(id: string) {
+    const cargo = editCargoVal.trim()
+    if (!cargo) return
+    const res = await fetch(`/api/usuarios/${id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ cargo }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setUsuarios(prev => prev.map(u => u.id === id ? { ...u, cargo: updated.cargo } : u))
+      setEditCargoId(null)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error ?? 'No se pudo guardar el cargo')
     }
   }
 
@@ -1343,6 +1364,37 @@ export default function ConfiguracionPage() {
                         </button>
                       )
                     )}
+                    {!esClienteFinal && (
+                      editCargoId === u.id ? (
+                        <div className="mt-1 flex items-center gap-1">
+                          <input
+                            value={editCargoVal}
+                            onChange={e => setEditCargoVal(e.target.value)}
+                            autoFocus
+                            placeholder="Ej: Asesora de Ventas"
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleGuardarCargo(u.id)
+                              if (e.key === 'Escape') setEditCargoId(null)
+                            }}
+                            className="flex-1 bg-white/10 border border-violet-500/40 rounded px-2 py-1 text-xs text-white outline-none"
+                          />
+                          <button onClick={() => handleGuardarCargo(u.id)} className="text-emerald-400 p-1" title="Guardar cargo">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setEditCargoId(null)} className="text-slate-500 p-1" title="Cancelar">
+                            ×
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditCargoId(u.id); setEditCargoVal(u.cargo || 'Asesor de Ventas') }}
+                          className="mt-0.5 block text-left text-[11px] text-amber-300/85 hover:text-amber-200 truncate w-full"
+                          title="Click para editar cargo visible en cotizaciones"
+                        >
+                          {u.cargo || 'Asesor de Ventas'}
+                        </button>
+                      )
+                    )}
                     {u.ultimoAcceso && (
                       <p className="text-[10px] text-slate-600">Último acceso: {new Date(u.ultimoAcceso).toLocaleString('es-GT')}</p>
                     )}
@@ -1450,6 +1502,17 @@ export default function ConfiguracionPage() {
                   value={nuevoUser.username}
                   onChange={e => setNuevoUser(p => ({ ...p, username: e.target.value.toLowerCase().replace(/\s/g, '') }))}
                   placeholder="Ej: carlos"
+                  required
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Cargo en cotización</label>
+                <input
+                  type="text"
+                  value={nuevoUser.cargo}
+                  onChange={e => setNuevoUser(p => ({ ...p, cargo: e.target.value }))}
+                  placeholder="Ej: Asesora de Ventas"
                   required
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
                 />

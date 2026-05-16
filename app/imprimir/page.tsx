@@ -11,18 +11,20 @@ import { useEffect, useState } from 'react'
 import { loadQuotation, type QuotationData } from '@/lib/quotation-store'
 import { ArrowLeft, CheckCircle, Download, Loader2, Mail, Send, X } from 'lucide-react'
 import type { CuentaBancaria } from '@/lib/config-store'
+import { resolverCargoVendedor } from '@/lib/vendedores'
 
 function buildMensajeEmail(q: QuotationData) {
   const cliente = q.cliente?.trim() || 'cliente'
   const empresa = q.empresa?.trim()
   const empresaLine = empresa ? `\nEmpresa: ${empresa}` : ''
+  const cargo = resolverCargoVendedor(q.vendedor || '', q.vendedorCargo)
   return (
     `Estimado/a ${cliente},\n\n` +
     `Reciba un cordial saludo.\n\n` +
     `Por este medio le compartimos la cotizacion ${q.correlativo} correspondiente al proyecto "${q.proyecto}".${empresaLine}\n\n` +
     `Adjunto encontrara el PDF con el detalle tecnico, alcance y condiciones comerciales de la propuesta.\n\n` +
     `Quedamos atentos a cualquier consulta o ajuste que considere necesario.\n\n` +
-    `Saludos cordiales,\n${q.vendedor}\nHidroperforaciones`
+    `Saludos cordiales,\n${q.vendedor}\n${cargo}\nHidroperforaciones`
   )
 }
 
@@ -146,12 +148,13 @@ export default function ImprimirPage() {
   function buildMensajeWhatsApp() {
     if (!data) return ''
     const cliente = data.cliente?.trim() || 'cliente'
+    const cargo = resolverCargoVendedor(data.vendedor || '', data.vendedorCargo)
     return (
       `Estimado/a ${cliente}, buen dia.\n\n` +
       `Le compartimos la cotizacion *${data.correlativo}* correspondiente al proyecto "${data.proyecto}".\n\n` +
       `Adjunto encontrara el PDF con el detalle tecnico y condiciones de la propuesta.\n\n` +
       `Quedamos atentos a cualquier consulta.\n\n` +
-      `${data.vendedor}\nHidroperforaciones`
+      `${data.vendedor}\n${cargo}\nHidroperforaciones`
     )
   }
 

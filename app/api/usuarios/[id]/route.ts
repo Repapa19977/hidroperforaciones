@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { auditLog } from '@/lib/audit'
 import { getRequestInfo, hashPassword, requireSuperAdmin, validarPassword } from '@/lib/auth'
+import { resolverCargoVendedor } from '@/lib/vendedores'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +10,7 @@ const usuarioSafeSelect = {
   id: true,
   username: true,
   nombre: true,
+  cargo: true,
   rol: true,
   activo: true,
   email: true,
@@ -57,6 +59,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (typeof body.nombre === 'string' && body.nombre.trim()) {
     data.nombre = body.nombre.trim()
+  }
+
+  if (typeof body.cargo === 'string') {
+    data.cargo = resolverCargoVendedor(
+      typeof data.nombre === 'string' ? data.nombre : target.nombre,
+      body.cargo,
+      typeof data.rol === 'string' ? data.rol : target.rol,
+    )
   }
 
   if (typeof body.email === 'string') {

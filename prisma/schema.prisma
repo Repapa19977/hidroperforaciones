@@ -85,6 +85,7 @@ model Usuario {
   id           String    @id @default(cuid())
   username     String    @unique
   nombre       String // nombre del vendedor (aparece en cotizaciones y CRM)
+  cargo        String    @default("Asesor de Ventas") // cargo visible en la firma de cotizaciones
   rol          String    @default("admin") // "admin" | "superadmin" | "cliente_final"
   passwordHash String
   activo       Boolean   @default(true)

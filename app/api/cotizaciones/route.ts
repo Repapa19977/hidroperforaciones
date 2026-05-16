@@ -13,10 +13,10 @@ async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption
 
   const usuarios = await prisma.usuario.findMany({
     where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
-    select: { nombre: true, email: true, rol: true },
+    select: { nombre: true, email: true, rol: true, cargo: true },
   })
   const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === buscado)
-  if (usuario) return crearVendedorOption(usuario.nombre, usuario.email, usuario.rol)
+  if (usuario) return crearVendedorOption(usuario.nombre, usuario.email, usuario.rol, usuario.cargo)
 
   const envSuperadmin = process.env.SUPERADMIN_VENDEDOR
   if (envSuperadmin && normalizarVendedor(envSuperadmin) === buscado) {
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
   let vendedorInfo: VendedorOption | null = null
   if (auth.user.role === 'admin') {
     vendedor = auth.user.vendedor ?? ''  // forzado, admin no puede reasignar
-    vendedorInfo = crearVendedorOption(vendedor)
+    vendedorInfo = await resolverVendedorAsignable(vendedor) ?? crearVendedorOption(vendedor)
   } else if (auth.user.role === 'superadmin' && !vendedor) {
     vendedor = auth.user.vendedor ?? ''  // default al propio si no se especifico
   }
@@ -108,6 +108,7 @@ export async function POST(request: NextRequest) {
     ...datosBase,
     vendedor,
     vendedorEmail: vendedorInfo?.email ?? crearVendedorOption(vendedor).email,
+    vendedorCargo: vendedorInfo?.cargo ?? crearVendedorOption(vendedor).cargo,
   }
 
   // Auto-upsert contacto si el cliente tiene teléfono registrado (ignora contactos eliminados).
