@@ -6,7 +6,21 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { QuotationData, HitoPago } from './quotation-store'
 import { DEFAULT_PLAN_PAGOS, DEFAULT_PLAN_PAGOS_SERVICIO, getLineaConfig } from './quotation-store'
-import { calcularPerforacion, calcularLimpieza, defaultInputsPerforacion, defaultInputsLimpieza, IVA, ISR, formatBroca, pipasClienteCantidad, camionadasGrava } from './calculator'
+import {
+  EXCEL_PERFORACION_SERVICIOS,
+  calcularAntepozoExcel,
+  calcularPerforacion,
+  calcularLimpieza,
+  defaultInputsPerforacion,
+  defaultInputsLimpieza,
+  IVA,
+  ISR,
+  formatBroca,
+  mesesSanitarioPortatil,
+  pipasClienteCantidad,
+  camionadasGrava,
+  viajesExtraccionLodos,
+} from './calculator'
 import type { InputsPerforacion, InputsLimpieza } from './calculator'
 import { DEFAULT_CONFIG, DEFAULT_PRECIOS_LINEAS, type AppConfig, type PreciosLineas, type CuentaBancaria } from './config-store'
 import { COSTOS_BASE } from './costos-base'
@@ -44,6 +58,9 @@ export function buildLineasPerf(
   const precioRanPie   = piesRan  > 0 ? Math.round((res.precioTubRanurada * MARKUP_TUBERIA) / 20) : 0
   const precioSacoBent = preciosVentaOverride['bentonita'] ?? COSTOS_BASE.bentonita.precioVentaUnitario
   const precioGravam3  = preciosVentaOverride['grava']     ?? COSTOS_BASE.grava.precioVentaUnitario
+  const viajesLodos = viajesExtraccionLodos(ip.profundidad)
+  const antepozo = calcularAntepozoExcel(ip.piesAntepozo, ip.diametroTuberiaAntepozo)
+  const mesesSanitario = mesesSanitarioPortatil(res.totalDiasMaquinaria)
 
   const tipoRanura   = (ip as { tipoRanura?: string }).tipoRanura ?? 'longitudinal'
   const slotContinua = (ip as { slotContinua?: number }).slotContinua ?? 20
@@ -115,7 +132,7 @@ export function buildLineasPerf(
     ...(ip.incluirSelloSanitario ? [{ key: 'sello-sanitario',
       nombre: 'Instalación de sello sanitario de concreto.',
       // Precio por pie × pies de sello (NO es la profundidad total del pozo).
-      // Regla de 3 del jefe 2026-04-20: 20 pies = Q1,500 → Q75/pie. Rango típico 10-40 pies.
+      // Formula Excel: venta Q100/pie; el costo interno se calcula Q50/pie.
       unidad: 'Und', cant: 1, precio: Math.round(pl.selloSanitario * (ip.piesSelloSanitario ?? 20)) }] : []),
 
     { key: 'sopleteado',
@@ -125,11 +142,19 @@ export function buildLineasPerf(
     // Línea 14 y 15 separadas nuevamente (desecha la unificación previa)
     ...(ip.incluirLimpieza ? [{ key: 'limpieza-mecanica',
       nombre: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.',
-      unidad: 'Hora', cant: ip.horasLimpiezaMecanica ?? 20, precio: pl.precioLimpiezaHora }] : []),
+      unidad: 'Hora', cant: ip.horasLimpiezaMecanica ?? EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.horasDefault, precio: pl.precioLimpiezaHora }] : []),
 
     ...(ip.incluirExtraccionLodos ? [{ key: 'extraccion-lodos',
       nombre: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.',
-      unidad: 'Global', cant: 1, precio: pl.desarrolloLimpieza }] : []),
+      unidad: 'Viaje', cant: viajesLodos, precio: pl.desarrolloLimpieza }] : []),
+
+    ...(ip.incluirSeguridad ? [{ key: 'antepozo',
+      nombre: `Construccion de antepozo de ${antepozo.pies} pies con tuberia de encamisado ${antepozo.diametroTuberia} pulgadas.`,
+      unidad: 'Global', cant: 1, precio: preciosVentaOverride['antepozo'] ?? antepozo.total }] : []),
+
+    ...(ip.incluirSanitario ? [{ key: 'servicio-perf-sanitario',
+      nombre: 'Servicio sanitario portatil en obra.',
+      unidad: 'Mes', cant: mesesSanitario, precio: preciosVentaOverride['servicio-perf-sanitario'] ?? EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.ventaMes }] : []),
 
     // Línea unificada: traslado generador + prueba de bombeo (por hora).
     // Precio/hora se deriva de aforoDetallado.precioVentaTotal / horas; si no, usa pl.pruebaBombeo.

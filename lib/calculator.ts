@@ -230,6 +230,86 @@ export const PRECIO_POR_CAMION_FLETE = 6000
 /** Porcentaje del costo de flete que es costo real (el 30% restante es reserva/margen). */
 export const PCT_COSTO_REAL_FLETE = 0.70
 
+export const EXCEL_PERFORACION_SERVICIOS = {
+  registroElectrico: {
+    costo: 7000,
+    venta: 8000,
+  },
+  selloSanitario: {
+    costoPie: 50,
+    ventaPie: 100,
+  },
+  extraccionLodos: {
+    piesPorViaje: 20,
+    costoViaje: 400,
+    ventaViaje: 800,
+  },
+  limpiezaMecanica: {
+    horasDefault: 30,
+    costoHora: 250,
+    ventaHora: 375,
+  },
+  antepozo: {
+    piesDefault: 40,
+    diametroTuberiaDefault: 20,
+    precioPiePerforacion: 450,
+    piesPorTubo: 20,
+    preciosTuberia: {
+      12: 4500,
+      14: 5500,
+      16: 6000,
+      18: 6500,
+      20: 7000,
+      22: 7500,
+      24: 8000,
+    } as Record<number, number>,
+  },
+  sanitarioPortatil: {
+    diasPorMes: 30,
+    costoMes: 800,
+    ventaMes: 800,
+  },
+} as const
+
+export function viajesExtraccionLodos(profundidad: number): number {
+  const piesPorViaje = EXCEL_PERFORACION_SERVICIOS.extraccionLodos.piesPorViaje
+  return profundidad > 0 ? profundidad / piesPorViaje : 0
+}
+
+export function mesesSanitarioPortatil(totalDiasMaquinaria: number): number {
+  const diasPorMes = EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.diasPorMes
+  return Math.max(1, Math.ceil(Math.max(0, totalDiasMaquinaria) / diasPorMes))
+}
+
+export function calcularAntepozoExcel(
+  pies?: number,
+  diametroTuberia?: number,
+) {
+  const cfg = EXCEL_PERFORACION_SERVICIOS.antepozo
+  const piesSeguro = Math.max(0, typeof pies === 'number' && Number.isFinite(pies) ? pies : cfg.piesDefault)
+  const diametroSeguro = typeof diametroTuberia === 'number' && Number.isFinite(diametroTuberia)
+    ? diametroTuberia
+    : cfg.diametroTuberiaDefault
+  const disponibles = Object.keys(cfg.preciosTuberia).map(Number).sort((a, b) => a - b)
+  const diametro = disponibles.includes(diametroSeguro)
+    ? diametroSeguro
+    : disponibles.find(d => diametroSeguro <= d) ?? disponibles[disponibles.length - 1] ?? cfg.diametroTuberiaDefault
+  const tubos = piesSeguro / cfg.piesPorTubo
+  const precioTubo = cfg.preciosTuberia[diametro] ?? cfg.preciosTuberia[cfg.diametroTuberiaDefault] ?? 0
+  const totalPerforacion = piesSeguro * cfg.precioPiePerforacion
+  const totalTuberia = tubos * precioTubo
+  return {
+    pies: piesSeguro,
+    diametroTuberia: diametro,
+    tubos,
+    precioPiePerforacion: cfg.precioPiePerforacion,
+    precioTubo,
+    totalPerforacion,
+    totalTuberia,
+    total: totalPerforacion + totalTuberia,
+  }
+}
+
 export function calcGravaM3(diametroBroca: number, diametroTuberia: number, profundidad: number): number {
   const dPerf = (PERFORACION_MM[diametroBroca] ?? 0) / 1000   // mm → m
   const dTub  = (TUBERIA_MM[diametroTuberia]   ?? 0) / 1000   // mm → m
@@ -530,9 +610,11 @@ export interface InputsPerforacion {
   // ── Costos de servicios opcionales ──
   costoRegistroElectrico: number // Q costo interno registro eléctrico
   costoSelloSanitario: number    // Q costo interno sello sanitario
-  costoExtraccionLodos: number // Q total extracción de lodos (default 32,000)
-  costoSeguridad: number       // Q cargo seguridad (default 200)
-  costoSanitario: number       // Q baños portátiles (default 800)
+  costoExtraccionLodos: number // Q total extracción de lodos; 0 = auto por viajes
+  costoSeguridad: number       // Q antepozo / seguridad; 0 = auto por fórmula Excel
+  costoSanitario: number       // Q sanitario portátil; 0 = auto por meses
+  piesAntepozo?: number        // pies de antepozo / tubería de seguridad
+  diametroTuberiaAntepozo?: number // diámetro de tubería de encamisado para antepozo
 
   // ── Comisión ──
   comisionVendedorPct: number  // % comisión (default 1%) — se calcula sobre ingresos NETOS (bruto × 0.83)
@@ -544,7 +626,7 @@ export interface InputsPerforacion {
   markupPrecioPorPiePct: number  // 0.40 = +40% (editable)
 
   // ── Limpieza mecánica interna (cuando incluirLimpieza=true) ──
-  horasLimpiezaMecanica: number  // horas de limpieza interna (default 20, Excel)
+  horasLimpiezaMecanica: number  // horas de limpieza interna (default 30, Excel)
   costoLimpiezaMecanicaOverride?: number // Q costo interno manual; si no existe usa cálculo automático
 
   // ── Override de catálogo de tuberías (viene del Config global) ──
@@ -732,10 +814,15 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   const costoTuberia = inp.tubosLisos     * precioTubLisa
   const costoFiltros = inp.tubosRanurados * precioTubRanurada
 
-  const costoRegistroElectrico = inp.incluirRegistroElectrico ? (inp.costoRegistroElectrico ?? 8000) : 0
+  const costoRegistroElectrico = inp.incluirRegistroElectrico
+    ? (inp.costoRegistroElectrico ?? EXCEL_PERFORACION_SERVICIOS.registroElectrico.costo)
+    : 0
 
-  // Sello sanitario: cap de concreto superficial (3-5 m de lechada) — costo fijo editable
-  const costoSelloSanitario = inp.incluirSelloSanitario ? (inp.costoSelloSanitario ?? 500) : 0
+  // Sello sanitario: costo interno Q50/pie, venta Q100/pie segun Excel "FORMULAS PARA RODRI".
+  const costoSelloSanitarioAuto = (inp.piesSelloSanitario ?? 20) * EXCEL_PERFORACION_SERVICIOS.selloSanitario.costoPie
+  const costoSelloSanitario = inp.incluirSelloSanitario
+    ? (inp.costoSelloSanitario > 0 ? inp.costoSelloSanitario : costoSelloSanitarioAuto)
+    : 0
 
   // Aforo: si hay aforoDetallado se calcula con los 18 sub-inputs (Excel "COSTO DE AFORO (1)"),
   // sino se usa la fórmula legacy simple: base × (1 + imprev) × (1 + IVA + ISR)
@@ -743,19 +830,9 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
     ? calcularAforoDetallado({ ...inp.aforoDetallado, horasAforo: inp.horasAforo }).costoConImpuestos
     : inp.costoAforoBase * (1 + inp.imprevistoPctAforo) * (1 + IVA + ISR)
 
-  // Limpieza mecánica interna — fórmula dinámica (Excel hoja "Limpieza mecanica")
-  // 20h × Q331.79/h = Q6,635.71 en el ejemplo del Excel
-  // Usa calcularLimpieza con defaults y retorna subtotalSinImprevistos (= lo que reporta Margenes)
-  const costoLimpiezaAuto = (() => {
-    const horas = inp.horasLimpiezaMecanica ?? 20
-    const r = calcularLimpieza({
-      ...defaultInputsLimpieza,
-      horasLimpieza: horas,
-      horasDia: 10,
-      diasTrabajo: Math.ceil(horas / 10),
-    })
-    return r.subtotalSinImprevistos
-  })()
+  // Limpieza mecánica interna: horas x Q250 costo/hora segun Excel "FORMULAS PARA RODRI".
+  const costoLimpiezaAuto = (inp.horasLimpiezaMecanica ?? EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.horasDefault) *
+    EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.costoHora
   const costoLimpiezaManual = inp.costoLimpiezaMecanicaOverride
   const costoLimpieza = inp.incluirLimpieza
     ? (typeof costoLimpiezaManual === 'number' && Number.isFinite(costoLimpiezaManual) && costoLimpiezaManual >= 0
@@ -777,10 +854,21 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
   const costoTaponTuberia = inp.costoTaponTuberia
   const costoBrocaCompra  = inp.comprarBroca ? inp.costoBroca : 0
 
-  // Servicios opcionales con costo propio (Hoja "Precio pie perforado")
-  const costoExtraccionLodosTotal = inp.incluirExtraccionLodos ? inp.costoExtraccionLodos : 0
-  const costoSeguridadTotal       = inp.incluirSeguridad       ? inp.costoSeguridad       : 0
-  const costoSanitarioTotal       = inp.incluirSanitario       ? inp.costoSanitario       : 0
+  // Servicios opcionales con formulas de "FORMULAS PARA RODRI".
+  const viajesLodos = viajesExtraccionLodos(inp.profundidad)
+  const costoExtraccionLodosAuto = viajesLodos * EXCEL_PERFORACION_SERVICIOS.extraccionLodos.costoViaje
+  const costoExtraccionLodosTotal = inp.incluirExtraccionLodos
+    ? (inp.costoExtraccionLodos > 0 ? inp.costoExtraccionLodos : costoExtraccionLodosAuto)
+    : 0
+  const antepozo = calcularAntepozoExcel(inp.piesAntepozo, inp.diametroTuberiaAntepozo)
+  const costoSeguridadTotal = inp.incluirSeguridad
+    ? (inp.costoSeguridad > 0 ? inp.costoSeguridad : antepozo.total)
+    : 0
+  const mesesSanitario = mesesSanitarioPortatil(totalDiasMaquinaria)
+  const costoSanitarioAuto = mesesSanitario * EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.costoMes
+  const costoSanitarioTotal = inp.incluirSanitario
+    ? (inp.costoSanitario > 0 ? inp.costoSanitario : costoSanitarioAuto)
+    : 0
 
   // ── TOTAL ──
   // NOTAS IMPORTANTES:
@@ -1286,15 +1374,17 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   costoBroca: 27500,
 
   // Servicios opcionales con costo (Hoja "Precio pie perforado")
-  costoRegistroElectrico: 8000,
-  costoSelloSanitario: 500,
-  costoExtraccionLodos: 32000, // Q20,000 base + Q12,000 adicional = Q32,000
-  costoSeguridad: 200,         // cargo de seguridad
-  costoSanitario: 800,         // baños portátiles
+  costoRegistroElectrico: EXCEL_PERFORACION_SERVICIOS.registroElectrico.costo,
+  costoSelloSanitario: 0,       // 0 = auto: pies sello x Q50 costo/pie
+  costoExtraccionLodos: 0,      // 0 = auto: profundidad / 20 x Q400 costo/viaje
+  costoSeguridad: 0,            // 0 = auto: formula de antepozo del Excel
+  costoSanitario: 0,            // 0 = auto: meses x Q800
+  piesAntepozo: EXCEL_PERFORACION_SERVICIOS.antepozo.piesDefault,
+  diametroTuberiaAntepozo: EXCEL_PERFORACION_SERVICIOS.antepozo.diametroTuberiaDefault,
 
   // Comisión / Limpieza / Imprevistos / Markup
   comisionVendedorPct: 1,
-  horasLimpiezaMecanica: 20,  // horas de limpieza interna (Excel ejemplo: 20h)
+  horasLimpiezaMecanica: EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.horasDefault,
   imprevistoGlobal: 20000,    // Excel reunión: Q 20,000 rubro fijo (editable)
   markupPrecioPorPiePct: 0.55, // Excel "PRECIO DE PIE PERFORADO reunion": +55% sobre precio neto/pie
 

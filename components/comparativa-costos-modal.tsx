@@ -5,7 +5,7 @@ import { X, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildLineasPerf } from '@/lib/pdf-cotizacion'
 import type { InputsPerforacion } from '@/lib/calculator'
-import { calcularPerforacion, IVA, ISR } from '@/lib/calculator'
+import { EXCEL_PERFORACION_SERVICIOS, calcularAntepozoExcel, calcularPerforacion, IVA, ISR } from '@/lib/calculator'
 import { COSTOS_BASE } from '@/lib/costos-base'
 import type { PreciosLineas } from '@/lib/config-store'
 
@@ -25,6 +25,8 @@ function costoBasePorKey(key: string): number | null {
     'sopleteado':         'sopleteado',
     'registro-electrico': 'registroElectrico',
     'sello-sanitario':    'selloSanitario',
+    'extraccion-lodos':   'extraccionLodos',
+    'servicio-perf-sanitario': 'sanitarioPortatil',
     'analisis-combinado': 'analisisFQBact',
     'instalacion-equipo': 'instalacionEquipo',
     'prueba-bombeo':      'pruebaBombeo',
@@ -82,6 +84,10 @@ export function ComparativaCostosModal({
 
   // Costo unitario estimado por cada rubro (fallback si no hay override)
   function estimarCostoU(key: string, precioVentaU: number, totalVenta: number, cant: number): number {
+    if (key === 'extraccion-lodos') return EXCEL_PERFORACION_SERVICIOS.extraccionLodos.costoViaje
+    if (key === 'servicio-perf-sanitario') return EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.costoMes
+    if (key === 'antepozo') return calcularAntepozoExcel(ip.piesAntepozo, ip.diametroTuberiaAntepozo).total
+    if (key === 'sello-sanitario') return precioVentaU * (EXCEL_PERFORACION_SERVICIOS.selloSanitario.costoPie / EXCEL_PERFORACION_SERVICIOS.selloSanitario.ventaPie)
     const base = costoBasePorKey(key)
     if (base !== null) return base
 

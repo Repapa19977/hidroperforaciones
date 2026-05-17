@@ -7,8 +7,8 @@ export type Rol = 'superadmin' | 'admin'
 export interface PreciosLineas {
   // ── Líneas originales (backward compat) ──────────────────────────────────
   instalacionEquipo: number        // Q3,000 (Odoo real)
-  registroElectrico: number        // Q7,000 (Odoo real)
-  desarrolloLimpieza: number       // Q12,000 (extracción lodos — condicional)
+  registroElectrico: number        // Q8,000 (Excel FORMULAS PARA RODRI)
+  desarrolloLimpieza: number       // Q800/viaje (extracción lodos — condicional)
   cementacion: number              // Q4,500
   analisisFisicoQuimico: number    // Q3,200 (legacy, reemplazado por analisisCombinado)
   analisisBacteriologico: number   // Q2,800 (legacy)
@@ -21,9 +21,9 @@ export interface PreciosLineas {
   colocacionTuberia: number        // Q35/pie  — labor ADEME
   transGrava: number               // Q700     — transporte grava al cliente
   instalacionGrava: number         // Q100/m³  — mano de obra instalación grava
-  selloSanitario: number           // Q75/pie — sello sanitario: precio venta × profundidad del pozo (regla de 3: 20 pies = Q1,500)
+  selloSanitario: number           // Q100/pie — sello sanitario según Excel
   sopleteado: number               // Q500     — sopleteado con compresor
-  precioLimpiezaHora: number       // Q400/h   — limpieza en cotización de perf
+  precioLimpiezaHora: number       // Q375/h   — limpieza en cotización de perf
   trasladoGenerador: number        // Q2,100   — generador + bomba + instalación
   pruebaBombeo: number             // Q700/h   — prueba de bombeo
   brocal: number                   // Q500     — brocal de concreto
@@ -33,8 +33,8 @@ export interface PreciosLineas {
 export const DEFAULT_PRECIOS_LINEAS: PreciosLineas = {
   // legacy
   instalacionEquipo:       3000,   // Odoo real (era 3500)
-  registroElectrico:       7000,   // Odoo real (era 12000 — superadmin puede subir)
-  desarrolloLimpieza:     12000,
+  registroElectrico:       8000,
+  desarrolloLimpieza:       800,   // Q/viaje; viajes = profundidad / 20
   cementacion:             4500,
   analisisFisicoQuimico:   3200,
   analisisBacteriologico:  2800,
@@ -47,9 +47,9 @@ export const DEFAULT_PRECIOS_LINEAS: PreciosLineas = {
   colocacionTuberia:         35,
   transGrava:               700,
   instalacionGrava:         100,
-  selloSanitario:            75,  // Q/pie · instrucción jefe 2026-04-20 (regla de 3: 20 pies = Q1,500)
+  selloSanitario:           100,  // Q/pie; costo interno Q50/pie
   sopleteado:               500,
-  precioLimpiezaHora:       400,      // Q/hora limpieza mecánica (línea 14 separada)
+  precioLimpiezaHora:       375,      // Q/hora limpieza mecánica (línea 14 separada)
   trasladoGenerador:       2100,
   pruebaBombeo:             950,      // Q/hora unificada: traslado generador + prueba de bombeo
   brocal:                   500,
@@ -157,6 +157,7 @@ export interface AppConfig {
 
   // ── Precios de líneas de cotización ──────────────────────────────
   preciosLineas: PreciosLineas
+  perforacionFormulasConfigVersion?: number
   bloquearPreciosAdmin: boolean  // true = solo superadmin puede editar precios de línea
 
   // ── Costos base por rubro (overrides del superadmin sobre COSTOS_BASE) ──
@@ -229,6 +230,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   camionadaGravaCostoUnitario: 5000,
   camionadaGravaPrecioVentaUnitario: 6000,
   preciosLineas: DEFAULT_PRECIOS_LINEAS,
+  perforacionFormulasConfigVersion: 1,
   bloquearPreciosAdmin: false,
   costosBaseOverride: {},
   costosBaseVentaOverride: {},
@@ -248,10 +250,22 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 export const HORAS_ADVERSAS_CONFIG_VERSION = 2
 export const SERVICIO_COTIZACION_CONFIG_VERSION = 5
+export const PERFORACION_FORMULAS_CONFIG_VERSION = 1
 
 export function normalizeAppConfig(raw?: Partial<AppConfig> | null): AppConfig {
   const cfg: AppConfig = { ...DEFAULT_CONFIG, ...(raw ?? {}) }
   cfg.preciosLineas = { ...DEFAULT_PRECIOS_LINEAS, ...(raw?.preciosLineas ?? {}) }
+  const rawPerforacionFormulasVersion = Number(raw?.perforacionFormulasConfigVersion ?? 0)
+  if (rawPerforacionFormulasVersion < PERFORACION_FORMULAS_CONFIG_VERSION) {
+    cfg.preciosLineas = {
+      ...cfg.preciosLineas,
+      registroElectrico: DEFAULT_PRECIOS_LINEAS.registroElectrico,
+      desarrolloLimpieza: DEFAULT_PRECIOS_LINEAS.desarrolloLimpieza,
+      selloSanitario: DEFAULT_PRECIOS_LINEAS.selloSanitario,
+      precioLimpiezaHora: DEFAULT_PRECIOS_LINEAS.precioLimpiezaHora,
+    }
+  }
+  cfg.perforacionFormulasConfigVersion = PERFORACION_FORMULAS_CONFIG_VERSION
   const rawServicio = raw?.servicioCotizacion
   const numeroPositivo = (value: unknown, fallback: number) => {
     const n = Number(value)

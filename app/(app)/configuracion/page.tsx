@@ -1054,7 +1054,7 @@ export default function ConfiguracionPage() {
           {([
             { key: 'instalacionEquipo',       label: 'Instalación de equipo' },
             { key: 'registroElectrico',       label: 'Registro eléctrico' },
-            { key: 'desarrolloLimpieza',      label: 'Desarrollo y limpieza (perforación)' },
+            { key: 'desarrolloLimpieza',      label: 'Extracción de lodos (Q/viaje)' },
             { key: 'cementacion',             label: 'Cementación' },
             { key: 'analisisFisicoQuimico',   label: 'Análisis físico-químico' },
             { key: 'analisisBacteriologico',  label: 'Análisis bacteriológico' },

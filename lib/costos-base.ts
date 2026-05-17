@@ -105,16 +105,32 @@ export const COSTOS_BASE: Record<string, CostoRubro> = {
     key: 'registroElectrico',
     nombre: 'Registro eléctrico',
     unidad: 'unidad',
-    costoUnitario: 8000,          // Excel R2
-    precioVentaUnitario: 12000,
+    costoUnitario: 7000,          // FORMULAS PARA RODRI
+    precioVentaUnitario: 8000,
     editable: true,
   },
   selloSanitario: {
     key: 'selloSanitario',
     nombre: 'Sello sanitario de concreto',
-    unidad: 'unidad',
-    costoUnitario: 0,             // Excel Margenes: 0 (costo absorbido en diesel/otros)
-    precioVentaUnitario: 500,
+    unidad: 'pie',
+    costoUnitario: 50,
+    precioVentaUnitario: 100,
+    editable: true,
+  },
+  extraccionLodos: {
+    key: 'extraccionLodos',
+    nombre: 'Extracción de lodos',
+    unidad: 'viaje',
+    costoUnitario: 400,
+    precioVentaUnitario: 800,
+    editable: true,
+  },
+  sanitarioPortatil: {
+    key: 'sanitarioPortatil',
+    nombre: 'Sanitario portátil',
+    unidad: 'mes',
+    costoUnitario: 800,
+    precioVentaUnitario: 800,
     editable: true,
   },
   analisisQuimico: {
@@ -165,10 +181,10 @@ export const COSTOS_BASE: Record<string, CostoRubro> = {
     key: 'limpiezaMecanica',
     nombre: 'Limpieza mecánica (en servicio perf)',
     unidad: 'hora',
-    costoUnitario: 331.79,        // Excel "Limpieza mecánica" Q/h sin imprevistos
-    precioVentaUnitario: 400,     // app actual (Hoja1 Odoo dice Q325, config dice Q400)
+    costoUnitario: 250,
+    precioVentaUnitario: 375,
     editable: true,
-    notas: 'Costo neto c/imprevistos: Q398.14 — margen default bajo',
+    notas: 'FORMULAS PARA RODRI: costo Q250/h, venta Q375/h',
   },
 }
 
@@ -186,6 +202,8 @@ export const RUBRO_TO_LINEA_KEY: Record<string, string> = {
   trasladoGenerador: 'traslado-generador',
   registroElectrico: 'registro-electrico',
   selloSanitario: 'sello-sanitario',
+  extraccionLodos: 'extraccion-lodos',
+  sanitarioPortatil: 'servicio-perf-sanitario',
   analisisFQBact: 'analisis-combinado',
   instalacionEquipo: 'instalacion-equipo',
   pruebaBombeo: 'prueba-bombeo',

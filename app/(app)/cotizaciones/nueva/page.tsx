@@ -2,13 +2,17 @@
 
 import React, { useCallback, useState, useMemo, useEffect, useId } from 'react'
 import {
+  EXCEL_PERFORACION_SERVICIOS,
+  calcularAntepozoExcel,
   calcularPerforacion, calcularLimpieza, calcularAforoDetallado,
   defaultInputsPerforacion, defaultInputsLimpieza, defaultInputsAforoDetallado,
   sacosDebentonita, pipasInternas, pipasClienteCantidad, camionadasGrava, IVA, ISR, formatBroca,
+  mesesSanitarioPortatil,
   getCostoColocacionPorDiametro,
   getPrecioTuberia, getEspesoresDisponibles, getDiametrosTuberia, DIAMETROS_BROCA,
   PERFORACION_MM, TUBERIA_MM, calcGravaM3,
   PRECIOS_BROCAS, getReglaTuberiaServicio,
+  viajesExtraccionLodos,
   type InputsPerforacion, type InputsLimpieza, type InputsAforoDetallado,
   formatQ
 } from '@/lib/calculator'
@@ -1276,8 +1280,8 @@ export default function NuevaCotizacionPage() {
                   {/* Extracción de lodos: precio editable solo cuando el servicio está activo */}
                   {tipo === 'perforacion' && ip.incluirExtraccionLodos && (
                     <div className="mt-3 pt-3 border-t border-white/5">
-                      <label className="text-xs text-slate-500 mb-0.5 block">Extracción de lodos</label>
-                      <p className="text-[10px] text-slate-600 mb-1">Condicional — visible solo cuando el servicio está activo</p>
+                      <label className="text-xs text-slate-500 mb-0.5 block">Extracción de lodos (Q/viaje)</label>
+                      <p className="text-[10px] text-slate-600 mb-1">Viajes = profundidad / 20. Total visible: viajes x precio/viaje.</p>
                       <div className="relative w-48">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">Q</span>
                         <DecimalInput
@@ -2117,6 +2121,9 @@ function CalcPerforacion({
 
   const sopleteadoCfg = lineasConfig.sopleteado ?? { mostrar: true, cobrar: true }
   const sopleteadoActivo = sopleteadoCfg.mostrar && sopleteadoCfg.cobrar
+  const viajesLodos = viajesExtraccionLodos(ip.profundidad)
+  const antepozo = calcularAntepozoExcel(ip.piesAntepozo, ip.diametroTuberiaAntepozo)
+  const mesesSanitario = mesesSanitarioPortatil(res.totalDiasMaquinaria)
   const setSopleteadoEnabled = (enabled: boolean) => {
     setLineasConfig(prev => ({
       ...prev,
@@ -2125,11 +2132,11 @@ function CalcPerforacion({
   }
   const serviciosIncluidos = [
     { key: 'incluirRegistroElectrico' as const, lineKey: 'registro-electrico', label: 'Registro electrico', hint: 'Aparece en la cotizacion.', visibleCliente: true, detalle: 'Registro eléctrico para la detección de formaciones permeables.' },
-    { key: 'incluirSelloSanitario' as const, lineKey: 'sello-sanitario', label: 'Sello sanitario (Q75/pie x pies)', hint: 'Aparece en la cotizacion y habilita los pies de sello.', visibleCliente: true, detalle: 'Instalación de sello sanitario de concreto.' },
-    { key: 'incluirExtraccionLodos' as const, lineKey: 'extraccion-lodos', label: 'Extraccion de lodos', hint: 'Aparece en la cotizacion.', visibleCliente: true, detalle: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.' },
-    { key: 'incluirSeguridad' as const, lineKey: 'servicio-perf-seguridad', label: 'Tuberia de seguridad', hint: 'Costo interno; afecta margen.', visibleCliente: false, detalle: 'Tubería/casing de seguridad según condiciones del terreno.' },
-    { key: 'incluirSanitario' as const, lineKey: 'servicio-perf-sanitario', label: 'Sanitario', hint: 'Costo interno; afecta margen.', visibleCliente: false, detalle: 'Servicio sanitario portátil en obra.' },
-    { key: 'incluirLimpieza' as const, lineKey: 'limpieza-mecanica', label: 'Limpieza mecanica', hint: 'Aparece en la cotizacion.', visibleCliente: true, detalle: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.' },
+    { key: 'incluirSelloSanitario' as const, lineKey: 'sello-sanitario', label: 'Sello sanitario (Q100/pie x pies)', hint: 'Aparece en la cotizacion y habilita los pies de sello.', visibleCliente: true, detalle: 'Instalación de sello sanitario de concreto.' },
+    { key: 'incluirExtraccionLodos' as const, lineKey: 'extraccion-lodos', label: 'Extraccion de lodos', hint: 'Aparece en la cotizacion; viajes = profundidad / 20.', visibleCliente: true, detalle: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.' },
+    { key: 'incluirSeguridad' as const, lineKey: 'antepozo', label: 'Ante pozo', hint: 'Aparece en la cotizacion; formula Excel.', visibleCliente: true, detalle: 'Construcción de antepozo con tubería de encamisado.' },
+    { key: 'incluirSanitario' as const, lineKey: 'servicio-perf-sanitario', label: 'Sanitario portatil', hint: 'Aparece en la cotizacion; se cobra por mes.', visibleCliente: true, detalle: 'Servicio sanitario portátil en obra.' },
+    { key: 'incluirLimpieza' as const, lineKey: 'limpieza-mecanica', label: 'Limpieza mecanica', hint: 'Aparece en la cotizacion; Q375/hora.', visibleCliente: true, detalle: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.' },
     { key: 'comprarBroca' as const, lineKey: 'servicio-perf-broca', label: 'Compra de broca', hint: 'Costo interno; afecta margen.', visibleCliente: false, detalle: 'Compra de broca según diámetro de perforación.' },
   ]
   const servicioSopleteado = {
@@ -2179,12 +2186,19 @@ function CalcPerforacion({
     })
   }
   const piesSello = Math.max(1, ip.piesSelloSanitario ?? 20)
-  const horasLimpieza = Math.max(1, ip.horasLimpiezaMecanica ?? 20)
+  const horasLimpieza = Math.max(1, ip.horasLimpiezaMecanica ?? EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.horasDefault)
+  const safeDiv = (value: number, divisor: number) => divisor > 0 ? value / divisor : 0
+  const setVentaUnitariaOverride = (lineKey: string, total: number, cantidad = 1) => {
+    const unitario = Math.round(safeDiv(total, Math.max(1, cantidad)) * 100) / 100
+    setPreciosVentaOverride(prev => ({ ...prev, [lineKey]: unitario }))
+  }
   const ventaTotalServicio = (lineKey: string): number | null => {
     const override = preciosVentaOverride?.[lineKey]
     if (lineKey === 'registro-electrico') return override ?? pl.registroElectrico
     if (lineKey === 'sello-sanitario') return override ?? (pl.selloSanitario * piesSello)
-    if (lineKey === 'extraccion-lodos') return override ?? pl.desarrolloLimpieza
+    if (lineKey === 'extraccion-lodos') return (override ?? pl.desarrolloLimpieza) * viajesLodos
+    if (lineKey === 'antepozo') return override ?? antepozo.total
+    if (lineKey === 'servicio-perf-sanitario') return (override ?? EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.ventaMes) * mesesSanitario
     if (lineKey === 'limpieza-mecanica') return override !== undefined ? override * horasLimpieza : pl.precioLimpiezaHora * horasLimpieza
     if (lineKey === 'sopleteado') return override ?? pl.sopleteado
     return null
@@ -2198,8 +2212,12 @@ function CalcPerforacion({
       patchPl('selloSanitario', Math.round((total / piesSello) * 100) / 100)
       limpiarOverrideVenta(lineKey)
     } else if (lineKey === 'extraccion-lodos') {
-      patchPl('desarrolloLimpieza', total)
+      patchPl('desarrolloLimpieza', Math.round(safeDiv(total, viajesLodos) * 100) / 100)
       limpiarOverrideVenta(lineKey)
+    } else if (lineKey === 'antepozo') {
+      setVentaUnitariaOverride(lineKey, total)
+    } else if (lineKey === 'servicio-perf-sanitario') {
+      setVentaUnitariaOverride(lineKey, total, mesesSanitario)
     } else if (lineKey === 'limpieza-mecanica') {
       patchPl('precioLimpiezaHora', Math.round((total / horasLimpieza) * 100) / 100)
       limpiarOverrideVenta(lineKey)
@@ -2210,10 +2228,10 @@ function CalcPerforacion({
   }
   const costoServicio = (lineKey: string): number => {
     if (lineKey === 'registro-electrico') return ip.costoRegistroElectrico ?? COSTOS_BASE.registroElectrico.costoUnitario
-    if (lineKey === 'sello-sanitario') return ip.costoSelloSanitario ?? 500
-    if (lineKey === 'extraccion-lodos') return ip.costoExtraccionLodos
-    if (lineKey === 'servicio-perf-seguridad') return ip.costoSeguridad
-    if (lineKey === 'servicio-perf-sanitario') return ip.costoSanitario
+    if (lineKey === 'sello-sanitario') return ip.costoSelloSanitario > 0 ? ip.costoSelloSanitario : piesSello * EXCEL_PERFORACION_SERVICIOS.selloSanitario.costoPie
+    if (lineKey === 'extraccion-lodos') return ip.costoExtraccionLodos > 0 ? ip.costoExtraccionLodos : viajesLodos * EXCEL_PERFORACION_SERVICIOS.extraccionLodos.costoViaje
+    if (lineKey === 'antepozo') return ip.costoSeguridad > 0 ? ip.costoSeguridad : antepozo.total
+    if (lineKey === 'servicio-perf-sanitario') return ip.costoSanitario > 0 ? ip.costoSanitario : mesesSanitario * EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.costoMes
     if (lineKey === 'limpieza-mecanica') return res.costoLimpieza
     if (lineKey === 'servicio-perf-broca') return ip.costoBroca
     if (lineKey === 'sopleteado') return costosOverride.sopleteado ?? COSTOS_BASE.sopleteado.costoUnitario
@@ -2224,7 +2242,7 @@ function CalcPerforacion({
     if (lineKey === 'registro-electrico') patchIp('costoRegistroElectrico', costo)
     else if (lineKey === 'sello-sanitario') patchIp('costoSelloSanitario', costo)
     else if (lineKey === 'extraccion-lodos') patchIp('costoExtraccionLodos', costo)
-    else if (lineKey === 'servicio-perf-seguridad') patchIp('costoSeguridad', costo)
+    else if (lineKey === 'antepozo') patchIp('costoSeguridad', costo)
     else if (lineKey === 'servicio-perf-sanitario') patchIp('costoSanitario', costo)
     else if (lineKey === 'limpieza-mecanica') patchIp('costoLimpiezaMecanicaOverride', costo)
     else if (lineKey === 'servicio-perf-broca') patchIp('costoBroca', costo)
@@ -2241,6 +2259,18 @@ function CalcPerforacion({
     const costo = costoServicio(servicio.lineKey)
     const venta = ventaTotalServicio(servicio.lineKey)
     const ganancia = venta === null ? null : venta - costo
+    const formulaServicio =
+      servicio.lineKey === 'limpieza-mecanica'
+        ? `${horasLimpieza} h x Q${EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.costoHora} costo / Q${pl.precioLimpiezaHora} venta`
+        : servicio.lineKey === 'sello-sanitario'
+          ? `${piesSello} pies x Q${EXCEL_PERFORACION_SERVICIOS.selloSanitario.costoPie} costo / Q${pl.selloSanitario} venta`
+          : servicio.lineKey === 'extraccion-lodos'
+            ? `${viajesLodos.toFixed(2)} viajes x Q${EXCEL_PERFORACION_SERVICIOS.extraccionLodos.costoViaje} costo / Q${pl.desarrolloLimpieza} venta`
+            : servicio.lineKey === 'antepozo'
+              ? `${antepozo.pies} pies x Q${antepozo.precioPiePerforacion} + ${antepozo.tubos.toFixed(2)} tubos x Q${antepozo.precioTubo}`
+              : servicio.lineKey === 'servicio-perf-sanitario'
+                ? `${mesesSanitario} mes(es) x Q${EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.costoMes}`
+                : ''
 
     return (
       <div className="px-3 pb-3 space-y-3">
@@ -2301,6 +2331,47 @@ function CalcPerforacion({
               <span className={cn('text-sm font-bold tabular-nums', ganancia !== null && ganancia >= 0 ? 'text-emerald-300' : 'text-red-300')}>
                 {ganancia !== null && venta > 0 ? `${((ganancia / venta) * 100).toFixed(1)}%` : '0.0%'}
               </span>
+            </div>
+          </div>
+        )}
+        {formulaServicio && (
+          <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-200/80">
+            Formula Excel: {formulaServicio}
+          </div>
+        )}
+        {servicio.lineKey === 'antepozo' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-white/10 bg-white/4 p-3">
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Pies de ante pozo</label>
+              <DecimalInput
+                step={1}
+                min={0}
+                value={ip.piesAntepozo ?? EXCEL_PERFORACION_SERVICIOS.antepozo.piesDefault}
+                onValueChange={value => {
+                  patchIp('piesAntepozo', value)
+                  patchIp('costoSeguridad', 0)
+                  limpiarOverrideVenta('antepozo')
+                }}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Tuberia encamisado</label>
+              <select
+                value={ip.diametroTuberiaAntepozo ?? EXCEL_PERFORACION_SERVICIOS.antepozo.diametroTuberiaDefault}
+                onChange={e => {
+                  patchIp('diametroTuberiaAntepozo', Number(e.target.value))
+                  patchIp('costoSeguridad', 0)
+                  limpiarOverrideVenta('antepozo')
+                }}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-blue-500/50"
+              >
+                {Object.keys(EXCEL_PERFORACION_SERVICIOS.antepozo.preciosTuberia).map(d => (
+                  <option key={d} value={d} className="bg-[#0d1526]">
+                    {d}&quot; - {formatQ(EXCEL_PERFORACION_SERVICIOS.antepozo.preciosTuberia[Number(d)])}/tubo
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         )}
@@ -2469,7 +2540,7 @@ function CalcPerforacion({
           />
           <NumInput
             label="Horas de limpieza mecánica"
-            value={ip.horasLimpiezaMecanica ?? 20}
+            value={ip.horasLimpiezaMecanica ?? EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.horasDefault}
             onChange={v => patchIp('horasLimpiezaMecanica', v)}
             hint={ip.incluirLimpieza ? 'Activa el servicio para que se cobre' : 'Toggle desactivado — no se cobra'}
           />
@@ -2724,9 +2795,9 @@ function CalcPerforacion({
                 }}
                 className="w-20 bg-white/5 border border-blue-500/30 rounded-lg px-2 py-1.5 text-sm text-white tabular-nums text-center outline-none focus:border-blue-500/60"
               />
-              <span className="text-xs text-slate-500">pies × Q 75 =</span>
+              <span className="text-xs text-slate-500">pies × Q 100 =</span>
               <span className="text-sm text-blue-300 font-bold tabular-nums">
-                {formatQ((ip.piesSelloSanitario ?? 20) * 75)}
+                {formatQ((ip.piesSelloSanitario ?? 20) * EXCEL_PERFORACION_SERVICIOS.selloSanitario.ventaPie)}
               </span>
             </div>
           </div>
@@ -2874,13 +2945,15 @@ function CalcPerforacion({
               )}
               {ip.incluirExtraccionLodos && (
                 <NumInput label="Extracción lodos (Q)" value={ip.costoExtraccionLodos} onChange={v => patchIp('costoExtraccionLodos', v)}
-                  hint="Base Q20,000 + adicional Q12,000" accent />
+                  hint={ip.costoExtraccionLodos > 0 ? `Manual (auto ${formatQ(viajesLodos * EXCEL_PERFORACION_SERVICIOS.extraccionLodos.costoViaje)})` : `Auto: ${viajesLodos.toFixed(2)} viajes x Q400`} accent />
               )}
               {ip.incluirSeguridad && (
-                <NumInput label="Seguridad (Q)" value={ip.costoSeguridad} onChange={v => patchIp('costoSeguridad', v)} accent />
+                <NumInput label="Ante pozo (Q)" value={ip.costoSeguridad} onChange={v => patchIp('costoSeguridad', v)}
+                  hint={ip.costoSeguridad > 0 ? `Manual (auto ${formatQ(antepozo.total)})` : `Auto: ${antepozo.pies} pies + ${antepozo.tubos.toFixed(2)} tubos`} accent />
               )}
               {ip.incluirSanitario && (
-                <NumInput label="Baños portátiles (Q)" value={ip.costoSanitario} onChange={v => patchIp('costoSanitario', v)} accent />
+                <NumInput label="Sanitario portátil (Q)" value={ip.costoSanitario} onChange={v => patchIp('costoSanitario', v)}
+                  hint={ip.costoSanitario > 0 ? `Manual (auto ${formatQ(mesesSanitario * 800)})` : `Auto: ${mesesSanitario} mes(es) x Q800`} accent />
               )}
             </div>
           </div>
@@ -3328,8 +3401,8 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
           ['Tapón tubería',                     res.costoTaponTuberia],
           ...(res.costoSelloSanitario > 0       ? [['Sello sanitario',     res.costoSelloSanitario]]        : []),
           ...(res.costoExtraccionLodosTotal > 0 ? [['Extracción de lodos', res.costoExtraccionLodosTotal]]  : []),
-          ...(res.costoSeguridadTotal > 0       ? [['Seguridad',           res.costoSeguridadTotal]]        : []),
-          ...(res.costoSanitarioTotal > 0       ? [['Baños portátiles',    res.costoSanitarioTotal]]        : []),
+          ...(res.costoSeguridadTotal > 0       ? [['Ante pozo',           res.costoSeguridadTotal]]        : []),
+          ...(res.costoSanitarioTotal > 0       ? [['Sanitario portátil',  res.costoSanitarioTotal]]        : []),
         ] as [string, number][]).filter(([,v]) => v > 0).map(([k, v]) => {
           const pct = res.costoTotalProyecto > 0 ? ((v as number) / res.costoTotalProyecto * 100) : 0
           return (
@@ -3888,6 +3961,9 @@ function buildLineasPerf(
   // Grava: Excel dice Q600/m³ venta (costo Q350)
   const precioSacoBent = preciosVentaOverride['bentonita'] ?? COSTOS_BASE.bentonita.precioVentaUnitario
   const precioGravam3  = preciosVentaOverride['grava']     ?? COSTOS_BASE.grava.precioVentaUnitario
+  const viajesLodos = viajesExtraccionLodos(ip.profundidad)
+  const antepozo = calcularAntepozoExcel(ip.piesAntepozo, ip.diametroTuberiaAntepozo)
+  const mesesSanitario = mesesSanitarioPortatil(res.totalDiasMaquinaria)
 
   // Descripción tubería según espesor toggle, descripción simple y tipo ranura
   const espStr = (!descripcionSimple && mostrarEspesor)
@@ -3968,11 +4044,19 @@ function buildLineasPerf(
     // Línea 14 y 15 separadas nuevamente (desecha la unificación previa)
     ...(ip.incluirLimpieza ? [{ key: 'limpieza-mecanica',
       nombre: 'Limpieza mecánica que incluye cubeteado, pistoneado y desarenado.',
-      unidad: 'Hora', cant: ip.horasLimpiezaMecanica ?? 20, precio: pl.precioLimpiezaHora }] : []),
+      unidad: 'Hora', cant: ip.horasLimpiezaMecanica ?? EXCEL_PERFORACION_SERVICIOS.limpiezaMecanica.horasDefault, precio: pl.precioLimpiezaHora }] : []),
 
     ...(ip.incluirExtraccionLodos ? [{ key: 'extraccion-lodos',
       nombre: 'Desarrollo y limpieza. Extracción de lodos bentoníticos mediante bomba de émbolo.',
-      unidad: 'Global', cant: 1, precio: pl.desarrolloLimpieza }] : []),
+      unidad: 'Viaje', cant: viajesLodos, precio: pl.desarrolloLimpieza }] : []),
+
+    ...(ip.incluirSeguridad ? [{ key: 'antepozo',
+      nombre: `Construccion de antepozo de ${antepozo.pies} pies con tuberia de encamisado ${antepozo.diametroTuberia} pulgadas.`,
+      unidad: 'Global', cant: 1, precio: preciosVentaOverride['antepozo'] ?? antepozo.total }] : []),
+
+    ...(ip.incluirSanitario ? [{ key: 'servicio-perf-sanitario',
+      nombre: 'Servicio sanitario portatil en obra.',
+      unidad: 'Mes', cant: mesesSanitario, precio: preciosVentaOverride['servicio-perf-sanitario'] ?? EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.ventaMes }] : []),
 
     // Línea unificada: traslado generador + prueba de bombeo (por hora).
     // Precio/hora se deriva de aforoDetallado.precioVentaTotal / horas; si no, usa pl.pruebaBombeo.
@@ -4243,6 +4327,8 @@ const LINEA_A_RUBRO: Record<string, keyof typeof COSTOS_BASE> = {
   'traslado-generador': 'trasladoGenerador',
   'registro-electrico': 'registroElectrico',
   'sello-sanitario': 'selloSanitario',
+  'extraccion-lodos': 'extraccionLodos',
+  'servicio-perf-sanitario': 'sanitarioPortatil',
   'instalacion-equipo': 'instalacionEquipo',
   'prueba-bombeo': 'pruebaBombeo',
   'analisis-combinado': 'analisisFQBact',
@@ -4283,7 +4369,9 @@ function PanelMargenRubros({
     .map(r => {
       const base = costosBase[r.rubroKey]
       const venta = preciosVentaOverride[r.linea.key] ?? r.linea.precio ?? base.precioVentaUnitario
-      const costoBaseOGlobal = base.costoUnitario
+      const costoBaseOGlobal = r.rubroKey === 'selloSanitario'
+        ? venta * (EXCEL_PERFORACION_SERVICIOS.selloSanitario.costoPie / EXCEL_PERFORACION_SERVICIOS.selloSanitario.ventaPie)
+        : base.costoUnitario
       const costo = costosCotizacionOverride[r.rubroKey] ?? costoBaseOGlobal
       const costoEditadoEnCotizacion = costosCotizacionOverride[r.rubroKey] !== undefined
       const markup = calcMarkupPct(costo, venta)
