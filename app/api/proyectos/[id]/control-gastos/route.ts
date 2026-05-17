@@ -6,6 +6,7 @@ import type { InputsPerforacion } from '@/lib/calculator'
 import { DEFAULT_CONFIG, normalizeAppConfig, type AppConfig } from '@/lib/config-store'
 import { requireSuperAdmin } from '@/lib/auth'
 import { reconciliarReservaBentonitaProyecto } from '@/lib/inventario-bentonita'
+import { inferRubroGasto, unidadSugeridaGasto } from '@/lib/control-gastos-catalog'
 
 // GET /api/proyectos/[id]/control-gastos
 // Devuelve: proyecto + presupuesto (desde cotización original) + ejecutado (bitácora agregada)
@@ -180,11 +181,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
   const body = await request.json()
 
-  const cantidad       = Number(body.cantidad ?? 1)
-  const costoUnitario  = Number(body.costoUnitario ?? body.montoUnit ?? 0)
-  const valorUnitario  = Number(body.valorUnitario ?? 0)
-  const diasCredito    = Number(body.diasCredito ?? 0)
-  const fecha          = body.fecha ?? new Date().toISOString().slice(0, 10)
+  const str = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+  const producto = str(body.producto) || str(body.concepto)
+  if (!producto) {
+    return NextResponse.json({ error: 'Producto requerido' }, { status: 400 })
+  }
+
+  const cantidad       = Math.max(0, Number(body.cantidad ?? 1))
+  const costoUnitario  = Math.max(0, Number(body.costoUnitario ?? body.montoUnit ?? 0))
+  const valorUnitario  = Math.max(0, Number(body.valorUnitario ?? 0))
+  const diasCredito    = Math.max(0, Math.trunc(Number(body.diasCredito ?? 0)))
+  const fecha          = str(body.fecha) || new Date().toISOString().slice(0, 10)
+  const rubro          = str(body.rubro) || inferRubroGasto(producto)
+  const unidad         = str(body.unidad) || unidadSugeridaGasto(producto)
 
   // Fecha de vencimiento = fecha + diasCredito (calendario, no hábiles)
   let fechaVencimiento = ''
@@ -198,22 +207,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     data: {
       proyectoId: id,
       fecha,
-      producto:    body.producto ?? body.concepto ?? '',
-      descripcion: body.descripcion ?? '',
-      rubro:       body.rubro ?? 'otro',
+      producto,
+      descripcion: str(body.descripcion),
+      rubro,
       costoUnitario,
       valorUnitario,
       cantidad,
-      unidad:      body.unidad ?? 'Unidad',
+      unidad,
       monto:       cantidad * costoUnitario,
       diasCredito,
       fechaVencimiento,
       pagado:      diasCredito === 0 ? true : Boolean(body.pagado),
-      proveedor:   body.proveedor ?? '',
-      nota:        body.nota ?? '',
-      creadoPor:   body.creadoPor ?? '',
+      proveedor:   str(body.proveedor),
+      nota:        str(body.nota),
+      creadoPor:   str(body.creadoPor),
       // Legacy
-      concepto:    body.producto ?? body.concepto ?? '',
+      concepto:    producto,
       montoUnit:   costoUnitario,
     },
   })

@@ -13,6 +13,13 @@ import {
 import { cn, formatQ } from '@/lib/utils'
 import { formatFechaDDMMYYYY } from '@/lib/date-format'
 import { PagosPanel } from '@/components/pagos-panel'
+import {
+  CONTROL_GASTOS_PRODUCTOS,
+  CONTROL_GASTOS_PROVEEDORES,
+  CONTROL_GASTOS_UNIDADES,
+  inferRubroGasto,
+  unidadSugeridaGasto,
+} from '@/lib/control-gastos-catalog'
 
 interface PresupuestoRubro {
   key: string
@@ -173,6 +180,15 @@ interface Data {
 }
 
 const RUBRO_OPTIONS = [
+  { value: 'bentonita', label: 'Bentonita' },
+  { value: 'tuberia', label: 'Tuberia' },
+  { value: 'diesel', label: 'Diesel' },
+  { value: 'salarios', label: 'Salarios' },
+  { value: 'bonificaciones', label: 'Bonificaciones' },
+  { value: 'pipas-agua', label: 'Pipas de agua' },
+  { value: 'registro-electrico', label: 'Registro electrico' },
+  { value: 'colocacion-ademe', label: 'Entubado/ADEME' },
+  { value: 'comisiones', label: 'Comisiones' },
   { value: 'combustible', label: 'Combustible' },
   { value: 'mano-obra',   label: 'Mano de obra' },
   { value: 'material',    label: 'Material' },
@@ -190,11 +206,11 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
     fecha: new Date().toISOString().slice(0, 10),
     producto: '',
     descripcion: '',
-    rubro: 'material',
+    rubro: 'otro',
     costoUnitario: 0,
     valorUnitario: 0,
     cantidad: 1,
-    unidad: 'Unidad',
+    unidad: 'unidad',
     diasCredito: 0,
     proveedor: '',
     pagado: false,
@@ -222,6 +238,17 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
 
   useEffect(() => { void load() }, [load])
 
+  function handleProductoChange(producto: string) {
+    const rubro = inferRubroGasto(producto)
+    const unidad = unidadSugeridaGasto(producto)
+    setForm(prev => ({
+      ...prev,
+      producto,
+      rubro,
+      unidad: unidad || prev.unidad,
+    }))
+  }
+
   async function handleGuardar() {
     if (!form.producto.trim()) return
     setSaving(true)
@@ -229,12 +256,17 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
       await fetch(`/api/proyectos/${id}/control-gastos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, pagado: form.diasCredito === 0 ? true : form.pagado }),
+        body: JSON.stringify({
+          ...form,
+          rubro: form.rubro || inferRubroGasto(form.producto),
+          unidad: form.unidad || unidadSugeridaGasto(form.producto),
+          pagado: form.diasCredito === 0 ? true : form.pagado,
+        }),
       })
       setShowForm(false)
       setForm({
         fecha: new Date().toISOString().slice(0, 10), producto: '', descripcion: '',
-        rubro: 'material', costoUnitario: 0, valorUnitario: 0, cantidad: 1, unidad: 'Unidad',
+        rubro: 'otro', costoUnitario: 0, valorUnitario: 0, cantidad: 1, unidad: 'unidad',
         diasCredito: 0, proveedor: '', pagado: false, nota: '',
       })
       await load()
@@ -660,11 +692,11 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               <thead className="bg-[#0a1020] text-[10px] text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium">Fecha</th>
+                  <th className="text-left px-3 py-2 font-medium">Descripción</th>
                   <th className="text-left px-3 py-2 font-medium">Producto</th>
                   <th className="text-left px-3 py-2 font-medium">Proveedor</th>
                   <th className="text-right px-2 py-2 font-medium">Cant.</th>
-                  <th className="text-right px-2 py-2 font-medium">Costo u.</th>
-                  <th className="text-right px-2 py-2 font-medium">Venta u.</th>
+                  <th className="text-right px-2 py-2 font-medium">Precio u.</th>
                   <th className="text-right px-2 py-2 font-medium">Total</th>
                   <th className="text-center px-2 py-2 font-medium">Crédito</th>
                   <th className="text-center px-2 py-2 font-medium">Vence</th>
@@ -684,15 +716,14 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                       esVencido && 'bg-red-500/5',
                       esPorVencer && !esVencido && 'bg-amber-500/5')}>
                       <td className="px-3 py-2 text-slate-500 text-xs tabular-nums whitespace-nowrap">{formatFechaDDMMYYYY(g.fecha)}</td>
+                      <td className="px-3 py-2 text-xs text-slate-400 max-w-[220px] truncate">{g.descripcion || '—'}</td>
                       <td className="px-3 py-2 text-slate-200">
                         <p className="font-medium">{producto}</p>
-                        {g.descripcion && <p className="text-[10px] text-slate-600 truncate max-w-[220px]">{g.descripcion}</p>}
                         <p className="text-[9px] text-slate-700 capitalize">{g.rubro}</p>
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-400 max-w-[140px] truncate">{g.proveedor || '—'}</td>
                       <td className="px-2 py-2 text-right text-slate-400 tabular-nums text-xs">{g.cantidad} {g.unidad}</td>
                       <td className="px-2 py-2 text-right text-slate-300 tabular-nums">{formatQ(costoU)}</td>
-                      <td className="px-2 py-2 text-right text-slate-500 tabular-nums text-xs">{g.valorUnitario > 0 ? formatQ(g.valorUnitario) : '—'}</td>
                       <td className="px-2 py-2 text-right text-white font-semibold tabular-nums">{formatQ(g.monto)}</td>
                       <td className="px-2 py-2 text-center text-xs text-slate-400">{g.diasCredito > 0 ? `${g.diasCredito}d` : 'Contado'}</td>
                       <td className={cn('px-2 py-2 text-center text-xs tabular-nums',
@@ -875,26 +906,35 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
               </button>
             </div>
             <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
+              <datalist id="control-gastos-productos">
+                {CONTROL_GASTOS_PRODUCTOS.map(producto => <option key={producto} value={producto} />)}
+              </datalist>
+              <datalist id="control-gastos-unidades">
+                {CONTROL_GASTOS_UNIDADES.map(unidad => <option key={unidad} value={unidad} />)}
+              </datalist>
+              <datalist id="control-gastos-proveedores">
+                {CONTROL_GASTOS_PROVEEDORES.map(proveedor => <option key={proveedor} value={proveedor} />)}
+              </datalist>
+              <div className="sm:col-span-2 order-3">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Producto *</label>
-                <input value={form.producto} onChange={e => setForm({ ...form, producto: e.target.value })}
-                  placeholder="Ej: Bolsa bentonita 50kg"
+                <input value={form.producto} list="control-gastos-productos" onChange={e => handleProductoChange(e.target.value)}
+                  placeholder="Bentonita, Diesel, tuberia lisa..."
                   className="w-full bg-white/5 border border-blue-500/30 rounded-lg px-3 py-2 text-base font-semibold text-white placeholder:text-slate-600 focus:border-blue-500/50 outline-none" />
               </div>
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 order-2">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Descripción</label>
                 <input value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })}
                   placeholder="Detalle opcional"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50 outline-none" />
               </div>
 
-              <div>
+              <div className="order-1">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Fecha de compra</label>
                 <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })}
                   style={{ colorScheme: 'dark' }}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
               </div>
-              <div>
+              <div className="hidden">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Rubro</label>
                 {(() => {
                   // Si el rubro corresponde a un rubro del presupuesto → mostrar read-only
@@ -918,26 +958,26 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                 })()}
               </div>
 
-              <div>
+              <div className="order-4">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Cantidad</label>
                 <input type="number" step="0.01" min={0} value={form.cantidad} onChange={e => setForm({ ...form, cantidad: parseFloat(e.target.value) || 0 })}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white tabular-nums" />
               </div>
-              <div>
+              <div className="order-5">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Unidad</label>
-                <input value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })}
-                  placeholder="Ej: Saco, Pipa, Global"
+                <input value={form.unidad} list="control-gastos-unidades" onChange={e => setForm({ ...form, unidad: e.target.value })}
+                  placeholder="sacos, tubos, litro..."
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600" />
               </div>
 
-              <div>
-                <label className="text-[10px] text-slate-500 uppercase mb-1 block">Costo unitario (Q)</label>
+              <div className="order-6">
+                <label className="text-[10px] text-slate-500 uppercase mb-1 block">Precio unitario (Q)</label>
                 <input type="number" step="0.01" min={0} value={form.costoUnitario}
                   onChange={e => setForm({ ...form, costoUnitario: parseFloat(e.target.value) || 0 })}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white tabular-nums" />
                 <p className="text-[10px] text-slate-500 mt-1">Lo que paga la empresa</p>
               </div>
-              <div>
+              <div className="hidden">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Valor unitario venta (Q)</label>
                 <input type="number" step="0.01" min={0} value={form.valorUnitario}
                   onChange={e => setForm({ ...form, valorUnitario: parseFloat(e.target.value) || 0 })}
@@ -945,27 +985,27 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                 <p className="text-[10px] text-slate-500 mt-1">Referencia precio al cliente</p>
               </div>
 
-              <div className="sm:col-span-2 bg-white/3 rounded-lg border border-white/5 px-3 py-2.5 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400">Total compra</span>
+              <div className="order-7 sm:col-span-2 bg-white/3 rounded-lg border border-white/5 px-3 py-2.5 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">Total</span>
                 <span className="text-base font-bold text-white tabular-nums">{formatQ(form.cantidad * form.costoUnitario)}</span>
               </div>
 
-              <div>
+              <div className="order-9">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Días de crédito</label>
                 <input type="number" step="1" min={0} value={form.diasCredito}
                   onChange={e => setForm({ ...form, diasCredito: parseInt(e.target.value) || 0 })}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white tabular-nums" />
                 <p className="text-[10px] text-slate-500 mt-1">0 = contado</p>
               </div>
-              <div>
+              <div className="order-8">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Proveedor</label>
-                <input value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })}
-                  placeholder="Nombre del proveedor"
+                <input value={form.proveedor} list="control-gastos-proveedores" onChange={e => setForm({ ...form, proveedor: e.target.value })}
+                  placeholder="promisa, agua sistemas, gasolinera..."
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600" />
               </div>
 
               {form.diasCredito > 0 && (
-                <div className="sm:col-span-2 bg-amber-500/5 rounded-lg border border-amber-500/20 px-3 py-2 flex items-center gap-2 text-xs">
+                <div className="order-10 sm:col-span-2 bg-amber-500/5 rounded-lg border border-amber-500/20 px-3 py-2 flex items-center gap-2 text-xs">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                   <span className="text-slate-300">Vence el <b className="text-amber-300">{(() => {
                     const d = new Date(form.fecha + 'T12:00:00')
@@ -975,13 +1015,13 @@ export default function ControlGastosDetallePage({ params }: { params: Promise<{
                 </div>
               )}
 
-              <div className="sm:col-span-2">
+              <div className="hidden">
                 <label className="text-[10px] text-slate-500 uppercase mb-1 block">Nota interna</label>
                 <textarea value={form.nota} onChange={e => setForm({ ...form, nota: e.target.value })} rows={2}
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 resize-none" />
               </div>
 
-              <label className="sm:col-span-2 flex items-center gap-2 cursor-pointer">
+              <label className="hidden">
                 <input type="checkbox" checked={form.diasCredito === 0 ? true : form.pagado}
                   disabled={form.diasCredito === 0}
                   onChange={e => setForm({ ...form, pagado: e.target.checked })}
