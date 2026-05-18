@@ -2493,9 +2493,9 @@ function CalcPerforacion({
           <div className="xl:col-span-3 min-w-0">
             <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
               Precio/pie venta (Q)
-              {errors.precioPorPieVenta
-                ? <span className="text-[10px] text-red-400 ml-auto">{errors.precioPorPieVenta}</span>
-                : <span className="text-[9px] text-blue-400 ml-auto">editable</span>}
+              {errors.precioPorPieVenta && (
+                <span className="text-[10px] text-red-400 ml-auto">{errors.precioPorPieVenta}</span>
+              )}
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium">Q</span>
