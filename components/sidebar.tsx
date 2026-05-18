@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, FileText, Users, Settings, ClipboardList,
-  Menu, ShieldCheck, Shield, LogOut, Sun, Moon, X, BarChart2,
+  Menu, ShieldCheck, LogOut, Sun, Moon, X, BarChart2,
   TrendingUp, Package, BookOpen, MoreHorizontal, Trash2,
   ArrowDownRight, ArrowUpRight, Archive,
 } from 'lucide-react'
@@ -91,7 +91,6 @@ export function Sidebar() {
   }
 
   const isSuperAdmin = rol === 'superadmin'
-  const roleLabel = isSuperAdmin ? 'Super Admin' : rol === 'admin_operativo' ? 'Admin Operativo' : 'Admin'
   const visibleNavItems = navItems.filter(item => {
     if (item.href === '/proyectos') return isSuperAdmin
     if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
@@ -188,19 +187,12 @@ export function Sidebar() {
           )}
 
           <div className={cn('flex items-center gap-3 px-3 py-2.5 mt-1', collapsed && 'justify-center')}>
-            <div className={cn('w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0',
-              isSuperAdmin ? 'bg-gradient-to-br from-violet-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600')}>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 bg-gradient-to-br from-blue-500 to-cyan-600">
               {initials}
             </div>
             {!collapsed && (
               <div className="min-w-0">
                 <p className="text-xs font-medium text-slate-300 truncate">{user}</p>
-                <div className="flex items-center gap-1">
-                  {isSuperAdmin
-                    ? <><ShieldCheck className="w-2.5 h-2.5 text-violet-400" /><p className="text-[10px] text-violet-400">Super Admin</p></>
-                    : <><Shield className="w-2.5 h-2.5 text-blue-400" /><p className="text-[10px] text-blue-400">{roleLabel}</p></>
-                  }
-                </div>
               </div>
             )}
           </div>
@@ -325,18 +317,11 @@ export function Sidebar() {
             >
               {/* User info */}
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/3">
-                <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0',
-                  isSuperAdmin ? 'bg-gradient-to-br from-violet-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600')}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 bg-gradient-to-br from-blue-500 to-cyan-600">
                   {initials}
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-200 truncate">{user}</p>
-                  <div className="flex items-center gap-1">
-                    {isSuperAdmin
-                      ? <><ShieldCheck className="w-3 h-3 text-violet-400" /><p className="text-xs text-violet-400">Super Admin</p></>
-                      : <><Shield className="w-3 h-3 text-blue-400" /><p className="text-xs text-blue-400">{roleLabel}</p></>
-                    }
-                  </div>
                 </div>
               </div>
 
