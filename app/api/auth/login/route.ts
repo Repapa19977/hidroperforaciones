@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     return rateLimitResponse(nextIpCheck, nextUserCheck)
   }
 
-  let role: 'superadmin' | 'admin' | null = null
+  let role: 'superadmin' | 'admin' | 'admin_operativo' | null = null
   let vendedor = ''
   let usuarioDb: { id: string; passwordHash: string } | null = null
   let twoFactorSecret: string | null = null
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   if (!role) {
     const user = await prisma.usuario.findFirst({ where: { username, activo: true } })
     if (user && verifyPassword(password, user.passwordHash)) {
-      role     = user.rol as 'admin' | 'superadmin'
+      role     = user.rol as 'admin' | 'admin_operativo' | 'superadmin'
       vendedor = user.nombre
       usuarioDb = { id: user.id, passwordHash: user.passwordHash }
       twoFactorSecret = user.twoFactorEnabled ? user.twoFactorSecret : null
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     if (!verifyTotp(totpCode, twoFactorSecret)) {
       const failedLimitResponse = registerFailedLogin()
       await auditLog({
-        user: { username, role: role as 'admin' | 'superadmin', vendedor },
+        user: { username, role: role as 'admin' | 'admin_operativo' | 'superadmin', vendedor },
         accion: 'login', entidad: 'usuario', entidadId: username,
         despues: { resultado: 'falla', motivo: 'codigo_2fa_incorrecto' },
         ...info,
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
   // Log login exitoso
   await auditLog({
-    user: { username, role: role as 'admin' | 'superadmin' | 'cliente_final' | 'bot', vendedor },
+    user: { username, role: role as 'admin' | 'admin_operativo' | 'superadmin' | 'cliente_final' | 'bot', vendedor },
     accion: 'login', entidad: 'usuario', entidadId: username,
     despues: { resultado: 'exito' },
     ...info,

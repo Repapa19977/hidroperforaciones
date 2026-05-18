@@ -45,9 +45,9 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const from = searchParams.get('from')
   const to = searchParams.get('to')
-  const vendedor = auth.user.role === 'admin'
-    ? auth.user.vendedor
-    : searchParams.get('vendedor')
+  const vendedor = auth.user.role === 'superadmin'
+    ? searchParams.get('vendedor')
+    : auth.user.vendedor
 
   const fromDate = parseRangeDate(from, 'start')
   const toDate = parseRangeDate(to, 'end')

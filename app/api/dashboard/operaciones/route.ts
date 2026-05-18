@@ -22,13 +22,13 @@ type PorProyecto = {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
-  if (auth.user.role !== 'admin' && auth.user.role !== 'superadmin') {
+  if (auth.user.role !== 'admin' && auth.user.role !== 'admin_operativo' && auth.user.role !== 'superadmin') {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
 
-  const vendedor = auth.user.role === 'admin'
-    ? auth.user.vendedor ?? ''
-    : req.nextUrl.searchParams.get('vendedor')?.trim() || null
+  const vendedor = auth.user.role === 'superadmin'
+    ? req.nextUrl.searchParams.get('vendedor')?.trim() || null
+    : auth.user.vendedor ?? ''
   const proyectos = await prisma.proyecto.findMany({
     where: {
       estado: 'activo',

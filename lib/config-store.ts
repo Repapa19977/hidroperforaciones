@@ -1,7 +1,7 @@
 // Configuración global de la app — editable solo por Super Admin
 // Persiste en localStorage
 
-export type Rol = 'superadmin' | 'admin'
+export type Rol = 'superadmin' | 'admin_operativo' | 'admin'
 
 // ── Precios fijos de líneas de cotización ─────────────────────────────────────
 export interface PreciosLineas {

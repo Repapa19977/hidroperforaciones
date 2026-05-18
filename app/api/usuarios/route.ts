@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { auditLog } from '@/lib/audit'
 import { getRequestInfo, hashPassword, requireSuperAdmin, validarPassword } from '@/lib/auth'
+import { isInternalRole } from '@/lib/roles'
 import { resolverCargoVendedor } from '@/lib/vendedores'
 
 export const dynamic = 'force-dynamic'
@@ -70,12 +71,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Ese nombre de usuario ya está en uso' }, { status: 409 })
   }
 
+  const rolNormalizado = isInternalRole(rol) ? rol : 'admin'
+
   const usuario = await prisma.usuario.create({
     data: {
       username: usernameNormalizado,
       nombre: nombre.trim(),
-      rol: rol === 'superadmin' ? 'superadmin' : 'admin',
-      cargo: resolverCargoVendedor(nombre.trim(), cargo, rol === 'superadmin' ? 'superadmin' : 'admin'),
+      rol: rolNormalizado,
+      cargo: resolverCargoVendedor(nombre.trim(), cargo, rolNormalizado),
       email: emailNormalizado,
       passwordHash: hashPassword(password),
     },

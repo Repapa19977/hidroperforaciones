@@ -14,7 +14,7 @@ export async function GET(
   const { id } = await params
   const row = await prisma.oportunidad.findUnique({ where: { id } })
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && row.vendedor !== auth.user.vendedor) {
+  if (auth.user.role !== 'superadmin' && row.vendedor !== auth.user.vendedor) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
   return NextResponse.json(row)
@@ -32,7 +32,7 @@ export async function PATCH(
   const body = await request.json()
   const before = await prisma.oportunidad.findUnique({ where: { id } })
   if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+  if (auth.user.role !== 'superadmin' && before.vendedor !== auth.user.vendedor) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
 
@@ -46,7 +46,7 @@ export async function PATCH(
   for (const key of allowed) {
     if (body[key] !== undefined) updateData[key] = body[key]
   }
-  if (auth.user.role === 'admin') delete updateData.vendedor
+  if (auth.user.role !== 'superadmin') delete updateData.vendedor
 
   const row = await prisma.oportunidad.update({ where: { id }, data: updateData })
   await auditLog({

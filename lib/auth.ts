@@ -59,7 +59,7 @@ export function validarPassword(pw: string): string | null {
   return null
 }
 
-export type Rol = 'admin' | 'superadmin' | 'cliente_final' | 'bot'
+export type Rol = 'admin' | 'admin_operativo' | 'superadmin' | 'cliente_final' | 'bot'
 
 export interface CurrentUser {
   username: string

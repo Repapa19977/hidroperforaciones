@@ -368,11 +368,20 @@ export default function ConfiguracionPage() {
   }
 
   function handleCambiarRol(id: string, nombre: string, rolActual: string) {
-    const nuevoRol = rolActual === 'superadmin' ? 'admin' : 'superadmin'
+    const roles = ['admin', 'admin_operativo', 'superadmin']
+    const labels: Record<string, string> = {
+      admin: 'Admin',
+      admin_operativo: 'Admin Operativo',
+      superadmin: 'Super Admin',
+    }
+    const idx = Math.max(0, roles.indexOf(rolActual))
+    const nuevoRol = roles[(idx + 1) % roles.length]
     setConfirmPwd({
-      label: `Cambiar rol de ${nombre}: ${rolActual} → ${nuevoRol}`,
+      label: `Cambiar rol de ${nombre}: ${labels[rolActual] ?? rolActual} → ${labels[nuevoRol]}`,
       detail: nuevoRol === 'superadmin'
         ? 'Le darás acceso total: ver todo, editar precios, gestionar usuarios.'
+        : nuevoRol === 'admin_operativo'
+          ? 'Podrá crear cotizaciones y asignarlas a un asesor, sin ver costos, margen ni ganancia.'
         : 'Le quitarás permisos de superadmin. Solo verá sus propios proyectos.',
       action: async () => {
         const res = await fetch(`/api/usuarios/${id}`, {
@@ -640,7 +649,7 @@ export default function ConfiguracionPage() {
 
       {/* IMPUESTOS */}
       <Section title="Impuestos" icon={<Percent className="w-4 h-4" />} locked={!isSuperAdmin}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <ConfigInput
             label="IVA Guatemala"
             value={config.iva * 100}
@@ -1280,13 +1289,17 @@ export default function ConfiguracionPage() {
 
             {usuarios.map(u => {
               const esClienteFinal = u.rol === 'cliente_final'
+              const esOperativo = u.rol === 'admin_operativo'
               const gradient = u.rol === 'superadmin' ? 'from-violet-500 to-purple-600'
+                              : esOperativo ? 'from-emerald-500 to-teal-700'
                               : esClienteFinal ? 'from-cyan-500 to-blue-600'
                               : 'from-blue-500 to-blue-700'
               const rolLabel = u.rol === 'superadmin' ? 'Super Admin'
+                              : esOperativo ? 'Admin Operativo'
                               : esClienteFinal ? 'Cliente Portal'
                               : 'Admin'
               const rolPill = u.rol === 'superadmin' ? 'bg-violet-500/20 text-violet-400'
+                              : esOperativo ? 'bg-emerald-500/20 text-emerald-400'
                               : esClienteFinal ? 'bg-cyan-500/20 text-cyan-400'
                               : 'bg-blue-500/20 text-blue-400'
               return (
@@ -1420,7 +1433,7 @@ export default function ConfiguracionPage() {
                     <>
                       <button
                         onClick={() => handleCambiarRol(u.id, u.nombre, u.rol)}
-                        title={u.rol === 'superadmin' ? 'Bajar a Admin' : 'Subir a Super Admin'}
+                        title="Cambiar rol"
                         className="p-1.5 rounded-lg border border-violet-500/30 text-violet-400 hover:bg-violet-500/10 transition-all"
                       >
                         <ShieldCheck className="w-4 h-4" />
@@ -1553,6 +1566,7 @@ export default function ConfiguracionPage() {
                   className="w-full bg-[#070d1a] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-violet-500/50 transition-colors"
                 >
                   <option value="admin">Admin</option>
+                  <option value="admin_operativo">Admin Operativo</option>
                   <option value="superadmin">Super Admin</option>
                 </select>
               </div>
@@ -1591,6 +1605,22 @@ export default function ConfiguracionPage() {
               'Eliminar cotizaciones',
               'Crear y gestionar usuarios',
               'Acceso a Configuración',
+            ]}
+          />
+          <RolCard
+            rol="Admin Operativo"
+            color="emerald"
+            permisos={[
+              'Crear cotizaciones',
+              'Asignar cotizaciones a un asesor/admin',
+              'Generar PDF',
+              'Usar vista previa',
+              'No ve costos internos, margen ni ganancia',
+            ]}
+            bloqueados={[
+              'No gestiona usuarios',
+              'No entra a reportes financieros',
+              'No ve comparativas de costos',
             ]}
           />
           <RolCard
@@ -2250,13 +2280,15 @@ function MiniNumber({ value, onChange, disabled, prefix, suffix }: {
 }
 
 function RolCard({ rol, color, permisos, bloqueados }: {
-  rol: string; color: 'violet' | 'blue'
+  rol: string; color: 'violet' | 'blue' | 'emerald'
   permisos: string[]; bloqueados?: string[]
 }) {
   const cls = color === 'violet'
     ? 'border-violet-500/20 bg-violet-500/5'
-    : 'border-blue-500/20 bg-blue-500/5'
-  const dot = color === 'violet' ? 'bg-violet-400' : 'bg-blue-400'
+    : color === 'emerald'
+      ? 'border-emerald-500/20 bg-emerald-500/5'
+      : 'border-blue-500/20 bg-blue-500/5'
+  const dot = color === 'violet' ? 'bg-violet-400' : color === 'emerald' ? 'bg-emerald-400' : 'bg-blue-400'
   return (
     <div className={`rounded-xl border p-4 ${cls}`}>
       <div className="flex items-center gap-2 mb-3">

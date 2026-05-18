@@ -10,9 +10,9 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(request.url)
-  const vendedor = auth.user.role === 'admin'
-    ? auth.user.vendedor
-    : searchParams.get('vendedor')
+  const vendedor = auth.user.role === 'superadmin'
+    ? searchParams.get('vendedor')
+    : auth.user.vendedor
   const papelera = searchParams.get('papelera') === '1'
 
   const where: Record<string, unknown> = { eliminadaEn: papelera ? { not: null } : null }
@@ -32,16 +32,16 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const body = await request.json()
-  const vendedor = auth.user.role === 'admin'
-    ? auth.user.vendedor ?? ''
-    : body.vendedor
+  const vendedor = auth.user.role === 'superadmin'
+    ? body.vendedor
+    : auth.user.vendedor ?? ''
 
   if (!body.correlativo) {
     return NextResponse.json({ error: 'Correlativo requerido' }, { status: 400 })
   }
 
   const existente = await prisma.oportunidad.findUnique({ where: { correlativo: body.correlativo } })
-  if (existente && auth.user.role === 'admin' && existente.vendedor !== auth.user.vendedor) {
+  if (existente && auth.user.role !== 'superadmin' && existente.vendedor !== auth.user.vendedor) {
     return NextResponse.json({ error: 'No autorizado para editar esta oportunidad' }, { status: 403 })
   }
 

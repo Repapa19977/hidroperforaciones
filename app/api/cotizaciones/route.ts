@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
+import { canAccessCotizacion, parseCotizacionDatos } from '@/lib/cotizaciones-auth'
+import { canAssignVendedor, INTERNAL_ASSIGNABLE_ROLES } from '@/lib/roles'
 import { contactoDuplicateLockKey, findContactoDuplicate } from '@/lib/contactos-dedup'
 import { crearVendedorOption, normalizarVendedor, type VendedorOption } from '@/lib/vendedores'
 
@@ -12,7 +14,7 @@ async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption
   if (!buscado) return null
 
   const usuarios = await prisma.usuario.findMany({
-    where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
+    where: { activo: true, rol: { in: INTERNAL_ASSIGNABLE_ROLES } },
     select: { nombre: true, email: true, rol: true, cargo: true },
   })
   const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === buscado)
@@ -44,9 +46,9 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(request.url)
-  const vendedor = auth.user.role === 'admin'
-    ? auth.user.vendedor
-    : searchParams.get('vendedor')
+  const vendedor = auth.user.role === 'superadmin'
+    ? searchParams.get('vendedor')
+    : auth.user.vendedor
   const papelera = searchParams.get('papelera') === '1'
 
   const where: Record<string, unknown> = {
@@ -99,9 +101,9 @@ export async function POST(request: NextRequest) {
   // cotización nueva con otro correlativo.
   const existente = await prisma.cotizacion.findUnique({
     where: { correlativo },
-    select: { estado: true, eliminadaEn: true, vendedor: true },
+    select: { estado: true, eliminadaEn: true, vendedor: true, datos: true },
   })
-  if (existente && auth.user.role === 'admin' && existente.vendedor !== auth.user.vendedor) {
+  if (existente && !canAccessCotizacion(auth.user, existente)) {
     return NextResponse.json({ error: 'No autorizado para editar esta cotizacion' }, { status: 403 })
   }
   if (existente && existente.eliminadaEn === null && existente.estado !== 'borrador') {
@@ -117,21 +119,24 @@ export async function POST(request: NextRequest) {
   // puede asignar a cualquier vendedor del body (default: su propio nombre).
   let vendedor: string = body.vendedor ?? ''
   let vendedorInfo: VendedorOption | null = null
-  if (auth.user.role === 'admin') {
+  if (!canAssignVendedor(auth.user.role)) {
     vendedor = auth.user.vendedor ?? ''  // forzado, admin no puede reasignar
     vendedorInfo = await resolverVendedorAsignable(vendedor) ?? crearVendedorOption(vendedor)
-  } else if (auth.user.role === 'superadmin' && !vendedor) {
+  } else if (canAssignVendedor(auth.user.role) && !vendedor) {
     vendedor = auth.user.vendedor ?? ''  // default al propio si no se especifico
   }
-  if (auth.user.role === 'superadmin') {
+  if (canAssignVendedor(auth.user.role)) {
     vendedorInfo = await resolverVendedorAsignable(vendedor)
     if (!vendedorInfo) {
-      return NextResponse.json({ error: 'El asesor asignado debe ser un admin o superadmin activo.' }, { status: 400 })
+      return NextResponse.json({ error: 'El asesor asignado debe ser un usuario interno activo.' }, { status: 400 })
     }
     vendedor = vendedorInfo.nombre
   }
+  const datosExistentes = parseCotizacionDatos(existente?.datos)
   const datosCotizacion = {
     ...datosBase,
+    creadoPorUsuario: typeof datosExistentes.creadoPorUsuario === 'string' ? datosExistentes.creadoPorUsuario : auth.user.username,
+    creadoPorVendedor: typeof datosExistentes.creadoPorVendedor === 'string' ? datosExistentes.creadoPorVendedor : (auth.user.vendedor ?? ''),
     vendedor,
     vendedorEmail: vendedorInfo?.email ?? crearVendedorOption(vendedor).email,
     vendedorCargo: vendedorInfo?.cargo ?? crearVendedorOption(vendedor).cargo,

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
+import { canAccessCotizacion } from '@/lib/cotizaciones-auth'
+import { INTERNAL_ASSIGNABLE_ROLES } from '@/lib/roles'
 import { formatFechaArchivoPdf, formatFechaDDMMYYYY } from '@/lib/date-format'
 import { normalizarVendedor, resolverEmailVendedor } from '@/lib/vendedores'
 import { sendSmtpRelayMail } from '@/lib/smtp-relay'
@@ -59,7 +61,7 @@ async function resolverRemitenteAsignado(row: { vendedor: string; datos: string 
   const vendedorNorm = normalizarVendedor(vendedor)
 
   const usuarios = await prisma.usuario.findMany({
-    where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
+    where: { activo: true, rol: { in: INTERNAL_ASSIGNABLE_ROLES } },
     select: { nombre: true, email: true },
   })
   const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === vendedorNorm)
@@ -104,7 +106,7 @@ export async function POST(request: NextRequest) {
 
   const row = await prisma.cotizacion.findUnique({ where: { correlativo } })
   if (!row) return NextResponse.json({ error: 'Cotizacion no encontrada' }, { status: 404 })
-  if (auth.user.role === 'admin' && row.vendedor !== auth.user.vendedor) {
+  if (!canAccessCotizacion(auth.user, row)) {
     return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
   }
 

@@ -42,6 +42,15 @@ import { crearVendedorOption, resolverCargoVendedor, resolverEmailVendedor, type
 
 type TipoCot = 'perforacion' | 'limpieza'
 type TipoClienteCot = 'individual' | 'empresa'
+type RolUsuario = 'admin' | 'admin_operativo' | 'superadmin' | 'cliente_final'
+
+function canViewFinancials(rol: string | null | undefined): boolean {
+  return rol === 'superadmin'
+}
+
+function canAssignVendedor(rol: string | null | undefined): boolean {
+  return rol === 'superadmin' || rol === 'admin_operativo'
+}
 
 const SERVICIO_MANTENIMIENTO_LABEL = 'Servicios de Mantenimiento'
 const PROYECTO_PERFORACION_DEFAULT = 'Perforación de pozo mecánico'
@@ -168,7 +177,7 @@ export default function NuevaCotizacionPage() {
   const [showPrecios, setShowPrecios] = useState(false)
   const [pl, setPl] = useState<PreciosLineas>(DEFAULT_PRECIOS_LINEAS)
   const [preciosBloqueados, setPreciosBloqueados] = useState(false)
-  const [rolUsuario, setRolUsuario] = useState<'admin' | 'superadmin'>('admin')
+  const [rolUsuario, setRolUsuario] = useState<RolUsuario>('admin')
   const [mostrarComparativa, setMostrarComparativa] = useState(false)
   // Overrides de COSTO del modal de comparativa — guardados por cotización, no global
   const [comparativaCostosOv, setComparativaCostosOv] = useState<Record<string, number>>({})
@@ -208,7 +217,8 @@ export default function NuevaCotizacionPage() {
   useEffect(() => {
     // Rol y nombre del usuario logueado
     const rolMatch = document.cookie.match(/user_role=([^;]+)/)
-    const rol = (rolMatch?.[1] as 'admin' | 'superadmin') ?? 'admin'
+    const rolRaw = rolMatch?.[1]
+    const rol: RolUsuario = rolRaw === 'superadmin' || rolRaw === 'admin_operativo' || rolRaw === 'cliente_final' ? rolRaw : 'admin'
     setRolUsuario(rol)
     const venMatch = document.cookie.match(/user_vendedor=([^;]+)/)
     const miNombre = venMatch?.[1] ? decodeURIComponent(venMatch[1]) : ''
@@ -934,7 +944,7 @@ export default function NuevaCotizacionPage() {
             className="flex items-center gap-1.5 border border-white/10 text-slate-300 hover:text-white hover:border-white/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-300 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all">
             <Save className="w-3.5 h-3.5" /><span className="hidden sm:inline"> {editMode ? 'Guardar Cambios' : 'Guardar Borrador'}</span>
           </button>
-          {rolUsuario === 'superadmin' && tipo === 'perforacion' && (
+          {canViewFinancials(rolUsuario) && tipo === 'perforacion' && (
             <button
               onClick={() => setMostrarComparativa(true)}
               title="Comparativa costos vs venta por rubro (solo superadmin)"
@@ -1112,11 +1122,11 @@ export default function NuevaCotizacionPage() {
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
                     <User className="w-3 h-3" /> Vendedor
-                    {rolUsuario === 'admin' && (
+                    {!canAssignVendedor(rolUsuario) && (
                       <span className="ml-auto text-[9px] text-slate-600 italic">autoasignada a tu usuario</span>
                     )}
                   </label>
-                  {rolUsuario === 'superadmin' ? (
+                  {canAssignVendedor(rolUsuario) ? (
                     <>
                       <select
                       value={vendedor}
@@ -1236,6 +1246,7 @@ export default function NuevaCotizacionPage() {
                   patchIl={patchIl}
                   setServicioSubtipo={setServicioSubtipo}
                   res={resLimp}
+                  rol={rolUsuario}
                   lineasConfig={lineasConfig}
                   setLineasConfig={setLineasConfig}
                 />}
@@ -1332,7 +1343,7 @@ export default function NuevaCotizacionPage() {
             </div>
 
             {/* Aforo / Prueba de Bombeo — detalle de costos con inputs editables */}
-            {tipo === 'perforacion' && (
+            {tipo === 'perforacion' && canViewFinancials(rolUsuario) && (
               <AforoDetalladoEditor
                 aforo={ip.aforoDetallado ?? defaultInputsAforoDetallado}
                 setAforo={(next) => setIp(prev => ({ ...prev, aforoDetallado: next }))}
@@ -1402,7 +1413,7 @@ export default function NuevaCotizacionPage() {
                   gananciaNeta={gananciaNeta} margenNeto={margenNeto} rol={rolUsuario}
                   costoProyectoTotal={costoProyecto} />}
 
-            {tipo === 'limpieza' && rolUsuario === 'superadmin' && (
+            {tipo === 'limpieza' && canViewFinancials(rolUsuario) && (
               <PanelComparativaLimpieza
                 filas={comparativaLimpieza}
                 subtotal={subtotal}
@@ -1548,12 +1559,12 @@ export default function NuevaCotizacionPage() {
                             </span>
                           )}
                           {/* Hint para superadmin en rubros con split: cantidad real a comprar */}
-                          {rolUsuario === 'superadmin' && l.key === 'bentonita' && resPerf.sacosBentonita > l.cant && (
+                          {canViewFinancials(rolUsuario) && l.key === 'bentonita' && resPerf.sacosBentonita > l.cant && (
                             <span className="ml-2 text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-300 px-1.5 py-0.5 rounded font-semibold">
                               Comprar: {Math.round(resPerf.sacosBentonita)} sacos (cliente ve {l.cant})
                             </span>
                           )}
-                          {rolUsuario === 'superadmin' && l.key === 'pipas-agua' && ip.profundidad > 0 && (
+                          {canViewFinancials(rolUsuario) && l.key === 'pipas-agua' && ip.profundidad > 0 && (
                             <span className="ml-2 text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-300 px-1.5 py-0.5 rounded font-semibold">
                               Comprar: {pipasInternas(ip.profundidad, ip.rendimientoPorDia ?? 20)} pipas (cliente ve {l.cant})
                             </span>
@@ -1776,13 +1787,13 @@ export default function NuevaCotizacionPage() {
                 }}
                 costosCotizacionOverride={costosCotizacionOverride}
                 setCostosCotizacionOverride={setCostosCotizacionOverride}
-                bentonitaSplit={rolUsuario === 'superadmin' ? {
+                bentonitaSplit={canViewFinancials(rolUsuario) ? {
                   sacosTotales: resPerf.sacosBentonita,
                   sacosCliente: resPerf.sacosEntregaCliente,
                   sacosReserva: resPerf.sacosReserva,
                   valorReserva: resPerf.valorReservaBentonita,
                 } : undefined}
-                fleteSplit={rolUsuario === 'superadmin' ? {
+                fleteSplit={canViewFinancials(rolUsuario) ? {
                   m3Grava: resPerf.m3Grava,
                   camiones: resPerf.camionesFlete,
                   cargoCliente: resPerf.costoFleteGrava,
@@ -1806,7 +1817,7 @@ export default function NuevaCotizacionPage() {
                 <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-emerald-400" />
                   <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resumen financiero</h3>
-                  {rolUsuario !== 'superadmin' && (
+                  {!canViewFinancials(rolUsuario) && (
                     <span className="ml-auto text-[10px] text-slate-600">Ganancia y costo solo visibles para superadmin</span>
                   )}
                 </div>
@@ -1822,7 +1833,7 @@ export default function NuevaCotizacionPage() {
                     </p>
                   </div>
                   {/* Tu costo — solo superadmin */}
-                  {rolUsuario === 'superadmin' && (
+                  {canViewFinancials(rolUsuario) && (
                     <div className="p-4">
                       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-400 mb-1">
                         <TrendingUp className="w-3 h-3" /> Tu costo total
@@ -1834,7 +1845,7 @@ export default function NuevaCotizacionPage() {
                     </div>
                   )}
                   {/* Ganancia neta — solo superadmin */}
-                  {rolUsuario === 'superadmin' && (
+                  {canViewFinancials(rolUsuario) && (
                     <div className="p-4">
                       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-emerald-400 mb-1">
                         <CheckCircle className="w-3 h-3" /> Ganancia neta
@@ -1874,7 +1885,7 @@ export default function NuevaCotizacionPage() {
             <div className="flex-1 px-4 py-2.5">
               <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider leading-none">Total cotización</p>
               <p className="text-lg font-bold text-blue-400 tabular-nums leading-tight mt-1">{formatCotizacionMoney(totalConIva)}</p>
-              {rolUsuario === 'superadmin' && (
+              {canViewFinancials(rolUsuario) && (
                 <p className="text-[9px] text-slate-500 tabular-nums leading-none mt-0.5">
                   Margen: <span className={margenNeto >= 25 ? 'text-emerald-400' : margenNeto >= 10 ? 'text-amber-400' : 'text-red-400'}>{margenNeto.toFixed(1)}%</span>
                 </p>
@@ -1905,7 +1916,7 @@ export default function NuevaCotizacionPage() {
       </div>
 
       {/* Modal Comparativa de costos — solo superadmin + perforación */}
-      {mostrarComparativa && tipo === 'perforacion' && rolUsuario === 'superadmin' && (
+      {mostrarComparativa && tipo === 'perforacion' && canViewFinancials(rolUsuario) && (
         <ComparativaCostosModal
           ip={ip}
           pl={pl}
@@ -2096,7 +2107,7 @@ function CalcPerforacion({
   ip: InputsPerforacion; patchIp: (k: keyof InputsPerforacion, v: number | boolean | string | undefined) => void
   showCostos: boolean; setShowCostos: (v: boolean) => void
   res: ReturnType<typeof calcularPerforacion>
-  rol: 'admin' | 'superadmin'
+  rol: RolUsuario
   pl: PreciosLineas
   patchPl: (key: keyof PreciosLineas, val: number) => void
   preciosVentaOverride?: Record<string, number>
@@ -2107,6 +2118,7 @@ function CalcPerforacion({
   lineasConfig: Record<string, LineaConfig>
   setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
+  const mostrarFinanzas = canViewFinancials(rol)
   const ovr = preciosVentaOverride ?? {}
   const costosOverride = costosCotizacionOverride ?? {}
   const sacos = sacosDebentonita(ip.diametro, ip.profundidad)
@@ -2304,39 +2316,41 @@ function CalcPerforacion({
               className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Me sale</label>
-              <DecimalInput
-                step={0.01}
-                min={0}
-                value={costo}
-                onValueChange={value => setCostoServicio(servicio.lineKey, value)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Le gano</label>
-              {ganancia === null ? (
-                <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-[11px] text-slate-400">
-                  En margen general
-                </div>
-              ) : (
+          {mostrarFinanzas && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Me sale</label>
                 <DecimalInput
                   step={0.01}
-                  value={ganancia}
-                  onValueChange={value => setVentaTotalServicio(servicio.lineKey, costo + value)}
-                  className={cn(
-                    'w-full rounded-lg border bg-white/5 px-3 py-2 text-xs tabular-nums outline-none focus:border-blue-500/50',
-                    ganancia >= 0 ? 'border-white/10 text-emerald-300' : 'border-red-500/40 text-red-300'
-                  )}
+                  min={0}
+                  value={costo}
+                  onValueChange={value => setCostoServicio(servicio.lineKey, value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
                 />
-              )}
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Le gano</label>
+                {ganancia === null ? (
+                  <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-[11px] text-slate-400">
+                    En margen general
+                  </div>
+                ) : (
+                  <DecimalInput
+                    step={0.01}
+                    value={ganancia}
+                    onValueChange={value => setVentaTotalServicio(servicio.lineKey, costo + value)}
+                    className={cn(
+                      'w-full rounded-lg border bg-white/5 px-3 py-2 text-xs tabular-nums outline-none focus:border-blue-500/50',
+                      ganancia >= 0 ? 'border-white/10 text-emerald-300' : 'border-red-500/40 text-red-300'
+                    )}
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
         {venta !== null && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className={cn('grid grid-cols-1 gap-3', mostrarFinanzas ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
             <div>
               <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Le cobro</label>
               <DecimalInput
@@ -2347,15 +2361,17 @@ function CalcPerforacion({
                 className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
               />
             </div>
-            <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2">
-              <span className="block text-[10px] text-slate-500 uppercase tracking-wide">Margen</span>
-              <span className={cn('text-sm font-bold tabular-nums', ganancia !== null && ganancia >= 0 ? 'text-emerald-300' : 'text-red-300')}>
-                {ganancia !== null && venta > 0 ? `${((ganancia / venta) * 100).toFixed(1)}%` : '0.0%'}
-              </span>
-            </div>
+            {mostrarFinanzas && (
+              <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2">
+                <span className="block text-[10px] text-slate-500 uppercase tracking-wide">Margen</span>
+                <span className={cn('text-sm font-bold tabular-nums', ganancia !== null && ganancia >= 0 ? 'text-emerald-300' : 'text-red-300')}>
+                  {ganancia !== null && venta > 0 ? `${((ganancia / venta) * 100).toFixed(1)}%` : '0.0%'}
+                </span>
+              </div>
+            )}
           </div>
         )}
-        {formulaServicio && (
+        {mostrarFinanzas && formulaServicio && (
           <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-[11px] text-blue-200/80">
             Formula Excel: {formulaServicio}
           </div>
@@ -2584,7 +2600,7 @@ function CalcPerforacion({
       </div>
 
       {/* Widget interno — Split 70/30 (solo superadmin, solo perforación) */}
-      {rol === 'superadmin' && ip.profundidad > 0 && (
+      {mostrarFinanzas && ip.profundidad > 0 && (
         <SplitInternoCotizacion
           sacosTotales={res.sacosBentonita}
           sacosCliente={res.sacosEntregaCliente}
@@ -2621,9 +2637,11 @@ function CalcPerforacion({
       <div>
         <p className="text-xs text-slate-500 mb-3 font-medium">Tubería</p>
         <div className="bg-white/3 rounded-xl border border-white/8 p-4 space-y-4">
-          <p className="text-[11px] text-slate-500 bg-white/4 border border-white/8 rounded-lg px-3 py-2 leading-relaxed">
-            Los valores por tubo son <b className="text-slate-300">costo interno del proveedor</b>. El precio al cliente se calcula despues con la formula de la cotizacion; si una medida queda en Q0, el sistema bloquea guardar para no cotizar con costo faltante.
-          </p>
+          {mostrarFinanzas && (
+            <p className="text-[11px] text-slate-500 bg-white/4 border border-white/8 rounded-lg px-3 py-2 leading-relaxed">
+              Los valores por tubo son <b className="text-slate-300">costo interno del proveedor</b>. El precio al cliente se calcula despues con la formula de la cotizacion; si una medida queda en Q0, el sistema bloquea guardar para no cotizar con costo faltante.
+            </p>
+          )}
           {/* Diámetro + tipo ranura + espesores */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
@@ -2709,10 +2727,12 @@ function CalcPerforacion({
                   className="w-full min-w-0 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-base text-center font-semibold text-white tabular-nums outline-none focus:border-blue-500/50" />
               </div>
               <div className="min-w-0 space-y-1 sm:flex-1 sm:mt-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 text-slate-400 text-xs truncate">Me sale {formatQ(pLisa)}/tubo</span>
-                  <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pLisa * ip.tubosLisos)}</span>
-                </div>
+                {mostrarFinanzas && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 text-slate-400 text-xs truncate">Me sale {formatQ(pLisa)}/tubo</span>
+                    <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pLisa * ip.tubosLisos)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2">
                   <span className="min-w-0 text-emerald-300/80 text-xs truncate">Le cobro {formatQ(ventaLisaTubo)}/tubo</span>
                   <span className="shrink-0 text-emerald-300 text-sm font-semibold text-right tabular-nums">{formatQ(ventaLisaTubo * ip.tubosLisos)}</span>
@@ -2728,10 +2748,12 @@ function CalcPerforacion({
                   className="w-full min-w-0 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-base text-center font-semibold text-white tabular-nums outline-none focus:border-blue-500/50" />
               </div>
               <div className="min-w-0 space-y-1 sm:flex-1 sm:mt-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 text-slate-400 text-xs truncate">Me sale {formatQ(pRan)}/tubo</span>
-                  <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pRan * ip.tubosRanurados)}</span>
-                </div>
+                {mostrarFinanzas && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 text-slate-400 text-xs truncate">Me sale {formatQ(pRan)}/tubo</span>
+                    <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pRan * ip.tubosRanurados)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2">
                   <span className="min-w-0 text-emerald-300/80 text-xs truncate">Le cobro {formatQ(ventaRanTubo)}/tubo</span>
                   <span className="shrink-0 text-emerald-300 text-sm font-semibold text-right tabular-nums">{formatQ(ventaRanTubo * ip.tubosRanurados)}</span>
@@ -2756,10 +2778,12 @@ function CalcPerforacion({
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-right">
-                <span className="block text-[10px] text-slate-500">Costo interno tuberia</span>
-                <span className="block text-sm font-medium text-white tabular-nums">{formatQ(costoTub)}</span>
-              </span>
+              {mostrarFinanzas && (
+                <span className="text-right">
+                  <span className="block text-[10px] text-slate-500">Costo interno tuberia</span>
+                  <span className="block text-sm font-medium text-white tabular-nums">{formatQ(costoTub)}</span>
+                </span>
+              )}
               <button onClick={autoSplit70_30}
                 title={`Auto: ${lisosSugeridos} lisos + ${ranuradosSugeridos} ranurados (70/30 desde ${ip.profundidad} pies)`}
                 className="text-[10px] border border-blue-500/30 text-blue-400 hover:text-blue-300 hover:border-blue-500/50 px-2 py-1 rounded transition-colors">
@@ -2859,6 +2883,8 @@ function CalcPerforacion({
       </div>
 
       {/* 5. Costos avanzados */}
+      {mostrarFinanzas && (
+        <>
       <button onClick={() => setShowCostos(!showCostos)}
         className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
         {showCostos ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -2930,7 +2956,7 @@ function CalcPerforacion({
                 hint={`${formatQ(res.imprevistoTraslado)} · total IV: ${formatQ(res.totalTrasladoIV)}`} />
               <NumInput label="Bentonita/saco (Q)" value={ip.precioBentonitaSaco} onChange={v => patchIp('precioBentonitaSaco', v)}
                 hint={`${sacos} sacos × Q${ip.precioBentonitaSaco} = ${formatQ(sacos * ip.precioBentonitaSaco)}`} />
-              {rol === 'superadmin' && (
+              {mostrarFinanzas && (
                 <NumInput label="% entrega bentonita (cliente)"
                   value={(ip.pctEntregaBentonita ?? 0.70) * 100}
                   onChange={v => patchIp('pctEntregaBentonita', v / 100)}
@@ -3016,16 +3042,42 @@ function CalcPerforacion({
           </div>
         </div>
       )}
+        </>
+      )}
     </div>
   )
 }
 
 // ── Panel Financiero Perforación ─────────────────────────────────────────────
+function ResumenCotizacionOperativo({ subtotal, iva, total }: {
+  subtotal: number
+  iva: number
+  total: number
+}) {
+  return (
+    <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resumen de cotizacion</p>
+        <BarChart3 className="w-4 h-4 text-slate-600" />
+      </div>
+      <div className="space-y-1.5">
+        <FR label="Precio venta (sin IVA)" value={subtotal} c="text-white" />
+        <FR label="IVA 12%" value={iva} c="text-amber-400" />
+        <FR label="Total al cliente" value={total} c="text-blue-300" bold />
+      </div>
+      <div className="rounded-lg border border-slate-700/60 bg-white/3 px-3 py-2 text-[11px] text-slate-500 leading-relaxed">
+        Costos internos, margen y ganancia solo son visibles para superadmin.
+      </div>
+    </div>
+  )
+}
+
 function CalcServicios({
   il,
   patchIl,
   setServicioSubtipo,
   res,
+  rol,
   lineasConfig,
   setLineasConfig,
 }: {
@@ -3033,9 +3085,11 @@ function CalcServicios({
   patchIl: (k: keyof InputsLimpieza, v: number | boolean | string) => void
   setServicioSubtipo: (next: NonNullable<InputsLimpieza['servicioSubtipo']>) => void
   res: ReturnType<typeof calcularLimpieza>
+  rol: RolUsuario
   lineasConfig: Record<string, LineaConfig>
   setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
+  const mostrarFinanzas = canViewFinancials(rol)
   const subtipo = il.servicioSubtipo ?? 'basico'
   const tablaServicio = il.servicioTuberiaTabla?.length ? il.servicioTuberiaTabla : DEFAULT_SERVICIO_COTIZACION.tablaTuberia
   const formatDiametroServicio = (diametro: number) => diametro === 2.5 ? '2-1/2"' : `${diametro}"`
@@ -3097,11 +3151,15 @@ function CalcServicios({
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Calculadora - Servicios</p>
         <div className="flex flex-wrap gap-4 text-xs text-slate-500">
           <span>Dias total: <b className="text-white">{res.diasTotales}</b></span>
-          <span>Traslado: <b className="text-white">{formatQ(res.costoTraslado)}</b></span>
           <span>Galones: <b className="text-white">{res.galonesTraslado.toFixed(2)}</b></span>
           <span>Personal: <b className="text-white">{res.personalServicio}</b></span>
           <span>Canecas: <b className="text-white">{res.canecasQuimicosServicio}</b></span>
-          <span>Costo neto/h: <b className={res.costoNetoHora > il.precioVentaHora ? 'text-red-400' : 'text-emerald-400'}>{formatQ(res.costoNetoHora)}</b></span>
+          {mostrarFinanzas && (
+            <>
+              <span>Traslado: <b className="text-white">{formatQ(res.costoTraslado)}</b></span>
+              <span>Costo neto/h: <b className={res.costoNetoHora > il.precioVentaHora ? 'text-red-400' : 'text-emerald-400'}>{formatQ(res.costoNetoHora)}</b></span>
+            </>
+          )}
         </div>
       </div>
 
@@ -3144,7 +3202,9 @@ function CalcServicios({
             <NumInput label="Horas limpieza mecanica" value={il.horasLimpieza} onChange={v => patchIl('horasLimpieza', v)} />
             {usaLimpieza && (
               <NumInput label="Precio venta/hora (Q)" value={il.precioVentaHora} onChange={v => patchIl('precioVentaHora', v)}
-                accent hint={markupHint(res.costoNetoHora, il.precioVentaHora, `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`)} />
+                accent hint={mostrarFinanzas
+                  ? markupHint(res.costoNetoHora, il.precioVentaHora, `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`)
+                  : `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`} />
             )}
           </>
         )}
@@ -3153,7 +3213,9 @@ function CalcServicios({
           <>
             <NumInput label="Horas aforo" value={il.horasAforo ?? 0} onChange={v => patchIl('horasAforo', v)} />
             <NumInput label="Precio venta aforo total (Q)" value={il.precioVentaAforoTotal ?? 23000} onChange={v => patchIl('precioVentaAforoTotal', v)}
-              accent hint={markupHint(res.costoAforo, il.precioVentaAforoTotal ?? 23000, `Costo interno: ${formatQ(res.costoAforo)}`)} />
+              accent hint={mostrarFinanzas
+                ? markupHint(res.costoAforo, il.precioVentaAforoTotal ?? 23000, `Costo interno: ${formatQ(res.costoAforo)}`)
+                : 'Total visible para el cliente'} />
           </>
         )}
 
@@ -3207,7 +3269,8 @@ function CalcServicios({
                     Instalacion: <b className="text-white">{formatQ(res.precioVentaTuboInstalacionUnitario)}</b>/tubo · {res.tubosHoraInstalacionServicio} tubos/h
                   </div>
                   <div className="text-slate-500 sm:col-span-2">
-                    Personal automatico: {res.personalServicio} · Costo interno auto por diesel: {formatQ(res.costoTuberiaServicio)}
+                    Personal automatico: {res.personalServicio}
+                    {mostrarFinanzas && <> · Costo interno auto por diesel: {formatQ(res.costoTuberiaServicio)}</>}
                   </div>
                 </div>
               ) : (
@@ -3215,7 +3278,9 @@ function CalcServicios({
               )}
             </div>
             <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
-              hint={markupHint(res.costoMaterialInstalacionServicio, il.precioMaterialInstalacionServicio ?? 0, 'Linea global del presupuesto de servicio')} />
+              hint={mostrarFinanzas
+                ? markupHint(res.costoMaterialInstalacionServicio, il.precioMaterialInstalacionServicio ?? 0, 'Linea global del presupuesto de servicio')
+                : 'Linea global del presupuesto de servicio'} />
           </>
         )}
 
@@ -3226,9 +3291,13 @@ function CalcServicios({
               <p className="text-sm font-semibold text-white">{res.canecasQuimicosServicio} canecas</p>
               <p className="text-[10px] text-slate-600 mt-1">Menor a 6&quot; = 2 canecas · 6&quot; o mas = 4 canecas.</p>
             </div>
-            <NumInput label="Costo/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
+            {mostrarFinanzas && (
+              <NumInput label="Costo/caneca (Q)" value={il.precioQuimicoCaneca} onChange={v => patchIl('precioQuimicoCaneca', v)} />
+            )}
             <NumInput label="Precio venta/caneca (Q)" value={il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca} onChange={v => patchIl('precioVentaQuimicoCaneca', v)}
-              accent hint={markupHint(il.precioQuimicoCaneca, il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca, `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`)} />
+              accent hint={mostrarFinanzas
+                ? markupHint(il.precioQuimicoCaneca, il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca, `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`)
+                : `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`} />
           </>
         )}
 
@@ -3244,12 +3313,16 @@ function CalcServicios({
                 <span className="block text-[10px] text-slate-500 mt-0.5">Chequeo de equipo, parametros, panel, instalacion, arranque y pruebas.</span>
               </button>
               {tecnicoIncluido && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
+                <div className={cn('grid grid-cols-1 gap-3', mostrarFinanzas ? 'sm:grid-cols-3' : 'sm:grid-cols-1')}>
+                  {mostrarFinanzas && (
+                    <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
+                  )}
                   <NumInput label="Venta tecnico (Q)" value={ventaTecnico} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
-                    accent hint={`Aumento: ${markupTecnico.toFixed(1)}% - Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`} />
-                  <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
-                    hint="Al cambiar el %, recalcula la venta al cliente." />
+                    accent hint={mostrarFinanzas ? `Aumento: ${markupTecnico.toFixed(1)}% - Ganancia: ${formatQ(ventaTecnico - costoTecnico)}` : 'Precio visible para el cliente'} />
+                  {mostrarFinanzas && (
+                    <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
+                      hint="Al cambiar el %, recalcula la venta al cliente." />
+                  )}
                 </div>
               )}
             </div>
@@ -3306,11 +3379,15 @@ function CalcServicios({
                     <span className="block text-[10px] text-slate-500 mt-0.5">{item.hint}</span>
                   </button>
                   {item.enabled && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <NumInput label={item.costLabel} value={item.costValue} onChange={v => patchIl(item.costInput, v)} hint="Costo interno" />
-                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={markupHint(item.costValue, item.saleValue)} />
-                      <NumInput label="Aumento (%)" value={aumento} onChange={pct => patchIl(item.saleInput, ventaDesdePct(item.costValue, pct))}
-                        hint="Al cambiar el %, recalcula la venta al cliente." />
+                    <div className={cn('grid grid-cols-1 gap-3', mostrarFinanzas ? 'sm:grid-cols-3' : 'sm:grid-cols-1')}>
+                      {mostrarFinanzas && (
+                        <NumInput label={item.costLabel} value={item.costValue} onChange={v => patchIl(item.costInput, v)} hint="Costo interno" />
+                      )}
+                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={mostrarFinanzas ? markupHint(item.costValue, item.saleValue) : 'Precio visible para el cliente'} />
+                      {mostrarFinanzas && (
+                        <NumInput label="Aumento (%)" value={aumento} onChange={pct => patchIl(item.saleInput, ventaDesdePct(item.costValue, pct))}
+                          hint="Al cambiar el %, recalcula la venta al cliente." />
+                      )}
                     </div>
                   )}
                 </div>
@@ -3321,6 +3398,7 @@ function CalcServicios({
 
       </div>
 
+      {mostrarFinanzas && (
       <details className="rounded-xl border border-white/10 bg-white/2">
         <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:bg-white/3">
           Avanzado / costos internos
@@ -3380,6 +3458,7 @@ function CalcServicios({
           </button>
         </div>
       </details>
+      )}
 
       {subtipo === 'item' && (
         <p className="text-xs text-slate-500 border-t border-white/5 pt-3">
@@ -3395,8 +3474,12 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
   subtotal: number; iva: number; total: number
   isrRetenido: number; ingresoNeto: number
   gananciaNeta: number; margenNeto: number
-  rol: 'admin' | 'superadmin'
+  rol: RolUsuario
 }) {
+  if (!canViewFinancials(rol)) {
+    return <ResumenCotizacionOperativo subtotal={subtotal} iva={iva} total={total} />
+  }
+
   const m   = margenNeto
   const cls = m >= 30 ? 'text-emerald-400' : m >= 15 ? 'text-amber-400' : 'text-red-400'
   // Crédito fiscal IVA — estimado sobre costos no laborales (materiales, servicios, equipo)
@@ -3480,7 +3563,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
       </div>
       {m < 15 && <Alert type="error" msg="Margen muy bajo. Revisa el precio por pie o reduce costos." />}
       {m >= 30 && <Alert type="ok" msg="Excelente margen. Cotización muy competitiva." />}
-      {rol === 'superadmin' && (
+      {canViewFinancials(rol) && (
         <div className="mt-3 pt-3 border-t border-purple-500/20 space-y-1.5">
           <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2">Resumen Fiscal — Super Admin</p>
           <div className="space-y-1 text-xs">
@@ -3518,9 +3601,13 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
   subtotal: number; iva: number; total: number
   isrRetenido: number; ingresoNeto: number
   gananciaNeta: number; margenNeto: number
-  rol: 'admin' | 'superadmin'
+  rol: RolUsuario
   costoProyectoTotal: number
 }) {
+  if (!canViewFinancials(rol)) {
+    return <ResumenCotizacionOperativo subtotal={subtotal} iva={iva} total={total} />
+  }
+
   const m = margenNeto
   // Crédito fiscal IVA — estimado sobre costos no laborales
   const costoGravable = costoProyectoTotal
@@ -3561,7 +3648,7 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
         <IC label="Días totales" v={`${res.diasTotales}d`} />
         <IC label="Imprevistos" v={formatQ(res.imprevisto10pct)} />
       </div>
-      {rol === 'superadmin' && (
+      {canViewFinancials(rol) && (
         <div className="mt-3 pt-3 border-t border-purple-500/20 space-y-1.5">
           <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2">Resumen Fiscal — Super Admin</p>
           <div className="space-y-1 text-xs">

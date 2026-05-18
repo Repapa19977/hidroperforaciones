@@ -101,7 +101,7 @@ export default function CotizacionesPage() {
     setMyVendedor(v)
     fetchRows(v, r)
     // Vendedores activos desde BD (para el modal de reasignar — solo superadmin)
-    if (r === 'superadmin') {
+    if (r === 'superadmin' || r === 'admin_operativo') {
       fetch('/api/vendedores')
         .then(res => res.ok ? res.json() : [])
         .then((rows: VendedorOption[]) => setVendedoresDB(rows.filter(x => x.nombre)))
@@ -125,6 +125,7 @@ export default function CotizacionesPage() {
   }
 
   const isSuperAdmin = role === 'superadmin'
+  const canAssignQuotes = role === 'superadmin' || role === 'admin_operativo'
 
   const vendedores = useMemo(() => {
     const all = [...new Set(rows.map(c => c.vendedor))]
@@ -394,7 +395,7 @@ export default function CotizacionesPage() {
         </div>
       ) : view === 'lista' ? (
         <ListView
-          filtered={filtered} search={search} isSuperAdmin={isSuperAdmin}
+          filtered={filtered} search={search} canAssignQuotes={canAssignQuotes}
           menuOpen={menuOpen} setMenuOpen={setMenuOpen}
           changeEstado={changeEstado} handleDelete={handleDelete}
           openCotizacion={openCotizacion} openHistorial={openHistorial}
@@ -478,7 +479,7 @@ export default function CotizacionesPage() {
       />
 
       {/* Modal reasignar vendedor (solo superadmin) */}
-      {reasignarTarget && isSuperAdmin && (
+      {reasignarTarget && canAssignQuotes && (
         <ReasignarModal
           cotizacion={reasignarTarget}
           vendedoresActivos={vendedoresDB}
@@ -559,10 +560,10 @@ function ReasignarModal({ cotizacion, vendedoresActivos, onCancel, onConfirm }: 
 }
 
 // ── Lista view ─────────────────────────────────────────────────────────────────
-function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, onReasignar }: {
+function ListView({ filtered, search, canAssignQuotes, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, onReasignar }: {
   filtered: CotizacionRecord[]
   search: string
-  isSuperAdmin: boolean
+  canAssignQuotes: boolean
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
   changeEstado: (c: string, e: CotizacionRecord['estado']) => void
@@ -611,7 +612,7 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
                 menuOpen={menuOpen} setMenuOpen={setMenuOpen}
                 changeEstado={changeEstado} handleDelete={handleDelete}
                 openCotizacion={openCotizacion} openHistorial={openHistorial}
-                isSuperAdmin={isSuperAdmin}
+                canAssignQuotes={canAssignQuotes}
                 onReasignar={() => onReasignar(c)} />
             ))}
           </tbody>
@@ -632,7 +633,7 @@ function ListView({ filtered, search, isSuperAdmin, menuOpen, setMenuOpen, chang
 }
 
 // ── List row ───────────────────────────────────────────────────────────────────
-function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, isSuperAdmin, onReasignar }: {
+function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, canAssignQuotes, onReasignar }: {
   c: CotizacionRecord
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
@@ -640,7 +641,7 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
   openHistorial: (c: string) => void
-  isSuperAdmin: boolean
+  canAssignQuotes: boolean
   onReasignar: () => void
 }) {
   const s = statusMap[c.estado]
@@ -729,7 +730,7 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
             className="text-slate-500 hover:text-blue-400 transition-colors">
             <FileText className="w-4 h-4" />
           </button>
-          {isSuperAdmin && (
+          {canAssignQuotes && (
             <button onClick={onReasignar} title="Reasignar vendedor"
               className="text-slate-500 hover:text-cyan-400 transition-colors">
               <User className="w-4 h-4" />

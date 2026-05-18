@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const contacto = await prisma.contacto.findUnique({ where: { id } })
   if (!contacto) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && contacto.vendedor !== auth.user.vendedor) {
+  if (auth.user.role !== 'superadmin' && contacto.vendedor !== auth.user.vendedor) {
     return NextResponse.json({ error: 'No autorizado para este contacto' }, { status: 403 })
   }
 
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (nombreNorm) matchOR.push({ cliente: { equals: nombreNorm, mode: 'insensitive' } })
   if (empresaNorm) matchOR.push({ empresa: { equals: empresaNorm, mode: 'insensitive' } })
 
-  const ownerFilter = auth.user.role === 'admin' ? { vendedor: auth.user.vendedor } : {}
+  const ownerFilter = auth.user.role !== 'superadmin' ? { vendedor: auth.user.vendedor } : {}
   const whereCommon = { OR: matchOR, ...(incluirEliminados ? {} : { eliminadaEn: null }), ...ownerFilter }
   const whereCommonProy = { OR: matchOR, ...(incluirEliminados ? {} : { eliminadoEn: null }), ...ownerFilter }
 
@@ -83,7 +83,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json()
   const before = await prisma.contacto.findUnique({ where: { id } })
   if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+  if (auth.user.role !== 'superadmin' && before.vendedor !== auth.user.vendedor) {
     return NextResponse.json({ error: 'No autorizado para este contacto' }, { status: 403 })
   }
 

@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 import { prisma } from '@/lib/db'
 import { sacosDebentonita } from '@/lib/calculator'
+import { canAccessCotizacion } from '@/lib/cotizaciones-auth'
 import { patchCotizacionSchema, formatZodError } from '@/lib/validators'
 import { requireAuth, getCurrentUser, getRequestInfo } from '@/lib/auth'
+import { canAssignVendedor, INTERNAL_ASSIGNABLE_ROLES } from '@/lib/roles'
 import { auditLog } from '@/lib/audit'
 import { crearVendedorOption, normalizarVendedor, type VendedorOption } from '@/lib/vendedores'
 
@@ -21,7 +23,7 @@ async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption
   if (!buscado) return null
 
   const usuarios = await prisma.usuario.findMany({
-    where: { activo: true, rol: { in: ['admin', 'superadmin'] } },
+    where: { activo: true, rol: { in: INTERNAL_ASSIGNABLE_ROLES } },
     select: { nombre: true, email: true, rol: true, cargo: true },
   })
   const usuario = usuarios.find(u => normalizarVendedor(u.nombre) === buscado)
@@ -42,7 +44,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const row = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && row.vendedor !== auth.user.vendedor) {
+  if (!canAccessCotizacion(auth.user, row)) {
     return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
   }
   return NextResponse.json(row)
@@ -61,17 +63,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
   const { estado, vendedor, usuario } = parsed.data
 
-  // Safeguard: solo superadmin puede reasignar vendedor
+  // Safeguard: solo superadmin u operativo puede reasignar vendedor
   if (vendedor !== undefined) {
     const role = await getJwtRole(request)
-    if (role !== 'superadmin') {
-      return NextResponse.json({ error: 'Solo superadmin puede reasignar el vendedor' }, { status: 403 })
+    if (!canAssignVendedor(role)) {
+      return NextResponse.json({ error: 'Solo superadmin u operativo puede reasignar el vendedor' }, { status: 403 })
     }
   }
 
   const before = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
   if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+  if (!canAccessCotizacion(auth.user, before)) {
     return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
   }
 
@@ -81,7 +83,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (vendedor !== undefined) {
     vendedorAsignado = await resolverVendedorAsignable(vendedor)
     if (!vendedorAsignado) {
-      return NextResponse.json({ error: 'El asesor asignado debe ser un admin o superadmin activo.' }, { status: 400 })
+      return NextResponse.json({ error: 'El asesor asignado debe ser un usuario interno activo.' }, { status: 400 })
     }
     data.vendedor = vendedorAsignado.nombre
     const datos = JSON.parse(before.datos || '{}')
@@ -229,7 +231,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   const before = await prisma.cotizacion.findUnique({ where: { correlativo: id } })
   if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (auth.user.role === 'admin' && before.vendedor !== auth.user.vendedor) {
+  if (!canAccessCotizacion(auth.user, before)) {
     return NextResponse.json({ error: 'No autorizado para esta cotizacion' }, { status: 403 })
   }
   if (before.eliminadaEn) {

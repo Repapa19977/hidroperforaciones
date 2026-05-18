@@ -61,7 +61,7 @@ export async function proxy(request: NextRequest) {
 
     // /papelera y /api/tokens — solo superadmin
     if (
-      (pathname.startsWith('/papelera') || pathname.startsWith('/api/tokens')) &&
+      (pathname.startsWith('/configuracion') || pathname.startsWith('/papelera') || pathname.startsWith('/api/tokens')) &&
       role !== 'superadmin'
     ) {
       return pathname.startsWith('/api/')

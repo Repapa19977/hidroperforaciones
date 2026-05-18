@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { auditLog } from '@/lib/audit'
 import { getRequestInfo, hashPassword, requireSuperAdmin, validarPassword } from '@/lib/auth'
+import { isInternalRole } from '@/lib/roles'
 import { resolverCargoVendedor } from '@/lib/vendedores'
 
 export const dynamic = 'force-dynamic'
@@ -77,13 +78,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     data.email = email
   }
 
-  if (body.rol && (body.rol === 'admin' || body.rol === 'superadmin')) {
-    if (target.username === auth.user.username && body.rol === 'admin') {
+  if (body.rol && isInternalRole(body.rol)) {
+    if (target.username === auth.user.username && body.rol !== 'superadmin') {
       return NextResponse.json({
         error: 'No puedes quitarte el rol de superadmin a ti mismo. Pídeselo a otro superadmin.',
       }, { status: 400 })
     }
-    if (target.rol === 'superadmin' && body.rol === 'admin' && target.activo) {
+    if (target.rol === 'superadmin' && body.rol !== 'superadmin' && target.activo) {
       const restantes = await contarSuperAdminsActivos(target.id)
       if (restantes === 0) {
         return NextResponse.json({

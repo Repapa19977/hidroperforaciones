@@ -15,9 +15,9 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(request.url)
-  const vendedor = auth.user.role === 'admin'
-    ? auth.user.vendedor
-    : searchParams.get('vendedor')
+  const vendedor = auth.user.role === 'superadmin'
+    ? searchParams.get('vendedor')
+    : auth.user.vendedor
   const papelera = searchParams.get('papelera') === '1'
   const tipoPersona = searchParams.get('tipoPersona')
 
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         municipio: body.municipio ?? '',
         proyectoNombre: body.proyectoNombre ?? '',
         notas: body.notas ?? '',
-        vendedor: auth.user.role === 'admin' ? auth.user.vendedor ?? '' : body.vendedor,
+        vendedor: auth.user.role === 'superadmin' ? body.vendedor : auth.user.vendedor ?? '',
       },
     })
     return { duplicate: null, row }

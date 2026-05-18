@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 })
   }
 
-  if (!username || (role !== 'superadmin' && role !== 'admin')) {
+  if (!username || role !== 'superadmin') {
     return NextResponse.json({ error: 'Sin autorización' }, { status: 403 })
   }
 
