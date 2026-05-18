@@ -67,12 +67,25 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
 
+  try {
   const body = await request.json()
   const { correlativo, cliente, empresa, proyecto, tipo, estado, monto, fecha } = body
   const datosBase = (body.datos && typeof body.datos === 'object') ? body.datos : {}
   let contactoId: string | null = body.contactoId ?? null
   const montoNumero = Number(monto)
 
+  if (!correlativo || typeof correlativo !== 'string') {
+    return NextResponse.json({ error: 'Falta el correlativo de la cotizacion.' }, { status: 400 })
+  }
+  if (!cliente || typeof cliente !== 'string') {
+    return NextResponse.json({ error: 'Falta el cliente de la cotizacion.' }, { status: 400 })
+  }
+  if (!proyecto || typeof proyecto !== 'string') {
+    return NextResponse.json({ error: 'Falta el proyecto de la cotizacion.' }, { status: 400 })
+  }
+  if (tipo !== 'perforacion' && tipo !== 'limpieza') {
+    return NextResponse.json({ error: 'El tipo de cotizacion no es valido.' }, { status: 400 })
+  }
   if (!Number.isFinite(montoNumero)) {
     return NextResponse.json({
       error: 'El monto de la cotizacion no es valido. Revisa los campos numericos antes de guardar.',
@@ -240,4 +253,11 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(row)
+  } catch (e: unknown) {
+    console.error('[api/cotizaciones POST]', e)
+    return NextResponse.json({
+      error: 'No se pudo guardar la cotizacion.',
+      detalle: process.env.NODE_ENV === 'production' ? undefined : errorDetalleLocal(e),
+    }, { status: 500 })
+  }
 }
