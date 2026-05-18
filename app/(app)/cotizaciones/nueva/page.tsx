@@ -2455,13 +2455,13 @@ function CalcPerforacion({
         <div className="flex items-center justify-between gap-2 mb-3">
           <div>
             <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Datos principales del pozo</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Orden de captura: km al lugar, profundidad y precio al cliente.</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Orden de captura: km al lugar, profundidad, diésel y precio al cliente.</p>
           </div>
           {ip.profundidad > 0 && (
             <span className="text-[10px] text-slate-500 hidden sm:inline">{ip.profundidad} pies × {formatQ(ip.precioPorPieVenta)}</span>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
           <NumInput
             label="Km al lugar"
             value={ip.kilometros}
@@ -2475,6 +2475,12 @@ function CalcPerforacion({
             onChange={v => patchIp('profundidad', v)}
             hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`}
             error={errors.profundidad}
+          />
+          <NumInput
+            label="Precio diésel (Q/gal)"
+            value={ip.precioDieselTraslado}
+            onChange={v => patchIp('precioDieselTraslado', v)}
+            hint="Predeterminado Q33.81/gal; editable si fluctúa"
           />
           <div>
             <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
@@ -2853,9 +2859,9 @@ function CalcPerforacion({
             <p className="text-xs text-slate-500 mb-3 font-medium">Maquinaria y Operación</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-4">
               <NumInput label="Rendimiento (pies/día)" value={ip.rendimientoPorDia} onChange={v => patchIp('rendimientoPorDia', v)}
-                hint={`${res.diasPerforacion} días perforación + ${ip.diasExtra} extra = ${res.totalDiasMaquinaria} total`} />
+                hint={`${res.diasPerforacion} días perforación + ${ip.diasExtra} extra = ${res.totalDiasMaquinaria} duración`} />
               <NumInput label="Días extra (engr./tubería)" value={ip.diasExtra} onChange={v => patchIp('diasExtra', v)}
-                hint={`Total maquinaria: ${res.totalDiasMaquinaria} días`} />
+                hint="No suma diésel, salarios ni viáticos" />
               <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2.5">
                 <span className="block text-xs text-slate-500 mb-1.5">Total maquinaria</span>
                 <span className="block text-lg font-bold text-white tabular-nums">{res.totalDiasMaquinaria} días</span>
@@ -2887,8 +2893,6 @@ function CalcPerforacion({
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <NumInput label="Kilómetros al sitio" value={ip.kilometros} onChange={v => patchIp('kilometros', v)}
                 hint={`${ip.kilometros * 2} km ida/vuelta`} />
-              <NumInput label="Precio diésel actual (Q/gal)" value={ip.precioDieselTraslado} onChange={v => patchIp('precioDieselTraslado', v)}
-                hint="Referencia MEM: Q33.81/gal autoservicio, 12-18 mayo 2026" />
               <NumInput label="Días traslado (regular)" value={ip.diasTraslado} onChange={v => patchIp('diasTraslado', v)}
                 hint={`Perf + 3 pilotos + supervisor`} />
               <NumInput label="Días piloto tubería" value={ip.diasTrasladoTuberia} onChange={v => patchIp('diasTrasladoTuberia', v)}
@@ -3409,7 +3413,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
       <div className="space-y-1 pt-2 border-t border-white/5">
         <p className="text-xs text-slate-600 font-medium mb-2">Desglose de Costos</p>
         {([
-          ['Diésel en perforación',  res.costoDiesel],
+          [`Diésel en perforación (${res.diasPerforacion}d)`, res.costoDiesel],
           ['Maquinaria (rent.)',     res.costoMaquinaria],
           ['Traslado (una vía, c/imprevisto)', res.costoTraslado],
           [`Grava (${res.m3Grava} m³)`,  res.costoGrava],
@@ -3421,7 +3425,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
           ['Soldador',               res.costoSoldador],
           ['Tubería lisa (costo interno)',           res.costoTuberia],
           ['Tubería ranurada (costo interno)',       res.costoFiltros],
-          ['Salarios + viáticos',    res.costoSalarios + res.costoViaticos + res.costoHospedaje],
+          [`Salarios + viáticos (${res.diasPerforacion}d) + hospedaje`, res.costoSalarios + res.costoViaticos + res.costoHospedaje],
           ['Limpieza mecánica',      res.costoLimpieza],
           ...(res.costoBrocaCompra > 0         ? [['Broca (compra)',       res.costoBrocaCompra]]          : []),
           ['Tapón tubería',                     res.costoTaponTuberia],

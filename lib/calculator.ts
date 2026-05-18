@@ -724,6 +724,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
     ? Math.ceil(inp.profundidad / inp.rendimientoPorDia)
     : 0
   const totalDiasMaquinaria = diasPerforacion + inp.diasExtra
+  const diasCostosOperacion = diasPerforacion
 
   // ── INGRESOS ──
   const ingresosBrutos = inp.precioPorPieVenta * inp.profundidad
@@ -734,9 +735,9 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
 
   // ── COSTOS ──
   const costoMaquinaria = totalDiasMaquinaria * inp.costomaquinariaDia
-  const costoDiesel = totalDiasMaquinaria * inp.costoDieselDia
-  const costoSalarios = inp.personalPerforacion * inp.salarioMensual * totalDiasMaquinaria / 30
-  const costoViaticos = inp.personalPerforacion * inp.turnosDia * inp.viaticosDia * totalDiasMaquinaria
+  const costoDiesel = diasCostosOperacion * inp.costoDieselDia
+  const costoSalarios = inp.personalPerforacion * inp.salarioMensual * diasCostosOperacion / 30
+  const costoViaticos = inp.personalPerforacion * inp.turnosDia * inp.viaticosDia * diasCostosOperacion
 
   // Meses del proyecto (30 días = 1 mes, 31 días = 2 meses…) para hospedaje y casa
   const mesesProyecto = Math.max(1, Math.ceil(totalDiasMaquinaria / 30))
