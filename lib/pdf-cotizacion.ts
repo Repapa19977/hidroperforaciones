@@ -153,7 +153,7 @@ export function buildLineasPerf(
       unidad: 'Global', cant: 1, precio: preciosVentaOverride['antepozo'] ?? antepozo.total }] : []),
 
     ...(ip.incluirSanitario ? [{ key: 'servicio-perf-sanitario',
-      nombre: 'Servicio sanitario portatil en obra.',
+      nombre: 'Servicio de baño portátil en obra.',
       unidad: 'Mes', cant: mesesSanitario, precio: preciosVentaOverride['servicio-perf-sanitario'] ?? EXCEL_PERFORACION_SERVICIOS.sanitarioPortatil.ventaMes }] : []),
 
     // Línea unificada: traslado generador + prueba de bombeo (por hora).

@@ -127,7 +127,7 @@ export const COSTOS_BASE: Record<string, CostoRubro> = {
   },
   sanitarioPortatil: {
     key: 'sanitarioPortatil',
-    nombre: 'Sanitario portátil',
+    nombre: 'Baño portátil',
     unidad: 'mes',
     costoUnitario: 800,
     precioVentaUnitario: 800,
