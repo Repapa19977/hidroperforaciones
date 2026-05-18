@@ -8,11 +8,45 @@ BASE="/opt/hidrocrm-releases"
 TS="$(date +%Y%m%d-%H%M%S)"
 REL="$BASE/$TS-local"
 LEGACY_ENV="/opt/hidrocrm/.env"
+RELEASE_RETENTION="${HIDROCRM_RELEASE_RETENTION:-5}"
 
 cleanup_canary() {
   pm2 delete hidrocrm-canary >/dev/null 2>&1 || true
 }
 trap cleanup_canary EXIT
+
+cleanup_old_releases() {
+  if ! [[ "$RELEASE_RETENTION" =~ ^[0-9]+$ ]] || [ "$RELEASE_RETENTION" -lt 1 ]; then
+    echo "ADVERTENCIA: HIDROCRM_RELEASE_RETENTION invalido ($RELEASE_RETENTION); no limpio releases"
+    return
+  fi
+
+  echo "==> Limpiando releases antiguas (mantener ultimas $RELEASE_RETENTION)"
+  mapfile -t RELEASES < <(find "$BASE" -mindepth 1 -maxdepth 1 -type d -name '20*' -printf '%f\n' 2>/dev/null | sort)
+  if [ "${#RELEASES[@]}" -le "$RELEASE_RETENTION" ]; then
+    echo "Nada que limpiar: ${#RELEASES[@]} releases"
+    return
+  fi
+
+  local current_pid active_release keep_from idx name path resolved
+  current_pid="$(pm2 pid hidrocrm 2>/dev/null || true)"
+  active_release=""
+  if [ -n "${current_pid:-}" ] && [ "$current_pid" != "0" ]; then
+    active_release="$(readlink -f "/proc/$current_pid/cwd" 2>/dev/null || true)"
+  fi
+
+  keep_from=$((${#RELEASES[@]} - RELEASE_RETENTION))
+  for idx in "${!RELEASES[@]}"; do
+    name="${RELEASES[$idx]}"
+    path="$BASE/$name"
+    resolved="$(readlink -f "$path" 2>/dev/null || true)"
+    if [ "$idx" -ge "$keep_from" ] || { [ -n "$active_release" ] && [ "$resolved" = "$active_release" ]; }; then
+      continue
+    fi
+    echo "Borrando release antigua: $path"
+    rm -rf -- "$path"
+  done
+}
 
 if [ ! -f "$ARCHIVE" ]; then
   echo "ERROR: no existe el paquete local $ARCHIVE"
@@ -89,7 +123,8 @@ echo "==> Verificacion final"
 sleep 5
 pm2 status --no-color
 curl -fsSI http://127.0.0.1:3000/login
-df -h /
 
 rm -f "$ARCHIVE"
+cleanup_old_releases
+df -h /
 echo "DEPLOY_OK release=$REL"
