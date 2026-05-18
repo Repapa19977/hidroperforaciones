@@ -12,6 +12,7 @@ import {
   getPrecioTuberia, getEspesoresDisponibles, getDiametrosTuberia, DIAMETROS_BROCA,
   PERFORACION_MM, TUBERIA_MM, calcGravaM3,
   PRECIOS_BROCAS, getReglaTuberiaServicio,
+  PRECIO_DIESEL_BASE_PERFORACION,
   viajesExtraccionLodos,
   type InputsPerforacion, type InputsLimpieza, type InputsAforoDetallado,
   formatQ
@@ -2487,7 +2488,7 @@ function CalcPerforacion({
               label="Precio diésel (Q/gal)"
               value={ip.precioDieselTraslado}
               onChange={v => patchIp('precioDieselTraslado', v)}
-              hint="Actual Q40.00/gal; editable si fluctúa"
+              hint="Afecta traslado y diésel en obra"
             />
           </div>
           <div className="xl:col-span-3 min-w-0">
@@ -2880,7 +2881,12 @@ function CalcPerforacion({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <NumInput label="Maquinaria/día (Q)" value={ip.costomaquinariaDia} onChange={v => patchIp('costomaquinariaDia', v)} hint="Rentabilidad diaria" />
-              <NumInput label="Diésel/día en obra (Q)" value={ip.costoDieselDia} onChange={v => patchIp('costoDieselDia', v)} />
+              <NumInput
+                label={`Diésel/día base (Q @ Q${PRECIO_DIESEL_BASE_PERFORACION}/gal)`}
+                value={ip.costoDieselDia}
+                onChange={v => patchIp('costoDieselDia', v)}
+                hint={`Actual con Q${ip.precioDieselTraslado.toFixed(2)}/gal: ${formatQ(res.costoDieselDiaAjustado)}/día`}
+              />
               <NumInput label="Bonificación/pie (Q)" value={ip.bonificacionPorPie} onChange={v => patchIp('bonificacionPorPie', v)} />
               <NumInput label="Personal perforación" value={ip.personalPerforacion} onChange={v => patchIp('personalPerforacion', v)} />
               <NumInput label="Salario mensual (Q)" value={ip.salarioMensual} onChange={v => patchIp('salarioMensual', v)} />
@@ -3421,7 +3427,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
       <div className="space-y-1 pt-2 border-t border-white/5">
         <p className="text-xs text-slate-600 font-medium mb-2">Desglose de Costos</p>
         {([
-          [`Diésel en perforación (${res.diasPerforacion}d)`, res.costoDiesel],
+          [`Diésel en perforación (${res.diasPerforacion}d × ${formatQ(res.costoDieselDiaAjustado)})`, res.costoDiesel],
           ['Maquinaria (rent.)',     res.costoMaquinaria],
           ['Traslado (una vía, c/imprevisto)', res.costoTraslado],
           [`Grava (${res.m3Grava} m³)`,  res.costoGrava],

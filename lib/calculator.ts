@@ -17,6 +17,7 @@ import { DEFAULT_SERVICIO_COTIZACION, DEFAULT_SERVICIO_TUBERIA, type ServicioTub
 export const IVA = 0.12     // 12% — IVA Guatemala
 export const ISR = 0.05     // 5%  — ISR / retención
 export const TOTAL_IMPUESTOS = IVA + ISR  // 17%
+export const PRECIO_DIESEL_BASE_PERFORACION = 40
 
 // ── TABLA DE BENTONITA (sacos/pie por diámetro de perforación) ───────────────
 // Fuente: CONSUMO DE BENTONITA.xlsx — Hoja 3 verificada
@@ -667,6 +668,7 @@ export interface ResultadosPerforacion {
   mesesProyecto: number          // meses redondeados hacia arriba (Math.ceil(días / 30))
   imprevistoGlobal: number       // rubro NUEVO — Q fijo del proyecto (Excel reunión)
   markupPrecioPorPiePct: number  // % markup aplicado al precio sugerido
+  costoDieselDiaAjustado: number // Q/día ajustado por precio diésel actual
   costoDiesel: number
   costoSalarios: number
   costoViaticos: number
@@ -735,7 +737,9 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
 
   // ── COSTOS ──
   const costoMaquinaria = totalDiasMaquinaria * inp.costomaquinariaDia
-  const costoDiesel = diasCostosOperacion * inp.costoDieselDia
+  const factorDieselActual = Math.max(0, inp.precioDieselTraslado) / PRECIO_DIESEL_BASE_PERFORACION
+  const costoDieselDiaAjustado = inp.costoDieselDia * factorDieselActual
+  const costoDiesel = diasCostosOperacion * costoDieselDiaAjustado
   const costoSalarios = inp.personalPerforacion * inp.salarioMensual * diasCostosOperacion / 30
   const costoViaticos = inp.personalPerforacion * inp.turnosDia * inp.viaticosDia * diasCostosOperacion
 
@@ -915,7 +919,7 @@ export function calcularPerforacion(inp: InputsPerforacion): ResultadosPerforaci
     ingresosBrutos, iva, isr, totalImpuestos, ingresosNetos,
     costoMaquinaria, margenMaquinaria, costoCasaEquipo, mesesProyecto,
     imprevistoGlobal: imprevistoGlobalMonto, markupPrecioPorPiePct: markupPct,
-    costoDiesel, costoSalarios, costoViaticos,
+    costoDieselDiaAjustado, costoDiesel, costoSalarios, costoViaticos,
     costoHospedaje, costoBonificaciones, costoTraslado, imprevistoTraslado, totalTrasladoIV,
     costoBentonita, sacosBentonita, sacosEntregaCliente, sacosReserva, valorReservaBentonita,
     m3Grava, costoGrava, costoFleteGrava, camionesFlete, costoFleteReal, reservaFlete,
