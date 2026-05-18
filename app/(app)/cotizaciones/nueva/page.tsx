@@ -2441,48 +2441,56 @@ function CalcPerforacion({
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Calculadora — Perforación</p>
-        <div className="flex gap-3 text-xs text-slate-500">
-          <span>Días: <b className="text-white">{res.diasPerforacion}</b></span>
-          <span className="hidden sm:inline">Broca: <b className="text-white">{formatBroca(ip.diametro)}</b></span>
-          <span className="hidden sm:inline">Bentonita: <b className="text-white">{sacos} sacos</b></span>
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+          <span className="rounded-full border border-white/10 bg-white/4 px-2 py-1">Días: <b className="text-white">{res.diasPerforacion}</b></span>
+          <span className="rounded-full border border-white/10 bg-white/4 px-2 py-1">Broca: <b className="text-white">{formatBroca(ip.diametro)}</b></span>
+          <span className="rounded-full border border-white/10 bg-white/4 px-2 py-1">Bentonita: <b className="text-white">{sacos} sacos</b></span>
         </div>
       </div>
 
       {/* 0. Datos principales del pozo */}
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-3">
           <div>
             <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Datos principales del pozo</p>
             <p className="text-[10px] text-slate-500 mt-0.5">Orden de captura: km al lugar, profundidad, diésel y precio al cliente.</p>
           </div>
           {ip.profundidad > 0 && (
-            <span className="text-[10px] text-slate-500 hidden sm:inline">{ip.profundidad} pies × {formatQ(ip.precioPorPieVenta)}</span>
+            <span className="text-[10px] text-slate-500 hidden xl:inline-flex whitespace-nowrap rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1">
+              {ip.profundidad} pies × {formatQ(ip.precioPorPieVenta)}
+            </span>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-          <NumInput
-            label="Km al lugar"
-            value={ip.kilometros}
-            onChange={v => patchIp('kilometros', v)}
-            hint={`${ip.kilometros * 2} km ida y vuelta - afecta traslado`}
-            error={errors.kilometros}
-          />
-          <NumInput
-            label="Profundidad (pies)"
-            value={ip.profundidad}
-            onChange={v => patchIp('profundidad', v)}
-            hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`}
-            error={errors.profundidad}
-          />
-          <NumInput
-            label="Precio diésel (Q/gal)"
-            value={ip.precioDieselTraslado}
-            onChange={v => patchIp('precioDieselTraslado', v)}
-            hint="Predeterminado Q33.81/gal; editable si fluctúa"
-          />
-          <div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 gap-3">
+          <div className="xl:col-span-2 min-w-0">
+            <NumInput
+              label="Km al lugar"
+              value={ip.kilometros}
+              onChange={v => patchIp('kilometros', v)}
+              hint={`${ip.kilometros * 2} km ida y vuelta - afecta traslado`}
+              error={errors.kilometros}
+            />
+          </div>
+          <div className="xl:col-span-2 min-w-0">
+            <NumInput
+              label="Profundidad (pies)"
+              value={ip.profundidad}
+              onChange={v => patchIp('profundidad', v)}
+              hint={`≈ ${Math.round(ip.profundidad * 0.3048)} metros`}
+              error={errors.profundidad}
+            />
+          </div>
+          <div className="xl:col-span-2 min-w-0">
+            <NumInput
+              label="Precio diésel (Q/gal)"
+              value={ip.precioDieselTraslado}
+              onChange={v => patchIp('precioDieselTraslado', v)}
+              hint="Actual Q40.00/gal; editable si fluctúa"
+            />
+          </div>
+          <div className="xl:col-span-3 min-w-0">
             <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
               Precio/pie venta (Q)
               {errors.precioPorPieVenta
@@ -2508,16 +2516,16 @@ function CalcPerforacion({
               {errors.precioPorPieVenta ?? <>Auto-sugerido {formatQ(res.precioPorPieCalculado)}</>}
             </p>
           </div>
-          <div>
+          <div className="xl:col-span-3 min-w-0">
             <label className="text-xs text-slate-500 mb-1.5 block flex items-center gap-1">
               <Clock className="w-3 h-3" /> Duración Estimada
               <span className="text-[9px] text-blue-400 ml-auto">auto · desde profundidad</span>
             </label>
-            <div className="w-full min-h-[42px] bg-white/3 border border-blue-500/20 rounded-lg px-3 py-2.5 text-sm text-slate-300 flex items-center justify-between gap-3">
+            <div className="w-full min-h-[42px] bg-white/3 border border-blue-500/20 rounded-lg px-3 py-2.5 text-sm text-slate-300 flex flex-col items-start justify-center gap-1 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <span className="tabular-nums font-semibold text-white whitespace-nowrap">
                 {res.totalDiasMaquinaria} días hábiles
               </span>
-              <span className="text-[10px] text-slate-500 text-right leading-tight">
+              <span className="text-[10px] text-slate-500 leading-tight 2xl:text-right">
                 {res.diasPerforacion}d perforación + {ip.diasExtra}d extras
               </span>
             </div>
@@ -2526,7 +2534,7 @@ function CalcPerforacion({
         <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
           {ip.profundidad > 0
             ? <>IVA/ISR se controlan desde el panel derecho; al apagarlos se restan del total final.</>
-            : <>Completa estos 3 datos para ver el calculo total.</>}
+            : <>Completa los datos principales para ver el cálculo total.</>}
         </p>
       </div>
 

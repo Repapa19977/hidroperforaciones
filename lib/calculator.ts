@@ -578,7 +578,7 @@ export interface InputsPerforacion {
   // Vehículos: 4 pesados (5 km/gal) + 2 livianos (25 km/gal)
   // Roles: personalPerforacion + 3 pilotos regulares + 1 piloto tubería + 1 supervisor
   kilometros: number              // km al sitio una vía (ej: 120 → 240 ida/vuelta)
-  precioDieselTraslado: number    // Q/galón (default 33.81, MEM 12-18 mayo 2026)
+  precioDieselTraslado: number    // Q/galón (default 40, editable por cotización)
   diasTraslado: number            // días traslado grupo regular (default 2)
   diasTrasladoTuberia: number     // días piloto camión tubería (default 3 — trabaja un día más)
   personalTraslado: number        // @deprecated — mantener por backward compat
@@ -1342,9 +1342,9 @@ export const defaultInputsPerforacion: InputsPerforacion = {
   nochesHospedajePorMes: 5,     // noches de hotel estimadas por mes (Excel reunión)
   casaEquipoMensual: 2250,      // Q/mes renta casa donde se queda el equipo (nuevo rubro)
 
-  // Traslado — valores reales del Excel COSTO TRASLADO PERFORACION.xlsx
+  // Traslado — precio actual editable en cotización
   kilometros: 0,
-  precioDieselTraslado: 33.81,
+  precioDieselTraslado: 40,
   diasTraslado: 2,
   diasTrasladoTuberia: 3,          // piloto camión tubería: 1 día extra
   personalTraslado: 7,             // @deprecated — no usado en fórmula
