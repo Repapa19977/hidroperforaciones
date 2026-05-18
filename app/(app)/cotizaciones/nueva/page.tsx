@@ -46,6 +46,11 @@ const SERVICIO_MANTENIMIENTO_LABEL = 'Servicios de Mantenimiento'
 const PROYECTO_PERFORACION_DEFAULT = 'Perforación de pozo mecánico'
 const PROYECTO_SERVICIO_DEFAULT = 'Servicios de mantenimiento'
 const vendedoresDefaultOptions: VendedorOption[] = VENDEDORES.map(nombre => crearVendedorOption(nombre))
+const MARKUP_TUBERIA_CLIENTE = 1.30
+
+function precioVentaTuberiaCliente(costoTubo: number) {
+  return Math.round(Math.max(0, costoTubo) * MARKUP_TUBERIA_CLIENTE * 100) / 100
+}
 
 const SERVICIO_OPTIONAL_LINE_KEYS = new Set([
   'tecnico-chequeo-servicio',
@@ -2095,6 +2100,8 @@ function CalcPerforacion({
   const espRan   = getEspesoresDisponibles('ranurada', ip.diametroTuberia, ip.tuberiasExtra ?? [])
   const pLisa    = res.precioTubLisa
   const pRan     = res.precioTubRanurada
+  const ventaLisaTubo = ovr['tuberia-lisa'] ?? precioVentaTuberiaCliente(pLisa)
+  const ventaRanTubo = ovr['tuberia-ranurada'] ?? precioVentaTuberiaCliente(pRan)
   const totalTub = ip.tubosLisos + ip.tubosRanurados
   const costoTub = pLisa * ip.tubosLisos + pRan * ip.tubosRanurados
 
@@ -2673,9 +2680,15 @@ function CalcPerforacion({
                   onChange={e => patchIp('tubosLisos', parseInt(e.target.value) || 0)}
                   className="w-full min-w-0 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-base text-center font-semibold text-white tabular-nums outline-none focus:border-blue-500/50" />
               </div>
-              <div className="min-w-0 flex items-center justify-between gap-2 sm:flex-1 sm:mt-4">
-                <span className="min-w-0 text-slate-400 text-xs truncate">x {formatQ(pLisa)}/tubo costo</span>
-                <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pLisa * ip.tubosLisos)}</span>
+              <div className="min-w-0 space-y-1 sm:flex-1 sm:mt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 text-slate-400 text-xs truncate">Me sale {formatQ(pLisa)}/tubo</span>
+                  <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pLisa * ip.tubosLisos)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 text-emerald-300/80 text-xs truncate">Le cobro {formatQ(ventaLisaTubo)}/tubo</span>
+                  <span className="shrink-0 text-emerald-300 text-sm font-semibold text-right tabular-nums">{formatQ(ventaLisaTubo * ip.tubosLisos)}</span>
+                </div>
               </div>
             </div>
             {/* Ranurada */}
@@ -2686,9 +2699,15 @@ function CalcPerforacion({
                   onChange={e => patchIp('tubosRanurados', parseInt(e.target.value) || 0)}
                   className="w-full min-w-0 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-base text-center font-semibold text-white tabular-nums outline-none focus:border-blue-500/50" />
               </div>
-              <div className="min-w-0 flex items-center justify-between gap-2 sm:flex-1 sm:mt-4">
-                <span className="min-w-0 text-slate-400 text-xs truncate">x {formatQ(pRan)}/tubo costo</span>
-                <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pRan * ip.tubosRanurados)}</span>
+              <div className="min-w-0 space-y-1 sm:flex-1 sm:mt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 text-slate-400 text-xs truncate">Me sale {formatQ(pRan)}/tubo</span>
+                  <span className="shrink-0 text-white text-sm font-medium text-right tabular-nums">{formatQ(pRan * ip.tubosRanurados)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 text-emerald-300/80 text-xs truncate">Le cobro {formatQ(ventaRanTubo)}/tubo</span>
+                  <span className="shrink-0 text-emerald-300 text-sm font-semibold text-right tabular-nums">{formatQ(ventaRanTubo * ip.tubosRanurados)}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -3959,10 +3978,8 @@ function buildLineasPerf(
   const capacidadCamion     = opcionesVenta.capacidadCamionM3 ?? 12
   const pipasAlCliente      = pipasClienteCantidad(ip.profundidad, ip.rendimientoPorDia ?? 20)
   const camionadasAlCliente = camionadasGrava(res.m3Grava, capacidadCamion)
-  const piesLisa       = ip.tubosLisos     * 20
-  const piesRan        = ip.tubosRanurados * 20
-  const precioLisaPie  = piesLisa > 0 ? Math.round(res.precioTubLisa     / 20) : 0
-  const precioRanPie   = piesRan  > 0 ? Math.round(res.precioTubRanurada / 20) : 0
+  const precioLisaTubo = preciosVentaOverride['tuberia-lisa'] ?? precioVentaTuberiaCliente(res.precioTubLisa)
+  const precioRanTubo = preciosVentaOverride['tuberia-ranurada'] ?? precioVentaTuberiaCliente(res.precioTubRanurada)
   // Precios de venta al cliente: override usuario > Excel COSTOS_BASE > fallback
   // Bentonita: Excel dice Q535.71/saco venta (costo Q303 → margen 77%)
   // Grava: Excel dice Q600/m³ venta (costo Q350)
@@ -4018,11 +4035,11 @@ function buildLineasPerf(
 
     { key: 'tuberia-lisa',
       nombre: nomLisa,
-      unidad: 'Pie', cant: piesLisa, precio: precioLisaPie },
+      unidad: 'Tubo', cant: ip.tubosLisos, precio: precioLisaTubo },
 
     { key: 'tuberia-ranurada',
       nombre: nomRanurada,
-      unidad: 'Pie', cant: piesRan, precio: precioRanPie },
+      unidad: 'Tubo', cant: ip.tubosRanurados, precio: precioRanTubo },
 
     { key: 'colocacion-ademe',
       nombre: 'Colocación de tubería (ADEME). Incluye combustible para entubar y maquina soldadora, colocación de topes, equipo de soldadura autógena y electrodo.',

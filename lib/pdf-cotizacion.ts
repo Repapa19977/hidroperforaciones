@@ -34,6 +34,11 @@ import { resolverCargoVendedor, resolverEmailVendedor } from './vendedores'
 const WHITE  = '#ffffff'
 const HIDRO_DIRECCION_CORPORATIVA = 'Corporativo: 5 avenida 15-45 zona 10, edificio Centro Empresarial torre 2, oficina 708/709'
 const HIDRO_DIRECCION_OPERATIVA = 'Operativo: Km 22.5 carretera a El Salvador, Fraijanes'
+const MARKUP_TUBERIA_CLIENTE = 1.30
+
+function precioVentaTuberiaCliente(costoTubo: number) {
+  return Math.round(Math.max(0, costoTubo) * MARKUP_TUBERIA_CLIENTE * 100) / 100
+}
 
 // ── Constructores de líneas — formato idéntico a Odoo ────────────────────────
 export function buildLineasPerf(
@@ -50,12 +55,8 @@ export function buildLineasPerf(
   const capacidadCamion     = opcionesVenta.capacidadCamionM3 ?? DEFAULT_CONFIG.capacidadCamionM3
   const pipasAlCliente      = pipasClienteCantidad(ip.profundidad, ip.rendimientoPorDia ?? 20)
   const camionadasAlCliente = camionadasGrava(res.m3Grava, capacidadCamion)
-  const piesLisa       = ip.tubosLisos     * 20
-  const piesRan        = ip.tubosRanurados * 20
-  // Venta al cliente = costo × 1.30 (markup 30% sobre costo nuestro) — instrucción René 2026-04-20
-  const MARKUP_TUBERIA = 1.30
-  const precioLisaPie  = piesLisa > 0 ? Math.round((res.precioTubLisa     * MARKUP_TUBERIA) / 20) : 0
-  const precioRanPie   = piesRan  > 0 ? Math.round((res.precioTubRanurada * MARKUP_TUBERIA) / 20) : 0
+  const precioLisaTubo = preciosVentaOverride['tuberia-lisa'] ?? precioVentaTuberiaCliente(res.precioTubLisa)
+  const precioRanTubo = preciosVentaOverride['tuberia-ranurada'] ?? precioVentaTuberiaCliente(res.precioTubRanurada)
   const precioSacoBent = preciosVentaOverride['bentonita'] ?? COSTOS_BASE.bentonita.precioVentaUnitario
   const precioGravam3  = preciosVentaOverride['grava']     ?? COSTOS_BASE.grava.precioVentaUnitario
   const viajesLodos = viajesExtraccionLodos(ip.profundidad)
@@ -107,11 +108,11 @@ export function buildLineasPerf(
 
     { key: 'tuberia-lisa',
       nombre: nomLisa,
-      unidad: 'Pie', cant: piesLisa, precio: precioLisaPie },
+      unidad: 'Tubo', cant: ip.tubosLisos, precio: precioLisaTubo },
 
     { key: 'tuberia-ranurada',
       nombre: nomRanurada,
-      unidad: 'Pie', cant: piesRan, precio: precioRanPie },
+      unidad: 'Tubo', cant: ip.tubosRanurados, precio: precioRanTubo },
 
     { key: 'colocacion-ademe',
       nombre: 'Colocación de tubería (ADEME). Incluye combustible para entubar y maquina soldadora, colocación de topes, equipo de soldadura autógena y electrodo.',
