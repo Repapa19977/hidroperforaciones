@@ -47,12 +47,19 @@ export default function ImprimirPage() {
   const [markingSent, setMarkingSent] = useState(false)
   const [pendingWhatsappConfirm, setPendingWhatsappConfirm] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [returnButtonLabel, setReturnButtonLabel] = useState('Volver')
 
   // 1) Cargar cotización
   useEffect(() => {
     const q = loadQuotation()
     setData(q)
     if (!q) { setLoading(false); setError('No hay cotización para mostrar.') }
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const returnTo = params.get('returnTo') ?? ''
+    setReturnButtonLabel(returnTo.startsWith('/cotizaciones/nueva') ? 'Volver a editar' : 'Volver')
   }, [])
 
   useEffect(() => {
@@ -319,7 +326,7 @@ export default function ImprimirPage() {
           <button onClick={volver}
             className="flex items-center gap-1.5 text-sm text-slate-700 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition-colors">
             <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Volver</span>
+            <span className="hidden sm:inline">{returnButtonLabel}</span>
           </button>
           <div className="flex-1 min-w-0">
             {data && (
@@ -469,7 +476,7 @@ export default function ImprimirPage() {
               )}
               <button onClick={volver}
                 className="text-sm bg-white border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50">
-                Volver
+                {returnButtonLabel}
               </button>
             </div>
           </div>

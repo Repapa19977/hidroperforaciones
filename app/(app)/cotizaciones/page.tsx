@@ -5,8 +5,8 @@ import { createPortal } from 'react-dom'
 import { updateEstadoCotizacion, type CotizacionRecord } from '@/lib/quotation-store'
 import {
   Plus, Search, FileText, Send, CheckCircle, XCircle, FileEdit,
-  ArrowUpRight, Trash2, ChevronDown, Loader2, LayoutList, Kanban,
-  TrendingUp, Award, Drill, Wrench, ExternalLink, Download,
+  Trash2, ChevronDown, Loader2, LayoutList, Kanban,
+  TrendingUp, Award, Drill, Wrench, Download,
   Pencil, Clock, X, User, Copy
 } from 'lucide-react'
 import Link from 'next/link'
@@ -236,7 +236,7 @@ export default function CotizacionesPage() {
         ...datos,
         ...(esLegacy && typeof row.monto === 'number' ? { montoGuardado: row.monto } : {}),
       }))
-      window.open(`/imprimir?returnTo=${encodeURIComponent('/cotizaciones')}`, '_blank')
+      window.location.href = `/imprimir?returnTo=${encodeURIComponent('/cotizaciones')}`
     } catch {
       alert('Error al procesar la cotización.')
     }
@@ -725,9 +725,9 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
               <Copy className="w-4 h-4" />
             </Link>
           )}
-          <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
+          <button onClick={() => openCotizacion(c.correlativo)} title="Vista previa"
             className="text-slate-500 hover:text-blue-400 transition-colors">
-            <ArrowUpRight className="w-4 h-4" />
+            <FileText className="w-4 h-4" />
           </button>
           {isSuperAdmin && (
             <button onClick={onReasignar} title="Reasignar vendedor"
@@ -835,9 +835,9 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
               <Copy className="w-4 h-4" />
             </Link>
           )}
-          <button onClick={() => openCotizacion(c.correlativo)} title="Ver PDF"
+          <button onClick={() => openCotizacion(c.correlativo)} title="Vista previa"
             className="text-slate-500 hover:text-blue-400 transition-colors">
-            <ArrowUpRight className="w-4 h-4" />
+            <FileText className="w-4 h-4" />
           </button>
           <button onClick={() => openHistorial(c.correlativo)} title="Historial"
             className="text-slate-500 hover:text-violet-400 transition-colors">
@@ -990,7 +990,7 @@ function KanbanCard({ c, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, open
         onClick={() => openCotizacion(c.correlativo)}
         className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] text-slate-500 hover:text-blue-400 hover:bg-blue-500/5 py-1.5 rounded-lg border border-white/5 hover:border-blue-500/20 transition-all"
       >
-        <ExternalLink className="w-3 h-3" /> Ver cotización
+        <FileText className="w-3 h-3" /> Vista previa
       </button>
 
       {isSuperAdmin && (
