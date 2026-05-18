@@ -28,6 +28,12 @@ async function resolverVendedorAsignable(nombre: string): Promise<VendedorOption
 const normalizeTipoPersona = (value: unknown, empresa = '') =>
   value === 'empresa' || value === 'juridica' || (!value && empresa.trim()) ? 'empresa' : 'individual'
 
+function errorDetalleLocal(e: unknown) {
+  if (e instanceof Error) return e.message
+  if (typeof e === 'string') return e
+  try { return JSON.stringify(e) } catch { return 'Error desconocido' }
+}
+
 // Lee del JWT el rol y nombre del vendedor. Si el rol es admin, usamos ese
 // nombre para forzar la propiedad de la cotización (admin NO puede asignar
 // a otro vendedor aunque lo intente desde el body).
@@ -65,6 +71,13 @@ export async function POST(request: NextRequest) {
   const { correlativo, cliente, empresa, proyecto, tipo, estado, monto, fecha } = body
   const datosBase = (body.datos && typeof body.datos === 'object') ? body.datos : {}
   let contactoId: string | null = body.contactoId ?? null
+  const montoNumero = Number(monto)
+
+  if (!Number.isFinite(montoNumero)) {
+    return NextResponse.json({
+      error: 'El monto de la cotizacion no es valido. Revisa los campos numericos antes de guardar.',
+    }, { status: 400 })
+  }
 
   // ── Regla de edición: solo cotizaciones EN BORRADOR son editables ──
   // Si ya existe una cotización con ese correlativo y su estado actual NO es
@@ -196,7 +209,7 @@ export async function POST(request: NextRequest) {
     proyecto,
     tipo,
     estado: estado ?? 'borrador',
-    monto,
+    monto: montoNumero,
     fecha,
     vendedor,
     datos: JSON.stringify(datosCotizacion),
@@ -219,7 +232,11 @@ export async function POST(request: NextRequest) {
         error: 'Ese correlativo ya fue usado por otra cotización. Generá uno nuevo para evitar duplicados.',
       }, { status: 409 })
     }
-    throw e
+    console.error('[api/cotizaciones POST]', e)
+    return NextResponse.json({
+      error: 'No se pudo guardar la cotizacion en la base de datos.',
+      detalle: process.env.NODE_ENV === 'production' ? undefined : errorDetalleLocal(e),
+    }, { status: 500 })
   }
 
   return NextResponse.json(row)

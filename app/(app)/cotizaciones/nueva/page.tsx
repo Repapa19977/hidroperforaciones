@@ -799,14 +799,23 @@ export default function NuevaCotizacionPage() {
     }
   }
 
-  async function handleSave() {
-    if (bloqueada) {
-      alert(`Esta cotización está "${estadoActual}" y no se puede editar. Crea una nueva.`)
-      return
+  async function readSaveError(res: Response) {
+    if (res.status === 401) return 'Tu sesion local expiro o no estas autenticado. Vuelve a iniciar sesion y prueba guardar otra vez.'
+    if (res.status === 403) return 'No tenes permiso para guardar esta cotizacion con este usuario.'
+
+    const text = await res.text().catch(() => '')
+    if (!text) return `No se pudo guardar (HTTP ${res.status})`
+
+    try {
+      const err = JSON.parse(text) as { error?: string; detalle?: string }
+      const detalle = err.detalle ? `\n\nDetalle local: ${err.detalle}` : ''
+      return `${err.error ?? `No se pudo guardar (HTTP ${res.status})`}${detalle}`
+    } catch {
+      return `${`No se pudo guardar (HTTP ${res.status})`}\n\n${text.slice(0, 500)}`
     }
-    if (!validate()) return
-    const data = buildData()
-    saveQuotation(data)
+  }
+
+  async function guardarBorradorCotizacion(data: ReturnType<typeof buildData>) {
     const res = await fetch('/api/cotizaciones', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -817,9 +826,21 @@ export default function NuevaCotizacionPage() {
         datos: data,
       }),
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      alert(err.error ?? 'No se pudo guardar')
+    if (!res.ok) throw new Error(await readSaveError(res))
+  }
+
+  async function handleSave() {
+    if (bloqueada) {
+      alert(`Esta cotización está "${estadoActual}" y no se puede editar. Crea una nueva.`)
+      return
+    }
+    if (!validate()) return
+    const data = buildData()
+    saveQuotation(data)
+    try {
+      await guardarBorradorCotizacion(data)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo guardar')
       return
     }
     setSaved(true)
@@ -834,19 +855,10 @@ export default function NuevaCotizacionPage() {
     if (!validate()) return
     const data = buildData()
     saveQuotation(data)
-    const res = await fetch('/api/cotizaciones', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        correlativo: data.correlativo, cliente: data.cliente, contactoId: data.contactoId ?? null,
-        empresa: data.empresa, proyecto: data.proyecto, tipo: data.tipo,
-        estado: 'borrador', monto: totalConIva, fecha: data.fecha, vendedor: data.vendedor,
-        datos: data,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      alert(err.error ?? 'No se pudo guardar')
+    try {
+      await guardarBorradorCotizacion(data)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo guardar')
       return
     }
     const returnTo = `/cotizaciones/nueva?edit=${encodeURIComponent(data.correlativo)}`
