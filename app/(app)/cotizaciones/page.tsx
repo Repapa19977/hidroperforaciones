@@ -29,6 +29,10 @@ function getCookie(name: string) {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
+function normalizeRol(value: unknown): Rol {
+  return value === 'superadmin' || value === 'admin_operativo' ? value : 'admin'
+}
+
 const tipoLabel = (t: string) => t === 'perforacion' ? 'Perforación' : 'Servicios de Mantenimiento'
 
 // ── Status map ─────────────────────────────────────────────────────────────────
@@ -86,29 +90,46 @@ export default function CotizacionesPage() {
     if (saved === 'kanban' || saved === 'lista') setView(saved)
   }, [])
 
-  const fetchRows = useCallback(async (v: string, r: Rol) => {
+  const fetchRows = useCallback(async () => {
     setLoading(true)
-    const url = r === 'superadmin' || r === 'admin_operativo'
-      ? '/api/cotizaciones'
-      : `/api/cotizaciones?vendedor=${encodeURIComponent(v)}`
-    const res = await fetch(url)
+    const res = await fetch('/api/cotizaciones', { cache: 'no-store' })
     setRows(res.ok ? await res.json() : [])
     setLoading(false)
   }, [])
 
   useEffect(() => {
-    const r = getCookie('user_role') as Rol || 'admin'
-    const v = getCookie('user_vendedor') || ''
-    setRole(r)
-    setMyVendedor(v)
-    fetchRows(v, r)
-    // Vendedores activos desde BD (para el modal de reasignar — solo superadmin)
-    if (r === 'superadmin' || r === 'admin_operativo') {
-      fetch('/api/vendedores')
-        .then(res => res.ok ? res.json() : [])
-        .then((rows: VendedorOption[]) => setVendedoresDB(rows.filter(x => x.nombre)))
-        .catch(() => {})
+    let cancelled = false
+
+    async function init() {
+      let r = normalizeRol(getCookie('user_role'))
+      let v = getCookie('user_vendedor')
+
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' })
+        const me = res.ok ? await res.json() : null
+        r = normalizeRol(me?.role)
+        if (typeof me?.vendedor === 'string') v = me.vendedor
+      } catch {}
+
+      if (cancelled) return
+      setRole(r)
+      setMyVendedor(v)
+      await fetchRows()
+
+      if (cancelled) return
+      // Vendedores activos desde BD (para el modal de reasignar)
+      if (r === 'superadmin' || r === 'admin_operativo') {
+        fetch('/api/vendedores', { cache: 'no-store' })
+          .then(res => res.ok ? res.json() : [])
+          .then((rows: VendedorOption[]) => {
+            if (!cancelled) setVendedoresDB(rows.filter(x => x.nombre))
+          })
+          .catch(() => {})
+      }
     }
+
+    init()
+    return () => { cancelled = true }
   }, [fetchRows])
 
   async function handleReasignar(correlativo: string, nuevoVendedor: string) {
@@ -126,7 +147,6 @@ export default function CotizacionesPage() {
     }
   }
 
-  const isSuperAdmin = role === 'superadmin'
   const canViewAllQuotes = role === 'superadmin' || role === 'admin_operativo'
   const canAssignQuotes = role === 'superadmin' || role === 'admin_operativo'
 
@@ -164,7 +184,7 @@ export default function CotizacionesPage() {
     if (estado === 'confirmada' && result?.proyectoCreado) {
       setProjNoti(result.proyectoCreado)
     }
-    await fetchRows(myVendedor, role)
+    await fetchRows()
     setMenuOpen(null)
   }
 
@@ -192,7 +212,7 @@ export default function CotizacionesPage() {
         alert(err.error || 'No se pudo eliminar')
         return
       }
-      await fetchRows(myVendedor, role)
+      await fetchRows()
       setDeleteTarget(null)
     } finally {
       setDeleting(false)
@@ -406,7 +426,7 @@ export default function CotizacionesPage() {
         />
       ) : (
         <KanbanView
-          filtered={filtered} totalActivo={totalActivo} isSuperAdmin={isSuperAdmin}
+          filtered={filtered} totalActivo={totalActivo} canManageQuotes={canAssignQuotes}
           menuOpen={menuOpen} setMenuOpen={setMenuOpen}
           changeEstado={changeEstado} openCotizacion={openCotizacion}
         />
@@ -869,10 +889,10 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
 }
 
 // ── Kanban view ────────────────────────────────────────────────────────────────
-function KanbanView({ filtered, totalActivo, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, openCotizacion }: {
+function KanbanView({ filtered, totalActivo, canManageQuotes, menuOpen, setMenuOpen, changeEstado, openCotizacion }: {
   filtered: CotizacionRecord[]
   totalActivo: number
-  isSuperAdmin: boolean
+  canManageQuotes: boolean
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
   changeEstado: (c: string, e: CotizacionRecord['estado']) => void
@@ -925,7 +945,7 @@ function KanbanView({ filtered, totalActivo, isSuperAdmin, menuOpen, setMenuOpen
                   </div>
                 ) : (
                   cards.map(c => (
-                    <KanbanCard key={c.correlativo} c={c} isSuperAdmin={isSuperAdmin}
+                    <KanbanCard key={c.correlativo} c={c} canManageQuotes={canManageQuotes}
                       menuOpen={menuOpen} setMenuOpen={setMenuOpen}
                       changeEstado={changeEstado} openCotizacion={openCotizacion} />
                   ))
@@ -940,9 +960,9 @@ function KanbanView({ filtered, totalActivo, isSuperAdmin, menuOpen, setMenuOpen
 }
 
 // ── Kanban card ────────────────────────────────────────────────────────────────
-function KanbanCard({ c, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, openCotizacion }: {
+function KanbanCard({ c, canManageQuotes, menuOpen, setMenuOpen, changeEstado, openCotizacion }: {
   c: CotizacionRecord
-  isSuperAdmin: boolean
+  canManageQuotes: boolean
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
   changeEstado: (correlativo: string, estado: CotizacionRecord['estado']) => void
@@ -1007,7 +1027,7 @@ function KanbanCard({ c, isSuperAdmin, menuOpen, setMenuOpen, changeEstado, open
         <FileText className="w-3 h-3" /> Vista previa
       </button>
 
-      {isSuperAdmin && (
+      {canManageQuotes && (
         <div className="mt-2.5 pt-2.5 border-t border-white/5">
           <button
             ref={btnRef}

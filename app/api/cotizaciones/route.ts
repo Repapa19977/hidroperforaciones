@@ -36,6 +36,11 @@ function errorDetalleLocal(e: unknown) {
   try { return JSON.stringify(e) } catch { return 'Error desconocido' }
 }
 
+function isAllVendedores(value: string | null): boolean {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return !normalized || normalized === 'all' || normalized === 'todos'
+}
+
 // Lee del JWT el rol y nombre del vendedor. Si el rol es admin, usamos ese
 // nombre para forzar la propiedad de la cotización (admin NO puede asignar
 // a otro vendedor aunque lo intente desde el body).
@@ -46,8 +51,9 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(request.url)
+  const vendedorParam = searchParams.get('vendedor')
   const vendedor = canViewAllCotizaciones(auth.user.role)
-    ? searchParams.get('vendedor')
+    ? (isAllVendedores(vendedorParam) ? null : vendedorParam)
     : auth.user.vendedor
   const papelera = searchParams.get('papelera') === '1'
 
