@@ -11,6 +11,18 @@ export function canAssignVendedor(role: string | null | undefined): boolean {
   return role === 'superadmin' || role === 'admin_operativo'
 }
 
+export function canViewAllCotizaciones(role: string | null | undefined): boolean {
+  return role === 'superadmin' || role === 'admin_operativo'
+}
+
+export function canAccessActiveProjectBitacora(role: string | null | undefined): boolean {
+  return role === 'superadmin' || role === 'admin_operativo'
+}
+
+export function canDeleteBitacora(role: string | null | undefined): boolean {
+  return role === 'superadmin'
+}
+
 export function canViewFinancials(role: string | null | undefined): boolean {
   return role === 'superadmin'
 }

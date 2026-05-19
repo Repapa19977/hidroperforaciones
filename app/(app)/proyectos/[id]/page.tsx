@@ -23,6 +23,7 @@ import { format, parseISO, differenceInDays } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { AlertasConsumo } from '@/components/alertas-consumo'
 import { LiquidacionProyectoPanel } from '@/components/liquidacion-proyecto-panel'
+import type { Rol } from '@/lib/config-store'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BitacoraEntry {
@@ -87,6 +88,12 @@ function parseDiasPactados(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null
 }
 
+function getCookie(name: string) {
+  if (typeof document === 'undefined') return ''
+  const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
+  return m ? decodeURIComponent(m[1]) : ''
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 function StatChip({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
@@ -115,7 +122,9 @@ export default function ProyectoDetallePage() {
   const [expandedId, setExpandedId]   = useState<string | null>(null)
   const [profObjetivo, setProfObjetivo]       = useState<number | null>(null)
   const [duracionEstimada, setDuracionEstimada] = useState<number | null>(null)
+  const [role, setRole] = useState<Rol>('admin')
   const today = new Date().toISOString().slice(0, 10)
+  const isSuperAdmin = role === 'superadmin'
 
   const load = useCallback(() => {
     setLoading(true)
@@ -131,7 +140,10 @@ export default function ProyectoDetallePage() {
   }, [id])
 
   // Lee cookies solo en el cliente después de hidratación
-  useEffect(() => { if (id) load() }, [id, load])
+  useEffect(() => {
+    setRole((getCookie('user_role') as Rol) || 'admin')
+    if (id) load()
+  }, [id, load])
 
   // Fetch profundidad objetivo desde la cotización asociada
   useEffect(() => {
@@ -387,13 +399,15 @@ export default function ProyectoDetallePage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <select value={proyecto.estado} onChange={e => updateEstado(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-slate-300 outline-none">
-              <option value="activo">Activo</option>
-              <option value="pausado">Pausado</option>
-              <option value="completado">Completado</option>
-              <option value="cancelado">Cancelado</option>
-            </select>
+            {isSuperAdmin && (
+              <select value={proyecto.estado} onChange={e => updateEstado(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-slate-300 outline-none">
+                <option value="activo">Activo</option>
+                <option value="pausado">Pausado</option>
+                <option value="completado">Completado</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            )}
             <button onClick={pdfExpediente} disabled={pdfLoad === 'exp' || sorted.length === 0}
               className="flex items-center gap-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-400 hover:bg-violet-600/30 disabled:opacity-40 px-3 py-2 rounded-lg text-xs font-medium transition-all">
               {pdfLoad === 'exp' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
@@ -429,7 +443,7 @@ export default function ProyectoDetallePage() {
       <div className="p-4 sm:p-6 space-y-5">
 
         {/* ── ALERTAS DE CONSUMO (Fase F) ─────────────────────────────────── */}
-        <AlertasConsumo proyectoId={proyecto.id} />
+        {isSuperAdmin && <AlertasConsumo proyectoId={proyecto.id} />}
 
         {/* Control de Pagos movido a /gastos/[id] (refactor 2026-04-22) */}
 
@@ -769,10 +783,12 @@ export default function ProyectoDetallePage() {
                                 className="text-slate-600 hover:text-slate-300 transition-colors text-[10px] border border-white/5 px-1.5 py-0.5 rounded hover:border-white/15">
                                 Editar
                               </button>
-                              <button onClick={() => handleDelete(e.id)} title="Eliminar"
-                                className="text-slate-700 hover:text-red-400 transition-colors">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {isSuperAdmin && (
+                                <button onClick={() => handleDelete(e.id)} title="Eliminar"
+                                  className="text-slate-700 hover:text-red-400 transition-colors">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -855,9 +871,11 @@ export default function ProyectoDetallePage() {
                         <button onClick={() => openEdit(e)} className="text-slate-400 hover:text-slate-200 transition-colors text-[10px] border border-white/10 px-1.5 py-0.5 rounded">
                           Editar
                         </button>
-                        <button onClick={() => handleDelete(e.id)} aria-label="Eliminar entrada" className="text-slate-500 hover:text-red-400 active:scale-90 transition-all p-1">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isSuperAdmin && (
+                          <button onClick={() => handleDelete(e.id)} aria-label="Eliminar entrada" className="text-slate-500 hover:text-red-400 active:scale-90 transition-all p-1">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
@@ -879,7 +897,7 @@ export default function ProyectoDetallePage() {
           )}
         </div>
 
-        <LiquidacionProyectoPanel proyectoId={proyecto.id} onProyectoUpdated={load} />
+        {isSuperAdmin && <LiquidacionProyectoPanel proyectoId={proyecto.id} onProyectoUpdated={load} />}
       </div>
 
       {/* ── MODAL NUEVA / EDITAR ENTRADA ──────────────────────────────────── */}

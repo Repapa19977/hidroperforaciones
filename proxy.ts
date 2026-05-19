@@ -52,10 +52,11 @@ export async function proxy(request: NextRequest) {
     // /proyectos (bitácora) y su API — solo superadmin
     if (
       (pathname.startsWith('/proyectos') || pathname.startsWith('/api/proyectos')) &&
-      role !== 'superadmin'
+      role !== 'superadmin' &&
+      role !== 'admin_operativo'
     ) {
       return pathname.startsWith('/api/')
-        ? NextResponse.json({ error: 'Solo superadmin' }, { status: 403 })
+        ? NextResponse.json({ error: 'Solo superadmin o admin operativo' }, { status: 403 })
         : NextResponse.redirect(new URL('/dashboard', request.url))
     }
 

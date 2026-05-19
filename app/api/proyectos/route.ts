@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireSuperAdmin } from '@/lib/auth'
+import { requireAuth, requireSuperAdmin } from '@/lib/auth'
+import { canListProjects } from '@/lib/proyectos-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -8,13 +9,17 @@ export const revalidate = 0
 // GET — listar proyectos (superadmin: todos; admin: solo los suyos).
 // Query: ?vendedor=X · ?estado=Y · ?papelera=1 (solo eliminados)
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request)
+  const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
+  if (!canListProjects(auth.user)) {
+    return NextResponse.json({ error: 'No autorizado para ver proyectos' }, { status: 403 })
+  }
 
   const { searchParams } = new URL(request.url)
-  const vendedor = searchParams.get('vendedor')
-  const estado = searchParams.get('estado')
-  const papelera = searchParams.get('papelera') === '1'
+  const isSuperAdmin = auth.user.role === 'superadmin'
+  const vendedor = isSuperAdmin ? searchParams.get('vendedor') : null
+  const estado = isSuperAdmin ? searchParams.get('estado') : 'activo'
+  const papelera = isSuperAdmin && searchParams.get('papelera') === '1'
 
   const rows = await prisma.proyecto.findMany({
     where: {

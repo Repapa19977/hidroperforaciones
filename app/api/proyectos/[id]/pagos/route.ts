@@ -37,7 +37,10 @@ interface HitoCalculado {
 interface PlanPagosItem { id: string; label: string; pct: number; fijo?: boolean; visible?: boolean }
 
 // ── GET ──────────────────────────────────────────────────────────────────
-export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request)
+  if (!auth.ok) return auth.response
+
   const { id } = await params
 
   const proyecto = await prisma.proyecto.findUnique({ where: { id } })

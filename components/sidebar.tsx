@@ -91,8 +91,9 @@ export function Sidebar() {
   }
 
   const isSuperAdmin = rol === 'superadmin'
+  const isOperativo = rol === 'admin_operativo'
   const visibleNavItems = navItems.filter(item => {
-    if (item.href === '/proyectos') return isSuperAdmin
+    if (item.href === '/proyectos') return isSuperAdmin || isOperativo
     if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
     if (item.href === '/cuentas-por-pagar') return isSuperAdmin  // contabilidad solo superadmin
     if (item.href === '/cuentas-por-cobrar') return isSuperAdmin

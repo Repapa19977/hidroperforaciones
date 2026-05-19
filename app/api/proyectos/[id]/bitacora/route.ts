@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { bitacoraEntrySchema, formatZodError } from '@/lib/validators'
-import { requireSuperAdmin } from '@/lib/auth'
+import { requireAuth } from '@/lib/auth'
 import { reconciliarReservaBentonitaProyecto } from '@/lib/inventario-bentonita'
+import { canAccessProyecto, canWriteProyectoBitacora } from '@/lib/proyectos-auth'
 
 // GET - listar entradas de bitacora de un proyecto
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireSuperAdmin(request)
+  const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
 
   const { id } = await params
+  const proyecto = await prisma.proyecto.findUnique({
+    where: { id },
+    select: { vendedor: true, estado: true, eliminadoEn: true },
+  })
+  if (!proyecto) return NextResponse.json({ error: 'Proyecto no encontrado' }, { status: 404 })
+  if (!canAccessProyecto(auth.user, proyecto)) {
+    return NextResponse.json({ error: 'No autorizado para este proyecto' }, { status: 403 })
+  }
+
   const rows = await prisma.bitacoraEntry.findMany({
     where: { proyectoId: id },
     orderBy: [{ fecha: 'asc' }, { turno: 'asc' }],
@@ -19,7 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 // POST - agregar nueva entrada de bitacora
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireSuperAdmin(request)
+  const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
 
   const { id } = await params
@@ -32,6 +42,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const proyecto = await prisma.proyecto.findUnique({ where: { id } })
   if (!proyecto) return NextResponse.json({ error: 'Proyecto no encontrado' }, { status: 404 })
+  if (!canWriteProyectoBitacora(auth.user, proyecto)) {
+    return NextResponse.json({ error: 'No autorizado para llenar esta bitacora' }, { status: 403 })
+  }
 
   const row = await prisma.bitacoraEntry.create({
     data: {

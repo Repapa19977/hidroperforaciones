@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { calcularPerforacion, type InputsPerforacion } from '@/lib/calculator'
-import { requireSuperAdmin, getRequestInfo } from '@/lib/auth'
+import { requireAuth, requireSuperAdmin, getRequestInfo } from '@/lib/auth'
 import { auditLog } from '@/lib/audit'
+import { canAccessProyecto } from '@/lib/proyectos-auth'
 
 // GET — obtener proyecto con todas sus entradas + totales de la cotización
 // (profundidadTotal, diasHabilesTotal) para la barra de avance del PDF
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireSuperAdmin(request)
+  const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
 
   const { id } = await params
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     },
   })
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!canAccessProyecto(auth.user, row)) {
+    return NextResponse.json({ error: 'No autorizado para este proyecto' }, { status: 403 })
+  }
 
   // Buscar teléfono y email del cliente en Contacto
   const contacto = await prisma.contacto.findFirst({

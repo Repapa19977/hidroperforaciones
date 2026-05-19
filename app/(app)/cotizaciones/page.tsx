@@ -88,7 +88,9 @@ export default function CotizacionesPage() {
 
   const fetchRows = useCallback(async (v: string, r: Rol) => {
     setLoading(true)
-    const url = r === 'superadmin' ? '/api/cotizaciones' : `/api/cotizaciones?vendedor=${encodeURIComponent(v)}`
+    const url = r === 'superadmin' || r === 'admin_operativo'
+      ? '/api/cotizaciones'
+      : `/api/cotizaciones?vendedor=${encodeURIComponent(v)}`
     const res = await fetch(url)
     setRows(res.ok ? await res.json() : [])
     setLoading(false)
@@ -125,6 +127,7 @@ export default function CotizacionesPage() {
   }
 
   const isSuperAdmin = role === 'superadmin'
+  const canViewAllQuotes = role === 'superadmin' || role === 'admin_operativo'
   const canAssignQuotes = role === 'superadmin' || role === 'admin_operativo'
 
   const vendedores = useMemo(() => {
@@ -139,9 +142,9 @@ export default function CotizacionesPage() {
       c.correlativo.toLowerCase().includes(q) ||
       (c.empresa || '').toLowerCase().includes(q)
     const matchStatus  = filterStatus === 'todos' || c.estado === filterStatus
-    const matchVendedor = !isSuperAdmin || filterVendedor === 'Todos' || c.vendedor === filterVendedor
+    const matchVendedor = !canViewAllQuotes || filterVendedor === 'Todos' || c.vendedor === filterVendedor
     return matchSearch && matchStatus && matchVendedor
-  }), [rows, search, filterStatus, filterVendedor, isSuperAdmin])
+  }), [rows, search, filterStatus, filterVendedor, canViewAllQuotes])
 
   // KPIs
   const activas     = filtered.filter(c => c.estado !== 'cancelada')
@@ -342,7 +345,7 @@ export default function CotizacionesPage() {
           ))}
 
           {/* Vendedor filter — kanban + superadmin */}
-          {view === 'kanban' && isSuperAdmin && vendedores.map(v => {
+          {view === 'kanban' && canViewAllQuotes && vendedores.map(v => {
             const ini = v === 'Todos' ? null : v.split(' ').map(n => n[0]).join('')
             return (
               <button key={v} onClick={() => setFVend(v)}
@@ -625,7 +628,9 @@ function ListView({ filtered, search, canAssignQuotes, menuOpen, setMenuOpen, ch
           <MobileRow key={c.correlativo} c={c}
             menuOpen={menuOpen} setMenuOpen={setMenuOpen}
             changeEstado={changeEstado} handleDelete={handleDelete}
-            openCotizacion={openCotizacion} openHistorial={openHistorial} />
+            openCotizacion={openCotizacion} openHistorial={openHistorial}
+            canAssignQuotes={canAssignQuotes}
+            onReasignar={() => onReasignar(c)} />
         ))}
       </div>
     </>
@@ -751,7 +756,7 @@ function ListRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCot
 }
 
 // ── Mobile row (card) ─────────────────────────────────────────────────────────
-function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial }: {
+function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openCotizacion, openHistorial, canAssignQuotes, onReasignar }: {
   c: CotizacionRecord
   menuOpen: string | null
   setMenuOpen: (v: string | null) => void
@@ -759,6 +764,8 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
   handleDelete: (c: string) => void
   openCotizacion: (c: string) => void
   openHistorial: (c: string) => void
+  canAssignQuotes: boolean
+  onReasignar: () => void
 }) {
   const s = statusMap[c.estado]
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -840,6 +847,12 @@ function MobileRow({ c, menuOpen, setMenuOpen, changeEstado, handleDelete, openC
             className="text-slate-500 hover:text-blue-400 transition-colors">
             <FileText className="w-4 h-4" />
           </button>
+          {canAssignQuotes && (
+            <button onClick={onReasignar} title="Reasignar vendedor"
+              className="text-slate-500 hover:text-cyan-400 transition-colors">
+              <User className="w-4 h-4" />
+            </button>
+          )}
           <button onClick={() => openHistorial(c.correlativo)} title="Historial"
             className="text-slate-500 hover:text-violet-400 transition-colors">
             <Clock className="w-4 h-4" />

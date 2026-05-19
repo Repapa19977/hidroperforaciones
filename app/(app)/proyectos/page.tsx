@@ -148,7 +148,7 @@ export default function ProyectosPage() {
                   'Proyecto': r.nombre,
                   'Tipo': r.tipo === 'perforacion' ? 'Perforación' : 'Limpieza',
                   'Estado': r.estado,
-                  'Monto (Q)': Math.round(r.monto),
+                  ...(isSuperAdmin ? { 'Monto (Q)': Math.round(r.monto) } : {}),
                   'Vendedor': r.vendedor,
                   'Fecha Inicio': r.fechaInicio,
                   'Entradas Bitácora': r.entradas.length,
@@ -180,7 +180,7 @@ export default function ProyectosPage() {
             icon={<Briefcase className="w-4 h-4 text-blue-400" />}
             label="Activos"
             value={String(activos.length)}
-            sub={formatQ(montoActivo)}
+            sub={isSuperAdmin ? formatQ(montoActivo) : 'en ejecucion'}
             color="blue"
           />
           <KPIChip
@@ -292,7 +292,7 @@ export default function ProyectosPage() {
                   <th className="text-left px-5 py-3 font-medium">Cliente</th>
                   <th className="text-left px-5 py-3 font-medium">Proyecto</th>
                   <th className="text-left px-5 py-3 font-medium">Tipo</th>
-                  <th className="text-right px-5 py-3 font-medium">Monto</th>
+                  {isSuperAdmin && <th className="text-right px-5 py-3 font-medium">Monto</th>}
                   <th className="text-left px-5 py-3 font-medium">Estado</th>
                   <th className="text-left px-5 py-3 font-medium">Ultima bitacora</th>
                   <th className="text-left px-5 py-3 font-medium">Vendedor</th>
@@ -311,7 +311,7 @@ export default function ProyectosPage() {
                     </td>
                     <td className="px-5 py-3.5 text-slate-300">{r.nombre}</td>
                     <td className="px-5 py-3.5 text-slate-400 text-xs">{tipoLabel(r.tipo)}</td>
-                    <td className="px-5 py-3.5 text-right text-white font-semibold">{formatQ(r.monto)}</td>
+                    {isSuperAdmin && <td className="px-5 py-3.5 text-right text-white font-semibold">{formatQ(r.monto)}</td>}
                     <td className="px-5 py-3.5">
                       <span className={cn('px-2 py-0.5 rounded-md text-xs font-medium', estadoBadgeClass(r.estado))}>
                         {r.estado}
@@ -355,7 +355,7 @@ export default function ProyectosPage() {
                       <p className="font-semibold text-slate-200 truncate">{r.cliente}</p>
                       <p className="text-xs text-slate-500 truncate">{r.nombre}</p>
                     </div>
-                    <p className="font-bold text-white text-sm shrink-0">{formatQ(r.monto)}</p>
+                    {isSuperAdmin && <p className="font-bold text-white text-sm shrink-0">{formatQ(r.monto)}</p>}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-[10px] text-blue-400">{r.correlativo}</span>

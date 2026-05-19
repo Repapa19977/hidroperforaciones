@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { canAccessCotizacion, parseCotizacionDatos } from '@/lib/cotizaciones-auth'
-import { canAssignVendedor, INTERNAL_ASSIGNABLE_ROLES } from '@/lib/roles'
+import { canAssignVendedor, canViewAllCotizaciones, INTERNAL_ASSIGNABLE_ROLES } from '@/lib/roles'
 import { contactoDuplicateLockKey, findContactoDuplicate } from '@/lib/contactos-dedup'
 import { crearVendedorOption, normalizarVendedor, type VendedorOption } from '@/lib/vendedores'
 
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(request.url)
-  const vendedor = auth.user.role === 'superadmin'
+  const vendedor = canViewAllCotizaciones(auth.user.role)
     ? searchParams.get('vendedor')
     : auth.user.vendedor
   const papelera = searchParams.get('papelera') === '1'

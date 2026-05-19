@@ -1,4 +1,5 @@
 import type { CurrentUser } from '@/lib/auth'
+import { canViewAllCotizaciones } from '@/lib/roles'
 
 export function parseCotizacionDatos(datos: string | null | undefined): Record<string, unknown> {
   if (!datos) return {}
@@ -11,7 +12,7 @@ export function parseCotizacionDatos(datos: string | null | undefined): Record<s
 }
 
 export function canAccessCotizacion(user: CurrentUser, row: { vendedor: string; datos?: string | null }): boolean {
-  if (user.role === 'superadmin') return true
+  if (canViewAllCotizaciones(user.role)) return true
   if (row.vendedor === user.vendedor) return true
 
   const datos = parseCotizacionDatos(row.datos)

@@ -1,18 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireSuperAdmin } from '@/lib/auth'
+import { requireAuth } from '@/lib/auth'
 import { reconciliarReservaBentonitaProyecto } from '@/lib/inventario-bentonita'
+import { canWriteProyectoBitacora } from '@/lib/proyectos-auth'
+import { canDeleteBitacora } from '@/lib/roles'
 
 // PATCH — actualizar entrada de bitácora
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; entryId: string }> }
 ) {
-  const auth = await requireSuperAdmin(request)
+  const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
 
   const { id, entryId } = await params
   const body = await request.json()
+  const entry = await prisma.bitacoraEntry.findUnique({
+    where: { id: entryId },
+    select: {
+      proyectoId: true,
+      proyecto: { select: { vendedor: true, estado: true, eliminadoEn: true } },
+    },
+  })
+  if (!entry || entry.proyectoId !== id) {
+    return NextResponse.json({ error: 'Entrada no encontrada' }, { status: 404 })
+  }
+  if (!canWriteProyectoBitacora(auth.user, entry.proyecto)) {
+    return NextResponse.json({ error: 'No autorizado para editar esta bitacora' }, { status: 403 })
+  }
 
   const row = await prisma.bitacoraEntry.update({
     where: { id: entryId },
@@ -53,10 +68,20 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; entryId: string }> }
 ) {
-  const auth = await requireSuperAdmin(request)
+  const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
+  if (!canDeleteBitacora(auth.user.role)) {
+    return NextResponse.json({ error: 'Solo superadmin puede eliminar entradas de bitacora' }, { status: 403 })
+  }
 
   const { id, entryId } = await params
+  const entry = await prisma.bitacoraEntry.findUnique({
+    where: { id: entryId },
+    select: { proyectoId: true },
+  })
+  if (!entry || entry.proyectoId !== id) {
+    return NextResponse.json({ error: 'Entrada no encontrada' }, { status: 404 })
+  }
   await prisma.bitacoraEntry.delete({ where: { id: entryId } })
   try {
     await reconciliarReservaBentonitaProyecto(id)
