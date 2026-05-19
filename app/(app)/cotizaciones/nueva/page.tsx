@@ -48,6 +48,10 @@ function canViewFinancials(rol: string | null | undefined): boolean {
   return rol === 'superadmin'
 }
 
+function canViewQuotationPercentages(rol: string | null | undefined): boolean {
+  return rol === 'superadmin' || rol === 'admin' || rol === 'admin_operativo'
+}
+
 function canAssignVendedor(rol: string | null | undefined): boolean {
   return rol === 'superadmin' || rol === 'admin_operativo'
 }
@@ -1818,10 +1822,17 @@ export default function NuevaCotizacionPage() {
                   <BarChart3 className="w-4 h-4 text-emerald-400" />
                   <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resumen financiero</h3>
                   {!canViewFinancials(rolUsuario) && (
-                    <span className="ml-auto text-[10px] text-slate-600">Ganancia y costo solo visibles para superadmin</span>
+                    <span className="ml-auto text-[10px] text-slate-600">Costos y ganancia Q solo superadmin</span>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/5">
+                <div className={cn(
+                  'grid grid-cols-1 divide-y sm:divide-y-0 sm:divide-x divide-white/5',
+                  canViewFinancials(rolUsuario)
+                    ? 'sm:grid-cols-3'
+                    : canViewQuotationPercentages(rolUsuario)
+                      ? 'sm:grid-cols-2'
+                      : 'sm:grid-cols-1'
+                )}>
                   {/* Cliente paga */}
                   <div className="p-4">
                     <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-blue-400 mb-1">
@@ -1833,6 +1844,19 @@ export default function NuevaCotizacionPage() {
                     </p>
                   </div>
                   {/* Tu costo — solo superadmin */}
+                  {!canViewFinancials(rolUsuario) && canViewQuotationPercentages(rolUsuario) && (
+                    <div className="p-4">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-emerald-400 mb-1">
+                        <BarChart3 className="w-3 h-3" /> Margen
+                      </div>
+                      <p className={cn('text-xl font-black tabular-nums leading-none',
+                        margenNeto >= 25 ? 'text-emerald-300' : margenNeto >= 10 ? 'text-amber-300' : 'text-red-400'
+                      )}>{margenNeto.toFixed(1)}%</p>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                        porcentaje de la cotizacion
+                      </p>
+                    </div>
+                  )}
                   {canViewFinancials(rolUsuario) && (
                     <div className="p-4">
                       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-400 mb-1">
@@ -1885,7 +1909,7 @@ export default function NuevaCotizacionPage() {
             <div className="flex-1 px-4 py-2.5">
               <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider leading-none">Total cotización</p>
               <p className="text-lg font-bold text-blue-400 tabular-nums leading-tight mt-1">{formatCotizacionMoney(totalConIva)}</p>
-              {canViewFinancials(rolUsuario) && (
+              {canViewQuotationPercentages(rolUsuario) && (
                 <p className="text-[9px] text-slate-500 tabular-nums leading-none mt-0.5">
                   Margen: <span className={margenNeto >= 25 ? 'text-emerald-400' : margenNeto >= 10 ? 'text-amber-400' : 'text-red-400'}>{margenNeto.toFixed(1)}%</span>
                 </p>
@@ -2119,6 +2143,7 @@ function CalcPerforacion({
   setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
   const mostrarFinanzas = canViewFinancials(rol)
+  const mostrarPorcentajesCotizacion = canViewQuotationPercentages(rol)
   const ovr = preciosVentaOverride ?? {}
   const costosOverride = costosCotizacionOverride ?? {}
   const sacos = sacosDebentonita(ip.diametro, ip.profundidad)
@@ -2350,7 +2375,7 @@ function CalcPerforacion({
           )}
         </div>
         {venta !== null && (
-          <div className={cn('grid grid-cols-1 gap-3', mostrarFinanzas ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
+          <div className={cn('grid grid-cols-1 gap-3', mostrarPorcentajesCotizacion ? 'md:grid-cols-2' : 'md:grid-cols-1')}>
             <div>
               <label className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 block">Le cobro</label>
               <DecimalInput
@@ -2361,7 +2386,7 @@ function CalcPerforacion({
                 className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white tabular-nums outline-none focus:border-blue-500/50"
               />
             </div>
-            {mostrarFinanzas && (
+            {mostrarPorcentajesCotizacion && (
               <div className="rounded-lg border border-white/10 bg-white/4 px-3 py-2">
                 <span className="block text-[10px] text-slate-500 uppercase tracking-wide">Margen</span>
                 <span className={cn('text-sm font-bold tabular-nums', ganancia !== null && ganancia >= 0 ? 'text-emerald-300' : 'text-red-300')}>
@@ -3049,24 +3074,37 @@ function CalcPerforacion({
 }
 
 // ── Panel Financiero Perforación ─────────────────────────────────────────────
-function ResumenCotizacionOperativo({ subtotal, iva, total }: {
+function ResumenCotizacionOperativo({ subtotal, iva, total, margenNeto, label = 'Margen neto' }: {
   subtotal: number
   iva: number
   total: number
+  margenNeto?: number
+  label?: string
 }) {
+  const showMargin = typeof margenNeto === 'number' && Number.isFinite(margenNeto)
+  const margen = showMargin ? margenNeto! : 0
+  const marginClass = showMargin
+    ? margen >= 25 ? 'text-emerald-400' : margen >= 10 ? 'text-amber-400' : 'text-red-400'
+    : 'text-slate-400'
   return (
     <div className="bg-[#0d1526] rounded-xl border border-white/5 p-5 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resumen de cotizacion</p>
         <BarChart3 className="w-4 h-4 text-slate-600" />
       </div>
+      {showMargin && (
+        <div className="text-center py-3 bg-white/3 rounded-xl border border-white/5">
+          <p className={cn('text-4xl font-bold tabular-nums', marginClass)}>{margen.toFixed(1)}%</p>
+          <p className="text-xs text-slate-500 mt-1">{label}</p>
+        </div>
+      )}
       <div className="space-y-1.5">
         <FR label="Precio venta (sin IVA)" value={subtotal} c="text-white" />
         <FR label="IVA 12%" value={iva} c="text-amber-400" />
         <FR label="Total al cliente" value={total} c="text-blue-300" bold />
       </div>
       <div className="rounded-lg border border-slate-700/60 bg-white/3 px-3 py-2 text-[11px] text-slate-500 leading-relaxed">
-        Costos internos, margen y ganancia solo son visibles para superadmin.
+        Costos internos y ganancia en Q solo son visibles para superadmin.
       </div>
     </div>
   )
@@ -3090,6 +3128,7 @@ function CalcServicios({
   setLineasConfig: React.Dispatch<React.SetStateAction<Record<string, LineaConfig>>>
 }) {
   const mostrarFinanzas = canViewFinancials(rol)
+  const mostrarPorcentajesCotizacion = canViewQuotationPercentages(rol)
   const subtipo = il.servicioSubtipo ?? 'basico'
   const tablaServicio = il.servicioTuberiaTabla?.length ? il.servicioTuberiaTabla : DEFAULT_SERVICIO_COTIZACION.tablaTuberia
   const formatDiametroServicio = (diametro: number) => diametro === 2.5 ? '2-1/2"' : `${diametro}"`
@@ -3204,6 +3243,8 @@ function CalcServicios({
               <NumInput label="Precio venta/hora (Q)" value={il.precioVentaHora} onChange={v => patchIl('precioVentaHora', v)}
                 accent hint={mostrarFinanzas
                   ? markupHint(res.costoNetoHora, il.precioVentaHora, `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`)
+                  : mostrarPorcentajesCotizacion
+                    ? markupHint(res.costoNetoHora, il.precioVentaHora, `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`)
                   : `Total limpieza: ${formatQ(il.horasLimpieza * il.precioVentaHora)}`} />
             )}
           </>
@@ -3215,6 +3256,8 @@ function CalcServicios({
             <NumInput label="Precio venta aforo total (Q)" value={il.precioVentaAforoTotal ?? 23000} onChange={v => patchIl('precioVentaAforoTotal', v)}
               accent hint={mostrarFinanzas
                 ? markupHint(res.costoAforo, il.precioVentaAforoTotal ?? 23000, `Costo interno: ${formatQ(res.costoAforo)}`)
+                : mostrarPorcentajesCotizacion
+                  ? markupHint(res.costoAforo, il.precioVentaAforoTotal ?? 23000)
                 : 'Total visible para el cliente'} />
           </>
         )}
@@ -3280,6 +3323,8 @@ function CalcServicios({
             <NumInput label="Material instalacion y mano de obra (Q)" value={il.precioMaterialInstalacionServicio ?? 0} onChange={v => patchIl('precioMaterialInstalacionServicio', v)}
               hint={mostrarFinanzas
                 ? markupHint(res.costoMaterialInstalacionServicio, il.precioMaterialInstalacionServicio ?? 0, 'Linea global del presupuesto de servicio')
+                : mostrarPorcentajesCotizacion
+                  ? markupHint(res.costoMaterialInstalacionServicio, il.precioMaterialInstalacionServicio ?? 0, 'Linea global del presupuesto de servicio')
                 : 'Linea global del presupuesto de servicio'} />
           </>
         )}
@@ -3297,6 +3342,8 @@ function CalcServicios({
             <NumInput label="Precio venta/caneca (Q)" value={il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca} onChange={v => patchIl('precioVentaQuimicoCaneca', v)}
               accent hint={mostrarFinanzas
                 ? markupHint(il.precioQuimicoCaneca, il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca, `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`)
+                : mostrarPorcentajesCotizacion
+                  ? markupHint(il.precioQuimicoCaneca, il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca, `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`)
                 : `Total quimicos: ${formatQ((il.precioVentaQuimicoCaneca ?? res.precioVentaQuimicoCaneca) * res.canecasQuimicosServicio)}`} />
           </>
         )}
@@ -3318,7 +3365,11 @@ function CalcServicios({
                     <NumInput label="Costo tecnico (Q)" value={costoTecnico} onChange={v => patchIl('costoTecnicoChequeoServicio', v)} />
                   )}
                   <NumInput label="Venta tecnico (Q)" value={ventaTecnico} onChange={v => patchIl('precioTecnicoChequeoServicio', v)}
-                    accent hint={mostrarFinanzas ? `Aumento: ${markupTecnico.toFixed(1)}% - Ganancia: ${formatQ(ventaTecnico - costoTecnico)}` : 'Precio visible para el cliente'} />
+                    accent hint={mostrarFinanzas
+                      ? `Aumento: ${markupTecnico.toFixed(1)}% - Ganancia: ${formatQ(ventaTecnico - costoTecnico)}`
+                      : mostrarPorcentajesCotizacion
+                        ? `Aumento: ${markupTecnico.toFixed(1)}%`
+                        : 'Precio visible para el cliente'} />
                   {mostrarFinanzas && (
                     <NumInput label="Aumento tecnico (%)" value={Math.round(markupTecnico * 100) / 100} onChange={setMarkupTecnico}
                       hint="Al cambiar el %, recalcula la venta al cliente." />
@@ -3383,7 +3434,7 @@ function CalcServicios({
                       {mostrarFinanzas && (
                         <NumInput label={item.costLabel} value={item.costValue} onChange={v => patchIl(item.costInput, v)} hint="Costo interno" />
                       )}
-                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={mostrarFinanzas ? markupHint(item.costValue, item.saleValue) : 'Precio visible para el cliente'} />
+                      <NumInput label={item.saleLabel} value={item.saleValue} onChange={v => patchIl(item.saleInput, v)} accent hint={mostrarFinanzas || mostrarPorcentajesCotizacion ? markupHint(item.costValue, item.saleValue) : 'Precio visible para el cliente'} />
                       {mostrarFinanzas && (
                         <NumInput label="Aumento (%)" value={aumento} onChange={pct => patchIl(item.saleInput, ventaDesdePct(item.costValue, pct))}
                           hint="Al cambiar el %, recalcula la venta al cliente." />
@@ -3477,7 +3528,7 @@ function PanelPerf({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
   rol: RolUsuario
 }) {
   if (!canViewFinancials(rol)) {
-    return <ResumenCotizacionOperativo subtotal={subtotal} iva={iva} total={total} />
+    return <ResumenCotizacionOperativo subtotal={subtotal} iva={iva} total={total} margenNeto={canViewQuotationPercentages(rol) ? margenNeto : undefined} label="Margen neto del proyecto" />
   }
 
   const m   = margenNeto
@@ -3605,7 +3656,7 @@ function PanelLimp({ res, subtotal, iva, total, isrRetenido, ingresoNeto, gananc
   costoProyectoTotal: number
 }) {
   if (!canViewFinancials(rol)) {
-    return <ResumenCotizacionOperativo subtotal={subtotal} iva={iva} total={total} />
+    return <ResumenCotizacionOperativo subtotal={subtotal} iva={iva} total={total} margenNeto={canViewQuotationPercentages(rol) ? margenNeto : undefined} label="Margen neto del servicio" />
   }
 
   const m = margenNeto
