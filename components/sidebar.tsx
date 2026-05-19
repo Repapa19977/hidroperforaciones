@@ -97,6 +97,7 @@ export function Sidebar() {
     if (item.href === '/gastos') return isSuperAdmin  // control de gastos solo superadmin
     if (item.href === '/cuentas-por-pagar') return isSuperAdmin  // contabilidad solo superadmin
     if (item.href === '/cuentas-por-cobrar') return isSuperAdmin
+    if (item.href === '/reportes') return isSuperAdmin
     if (item.href === '/papelera') return isSuperAdmin // papelera solo superadmin
     return true
   })
