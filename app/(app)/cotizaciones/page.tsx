@@ -33,6 +33,52 @@ function normalizeRol(value: unknown): Rol {
   return value === 'superadmin' || value === 'admin_operativo' ? value : 'admin'
 }
 
+function normalizeSearch(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function compactRepeatedLetters(value: string): string {
+  return value.replace(/([a-z0-9])\1+/g, '$1')
+}
+
+function getStoredQuotationData(row: CotizacionRecord): Record<string, unknown> {
+  if (!row.datos) return {}
+  if (typeof row.datos !== 'string') return row.datos as Record<string, unknown>
+  try {
+    const parsed = JSON.parse(row.datos)
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+function matchesSearch(row: CotizacionRecord, rawQuery: string): boolean {
+  const query = normalizeSearch(rawQuery)
+  if (!query) return true
+
+  const datos = getStoredQuotationData(row)
+  const text = normalizeSearch([
+    row.cliente,
+    row.correlativo,
+    row.empresa,
+    row.proyecto,
+    row.vendedor,
+    row.estado,
+    tipoLabel(row.tipo),
+    datos.vendedor,
+    datos.vendedorEmail,
+    datos.vendedorCargo,
+    datos.creadoPorVendedor,
+    datos.creadoPorUsuario,
+  ].join(' '))
+
+  return text.includes(query) || compactRepeatedLetters(text).includes(compactRepeatedLetters(query))
+}
+
 const tipoLabel = (t: string) => t === 'perforacion' ? 'Perforación' : 'Servicios de Mantenimiento'
 
 // ── Status map ─────────────────────────────────────────────────────────────────
@@ -156,11 +202,7 @@ export default function CotizacionesPage() {
   }, [rows])
 
   const filtered = useMemo(() => rows.filter(c => {
-    const q = search.toLowerCase()
-    const matchSearch =
-      c.cliente.toLowerCase().includes(q) ||
-      c.correlativo.toLowerCase().includes(q) ||
-      (c.empresa || '').toLowerCase().includes(q)
+    const matchSearch = matchesSearch(c, search)
     const matchStatus  = filterStatus === 'todos' || c.estado === filterStatus
     const matchVendedor = !canViewAllQuotes || filterVendedor === 'Todos' || c.vendedor === filterVendedor
     return matchSearch && matchStatus && matchVendedor
@@ -345,7 +387,7 @@ export default function CotizacionesPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar cliente, empresa..."
+              placeholder="Buscar cliente, empresa, asesor..."
               className="bg-white/5 border border-white/8 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 outline-none w-full sm:w-52 transition-all"
             />
           </div>

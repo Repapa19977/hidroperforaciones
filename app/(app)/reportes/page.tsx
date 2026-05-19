@@ -9,7 +9,7 @@ import {
 } from 'recharts'
 import {
   Download, RefreshCw, TrendingUp, CheckCircle, FileText,
-  Send, XCircle, BarChart2, ChevronLeft, ChevronRight
+  Send, XCircle, BarChart2, ChevronLeft, ChevronRight, Eye
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -108,6 +108,7 @@ export default function ReportesPage() {
   const [data, setData]             = useState<ReportData | null>(null)
   const [loading, setLoading]       = useState(false)
   const [page, setPage]             = useState(1)
+  const [openingId, setOpeningId]   = useState<string | null>(null)
 
   const isSuperAdmin = role === 'superadmin'
 
@@ -138,6 +139,42 @@ export default function ReportesPage() {
 
   function generar() {
     fetchReport(periodo, fromDate, toDate, isSuperAdmin ? vendedorFilt : myVendedor, role)
+  }
+
+  async function openCotizacion(correlativo: string) {
+    setOpeningId(correlativo)
+    try {
+      const res = await fetch(`/api/cotizaciones/${encodeURIComponent(correlativo)}`, { cache: 'no-store' })
+      if (!res.ok) {
+        alert('No se pudo cargar la cotizacion. Intenta de nuevo.')
+        return
+      }
+
+      const row: { correlativo?: string; datos?: unknown; monto?: number } = await res.json()
+      if (!row.datos || row.datos === '{}') {
+        alert('Esta cotizacion no tiene datos suficientes para abrir la vista previa.')
+        return
+      }
+
+      const parsedDatos = typeof row.datos === 'string' ? JSON.parse(row.datos) : row.datos
+      const datos = parsedDatos && typeof parsedDatos === 'object' ? parsedDatos as Record<string, unknown> : {}
+      const ip = datos.ip && typeof datos.ip === 'object' ? datos.ip as Record<string, unknown> : null
+      const esLegacy =
+        String(row.correlativo ?? '').startsWith('HP-COT-') ||
+        Boolean(ip?.numeroDeTubos || ip?.numeroDeFilteros) ||
+        Boolean(datos.tipo === 'perforacion' && ip && typeof ip.tubosLisos !== 'number')
+
+      localStorage.setItem('hidrocrm_quotation_draft', JSON.stringify({
+        ...datos,
+        correlativo: row.correlativo ?? correlativo,
+        ...(esLegacy && typeof row.monto === 'number' ? { montoGuardado: row.monto } : {}),
+      }))
+      window.location.href = `/imprimir?returnTo=${encodeURIComponent('/reportes')}`
+    } catch {
+      alert('Error al procesar la cotizacion.')
+    } finally {
+      setOpeningId(null)
+    }
   }
 
   // ── Excel export ─────────────────────────────────────────────────────────────
@@ -447,7 +484,18 @@ export default function ReportesPage() {
                         c.estado === 'confirmada' && 'bg-emerald-500/3',
                         c.estado === 'cancelada'  && 'bg-red-500/3'
                       )}>
-                        <td className="px-4 py-2.5 font-mono text-blue-400 text-[11px] whitespace-nowrap">{c.correlativo}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openCotizacion(c.correlativo)}
+                            disabled={openingId === c.correlativo}
+                            className="inline-flex items-center gap-1.5 font-mono text-[11px] text-blue-400 hover:text-blue-300 hover:underline disabled:opacity-50"
+                            title="Abrir cotizacion"
+                          >
+                            <Eye className="w-3 h-3" />
+                            {c.correlativo}
+                          </button>
+                        </td>
                         <td className="px-4 py-2.5 text-slate-300 max-w-[120px] truncate">{c.cliente}</td>
                         <td className="px-4 py-2.5 text-slate-500 max-w-[100px] truncate">{c.empresa}</td>
                         <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{c.tipo === 'perforacion' ? 'Perforación' : 'Limpieza'}</td>
