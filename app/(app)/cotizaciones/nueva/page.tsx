@@ -44,8 +44,16 @@ type TipoCot = 'perforacion' | 'limpieza'
 type TipoClienteCot = 'individual' | 'empresa'
 type RolUsuario = 'admin' | 'admin_operativo' | 'superadmin' | 'cliente_final'
 
+function normalizeRolUsuario(value: unknown): RolUsuario {
+  return value === 'superadmin' || value === 'admin_operativo' || value === 'cliente_final' ? value : 'admin'
+}
+
+function canUseSuperAdminCotizaciones(rol: string | null | undefined): boolean {
+  return rol === 'superadmin' || rol === 'admin_operativo'
+}
+
 function canViewFinancials(rol: string | null | undefined): boolean {
-  return rol === 'superadmin'
+  return canUseSuperAdminCotizaciones(rol)
 }
 
 function canViewQuotationPercentages(rol: string | null | undefined): boolean {
@@ -222,7 +230,7 @@ export default function NuevaCotizacionPage() {
     // Rol y nombre del usuario logueado
     const rolMatch = document.cookie.match(/user_role=([^;]+)/)
     const rolRaw = rolMatch?.[1]
-    const rol: RolUsuario = rolRaw === 'superadmin' || rolRaw === 'admin_operativo' || rolRaw === 'cliente_final' ? rolRaw : 'admin'
+    const rol = normalizeRolUsuario(rolRaw)
     setRolUsuario(rol)
     const venMatch = document.cookie.match(/user_vendedor=([^;]+)/)
     const miNombre = venMatch?.[1] ? decodeURIComponent(venMatch[1]) : ''
@@ -244,6 +252,20 @@ export default function NuevaCotizacionPage() {
             setVendedorEmail(seleccionado.email)
             setVendedorCargo(resolverCargoVendedor(seleccionado.nombre, seleccionado.cargo, seleccionado.rol))
           }
+        }
+      })
+      .catch(() => {})
+
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(me => {
+        if (!me) return
+        setRolUsuario(normalizeRolUsuario(me.role))
+        const isEditMode = new URLSearchParams(window.location.search).has('edit')
+        if (!isEditMode && typeof me.vendedor === 'string' && me.vendedor.trim()) {
+          setVendedor(me.vendedor)
+          setVendedorEmail(resolverEmailVendedor(me.vendedor))
+          setVendedorCargo(resolverCargoVendedor(me.vendedor))
         }
       })
       .catch(() => {})
@@ -1263,7 +1285,7 @@ export default function NuevaCotizacionPage() {
               >
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                   <Tag className="w-3.5 h-3.5" /> Precios de Líneas de Cotización
-                  {preciosBloqueados && rolUsuario !== 'superadmin' && (
+                  {preciosBloqueados && !canUseSuperAdminCotizaciones(rolUsuario) && (
                     <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">Bloqueado por Super Admin</span>
                   )}
                 </p>
@@ -1272,7 +1294,7 @@ export default function NuevaCotizacionPage() {
               {showPrecios && (
                 <div className="px-5 pb-5 border-t border-white/5 pt-4">
                   <p className="text-xs text-slate-500 mb-4">
-                    {preciosBloqueados && rolUsuario !== 'superadmin'
+                    {preciosBloqueados && !canUseSuperAdminCotizaciones(rolUsuario)
                       ? 'El Super Admin ha bloqueado la edición de estos precios.'
                       : 'Precios predeterminados cargados desde configuración. Puedes ajustarlos para esta cotización.'}
                   </p>
@@ -1299,10 +1321,10 @@ export default function NuevaCotizacionPage() {
                           <DecimalInput
                             value={pl[key]}
                             onValueChange={value => patchPl(key, value)}
-                            disabled={preciosBloqueados && rolUsuario !== 'superadmin'}
+                            disabled={preciosBloqueados && !canUseSuperAdminCotizaciones(rolUsuario)}
                             className={cn(
                               'w-full bg-white/5 border rounded-lg pl-7 pr-3 py-2 text-sm text-white outline-none transition-colors',
-                              preciosBloqueados && rolUsuario !== 'superadmin'
+                              preciosBloqueados && !canUseSuperAdminCotizaciones(rolUsuario)
                                 ? 'border-white/5 text-slate-600 cursor-not-allowed'
                                 : 'border-white/10 focus:border-blue-500/50'
                             )}
@@ -1321,10 +1343,10 @@ export default function NuevaCotizacionPage() {
                         <DecimalInput
                           value={pl.desarrolloLimpieza}
                           onValueChange={value => patchPl('desarrolloLimpieza', value)}
-                          disabled={preciosBloqueados && rolUsuario !== 'superadmin'}
+                          disabled={preciosBloqueados && !canUseSuperAdminCotizaciones(rolUsuario)}
                           className={cn(
                             'w-full bg-white/5 border rounded-lg pl-7 pr-3 py-2 text-sm text-white outline-none transition-colors',
-                            preciosBloqueados && rolUsuario !== 'superadmin'
+                            preciosBloqueados && !canUseSuperAdminCotizaciones(rolUsuario)
                               ? 'border-white/5 text-slate-600 cursor-not-allowed'
                               : 'border-white/10 focus:border-blue-500/50'
                           )}

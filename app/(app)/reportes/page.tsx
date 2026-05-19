@@ -1,15 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { type Rol } from '@/lib/config-store'
-import { VENDEDORES } from '@/lib/quotation-store'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts'
 import {
   Download, RefreshCw, TrendingUp, CheckCircle, FileText,
-  Send, XCircle, BarChart2, ChevronLeft, ChevronRight
+  Send, XCircle, BarChart2, ChevronLeft, ChevronRight, Eye
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -48,6 +47,10 @@ function getCookie(name: string) {
   if (typeof document === 'undefined') return ''
   const m = document.cookie.match(new RegExp(`${name}=([^;]+)`))
   return m ? decodeURIComponent(m[1]) : ''
+}
+
+function normalizeRol(value: unknown): Rol {
+  return value === 'superadmin' || value === 'admin_operativo' ? value : 'admin'
 }
 
 const fmtQ  = (n: number) => 'Q ' + (Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -105,9 +108,11 @@ export default function ReportesPage() {
   const [fromDate, setFromDate]     = useState('')
   const [toDate, setToDate]         = useState('')
   const [vendedorFilt, setVendFilt] = useState('Todos')
+  const [vendedores, setVendedores] = useState<string[]>([])
   const [data, setData]             = useState<ReportData | null>(null)
   const [loading, setLoading]       = useState(false)
   const [page, setPage]             = useState(1)
+  const [openingId, setOpeningId]   = useState<string | null>(null)
 
   const isSuperAdmin = role === 'superadmin'
 
@@ -123,12 +128,30 @@ export default function ReportesPage() {
     setPage(1)
   }, [])
 
+  const fetchVendedores = useCallback(async () => {
+    const res = await fetch('/api/vendedores', { cache: 'no-store' })
+    if (!res.ok) return
+    const rows = await res.json().catch(() => [])
+    const nombres = Array.isArray(rows)
+      ? rows.map(v => String(v?.nombre ?? '').trim()).filter(Boolean)
+      : []
+    setVendedores([...new Set(nombres)].sort((a, b) => a.localeCompare(b, 'es')))
+  }, [])
+
   useEffect(() => {
     let cancelled = false
-    void Promise.resolve().then(() => {
+    void Promise.resolve().then(async () => {
+      let r = normalizeRol(getCookie('user_role'))
+      let v = getCookie('user_vendedor') || ''
+
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' })
+        const me = res.ok ? await res.json() : null
+        r = normalizeRol(me?.role)
+        if (typeof me?.vendedor === 'string') v = me.vendedor
+      } catch {}
+
       if (cancelled) return
-      const r = getCookie('user_role') as Rol || 'admin'
-      const v = getCookie('user_vendedor') || ''
       setRole(r)
       setMyVendedor(v)
       fetchReport('mes', '', '', v, r)
@@ -136,8 +159,49 @@ export default function ReportesPage() {
     return () => { cancelled = true }
   }, [fetchReport])
 
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    fetchVendedores().catch(() => {})
+  }, [fetchVendedores, isSuperAdmin])
+
   function generar() {
     fetchReport(periodo, fromDate, toDate, isSuperAdmin ? vendedorFilt : myVendedor, role)
+  }
+
+  async function openCotizacion(correlativo: string) {
+    setOpeningId(correlativo)
+    try {
+      const res = await fetch(`/api/cotizaciones/${encodeURIComponent(correlativo)}`, { cache: 'no-store' })
+      if (!res.ok) {
+        alert('No se pudo cargar la cotizacion. Intenta de nuevo.')
+        return
+      }
+
+      const row: { correlativo?: string; datos?: unknown; monto?: number } = await res.json()
+      if (!row.datos || row.datos === '{}') {
+        alert('Esta cotizacion no tiene datos suficientes para abrir la vista previa.')
+        return
+      }
+
+      const parsedDatos = typeof row.datos === 'string' ? JSON.parse(row.datos) : row.datos
+      const datos = parsedDatos && typeof parsedDatos === 'object' ? parsedDatos as Record<string, unknown> : {}
+      const ip = datos.ip && typeof datos.ip === 'object' ? datos.ip as Record<string, unknown> : null
+      const esLegacy =
+        String(row.correlativo ?? '').startsWith('HP-COT-') ||
+        Boolean(ip?.numeroDeTubos || ip?.numeroDeFilteros) ||
+        Boolean(datos.tipo === 'perforacion' && ip && typeof ip.tubosLisos !== 'number')
+
+      localStorage.setItem('hidrocrm_quotation_draft', JSON.stringify({
+        ...datos,
+        correlativo: row.correlativo ?? correlativo,
+        ...(esLegacy && typeof row.monto === 'number' ? { montoGuardado: row.monto } : {}),
+      }))
+      window.location.href = `/imprimir?returnTo=${encodeURIComponent('/reportes')}`
+    } catch {
+      alert('Error al procesar la cotizacion.')
+    } finally {
+      setOpeningId(null)
+    }
   }
 
   // ── Excel export ─────────────────────────────────────────────────────────────
@@ -193,6 +257,11 @@ export default function ReportesPage() {
   const cotizaciones = data?.cotizaciones ?? []
   const totalPages   = Math.max(1, Math.ceil(cotizaciones.length / PAGE_SIZE))
   const paginated    = cotizaciones.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const vendedoresFiltro = useMemo(() => {
+    const set = new Set(vendedores)
+    data?.porVendedor.forEach(v => { if (v.vendedor) set.add(v.vendedor) })
+    return [...set].sort((a, b) => a.localeCompare(b, 'es'))
+  }, [data?.porVendedor, vendedores])
 
   const barData = (data?.porVendedor ?? []).map(v => ({
     name: v.vendedor.split(' ')[0],
@@ -268,7 +337,7 @@ export default function ReportesPage() {
               className="bg-white/5 border border-white/10 text-slate-300 text-xs rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-500/50"
             >
               <option value="Todos">Todos los vendedores</option>
-              {VENDEDORES.map(v => <option key={v} value={v}>{v}</option>)}
+              {vendedoresFiltro.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           )}
 
@@ -447,7 +516,18 @@ export default function ReportesPage() {
                         c.estado === 'confirmada' && 'bg-emerald-500/3',
                         c.estado === 'cancelada'  && 'bg-red-500/3'
                       )}>
-                        <td className="px-4 py-2.5 font-mono text-blue-400 text-[11px] whitespace-nowrap">{c.correlativo}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openCotizacion(c.correlativo)}
+                            disabled={openingId === c.correlativo}
+                            className="inline-flex items-center gap-1.5 font-mono text-[11px] text-blue-400 hover:text-blue-300 hover:underline disabled:opacity-50"
+                            title="Abrir cotizacion"
+                          >
+                            <Eye className="w-3 h-3" />
+                            {c.correlativo}
+                          </button>
+                        </td>
                         <td className="px-4 py-2.5 text-slate-300 max-w-[120px] truncate">{c.cliente}</td>
                         <td className="px-4 py-2.5 text-slate-500 max-w-[100px] truncate">{c.empresa}</td>
                         <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{c.tipo === 'perforacion' ? 'Perforación' : 'Limpieza'}</td>

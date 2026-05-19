@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { parseFechaFlexible } from '@/lib/date-format'
+import { canViewAllCotizaciones } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -38,6 +39,11 @@ function conversionPct(confirmadas: number, enviadas: number, canceladas: number
   return base > 0 ? Math.round((confirmadas / base) * 100) : 0
 }
 
+function isAllVendedores(value: string | null): boolean {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return !normalized || normalized === 'all' || normalized === 'todos'
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
@@ -45,15 +51,16 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const from = searchParams.get('from')
   const to = searchParams.get('to')
-  const vendedor = auth.user.role === 'superadmin'
-    ? searchParams.get('vendedor')
+  const vendedorParam = searchParams.get('vendedor')
+  const vendedor = canViewAllCotizaciones(auth.user.role)
+    ? (isAllVendedores(vendedorParam) ? null : vendedorParam)
     : auth.user.vendedor
 
   const fromDate = parseRangeDate(from, 'start')
   const toDate = parseRangeDate(to, 'end')
 
   const where: { vendedor?: string; eliminadaEn: null } = { eliminadaEn: null }
-  if (vendedor && vendedor !== 'all') where.vendedor = vendedor
+  if (vendedor) where.vendedor = vendedor
 
   const allRows = await prisma.cotizacion.findMany({ where, orderBy: { createdAt: 'desc' } })
   const rows = allRows

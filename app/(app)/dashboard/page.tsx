@@ -52,6 +52,10 @@ function getCookie(name: string) {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
+function normalizeRol(value: unknown): Rol {
+  return value === 'superadmin' || value === 'admin_operativo' ? value : 'admin'
+}
+
 const fmtQ  = (n: number) => 'Q ' + (Number.isFinite(n) ? n : 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtQk = (n: number) =>
   n >= 1_000_000 ? `Q${(n/1_000_000).toFixed(1)}M` :
@@ -266,11 +270,31 @@ export default function DashboardPage() {
   const [refreshTick, setRefreshTick] = useState(0)
   const [generatedAtLabel, setGeneratedAtLabel] = useState('')
 
-  // Read auth cookies once
+  // Read auth session once
   useEffect(() => {
-    const r = getCookie('user_role') as Rol || 'admin'
-    const v = getCookie('user_vendedor') || ''
-    setRole(r); setVendedor(v); setInit(true)
+    let cancelled = false
+
+    async function initAuth() {
+      let r = normalizeRol(getCookie('user_role'))
+      let v = getCookie('user_vendedor') || ''
+
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' })
+        const me = res.ok ? await res.json() : null
+        r = normalizeRol(me?.role)
+        if (typeof me?.vendedor === 'string') v = me.vendedor
+      } catch {
+        // Cookies are enough as a fallback for local/offline UI boot.
+      }
+
+      if (cancelled) return
+      setRole(r)
+      setVendedor(v)
+      setInit(true)
+    }
+
+    initAuth()
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -342,7 +366,8 @@ export default function DashboardPage() {
       const params = new URLSearchParams()
       if (from) params.set('from', from.toISOString())
       params.set('to', to.toISOString())
-      if (role !== 'superadmin' && vendedor) params.set('vendedor', vendedor)
+      const canViewAllQuoteMetrics = role === 'superadmin' || role === 'admin_operativo'
+      if (!canViewAllQuoteMetrics && vendedor) params.set('vendedor', vendedor)
       const res = await fetch(`/api/reportes?${params}`, { cache: 'no-store' })
       if (res.ok) setData(await res.json())
       setLoading(false)
