@@ -38,6 +38,11 @@ function conversionPct(confirmadas: number, enviadas: number, canceladas: number
   return base > 0 ? Math.round((confirmadas / base) * 100) : 0
 }
 
+function isAllVendedores(value: string | null): boolean {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return !normalized || normalized === 'all' || normalized === 'todos'
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request)
   if (!auth.ok) return auth.response
@@ -45,17 +50,34 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const from = searchParams.get('from')
   const to = searchParams.get('to')
+  const vendedorParam = searchParams.get('vendedor')
   const vendedor = auth.user.role === 'superadmin'
-    ? searchParams.get('vendedor')
+    ? (isAllVendedores(vendedorParam) ? null : vendedorParam)
     : auth.user.vendedor
 
   const fromDate = parseRangeDate(from, 'start')
   const toDate = parseRangeDate(to, 'end')
 
   const where: { vendedor?: string; eliminadaEn: null } = { eliminadaEn: null }
-  if (vendedor && vendedor !== 'all') where.vendedor = vendedor
+  if (vendedor) where.vendedor = vendedor
 
-  const allRows = await prisma.cotizacion.findMany({ where, orderBy: { createdAt: 'desc' } })
+  const allRows = await prisma.cotizacion.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      correlativo: true,
+      cliente: true,
+      empresa: true,
+      proyecto: true,
+      tipo: true,
+      estado: true,
+      monto: true,
+      fecha: true,
+      vendedor: true,
+      createdAt: true,
+    },
+  })
   const rows = allRows
     .filter(row => {
       const fechaCotizacion = parseFechaFlexible(row.fecha) ?? row.createdAt
@@ -108,5 +130,18 @@ export async function GET(request: NextRequest) {
     montoLimpieza: rows.filter(r => r.tipo === 'limpieza').reduce((a, b) => a + b.monto, 0),
   }
 
-  return NextResponse.json({ resumen, porVendedor, cotizaciones: rows })
+  const cotizaciones = rows.map(row => ({
+    id: row.id,
+    correlativo: row.correlativo,
+    cliente: row.cliente,
+    empresa: row.empresa,
+    proyecto: row.proyecto,
+    tipo: row.tipo,
+    estado: row.estado,
+    monto: row.monto,
+    fecha: row.fecha,
+    vendedor: row.vendedor,
+  }))
+
+  return NextResponse.json({ resumen, porVendedor, cotizaciones })
 }
